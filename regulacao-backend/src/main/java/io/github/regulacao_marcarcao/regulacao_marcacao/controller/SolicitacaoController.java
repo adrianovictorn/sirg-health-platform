@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.solicitacaoEspecialidadeDTO.EspecialidadeAdicionarDTO;
+import io.github.regulacao_marcarcao.regulacao_marcacao.dto.solicitacoesDTO.SolicitacaoAgendamentoViewDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.solicitacoesDTO.SolicitacaoCreateDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.solicitacoesDTO.SolicitacaoPublicViewDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.solicitacoesDTO.SolicitacaoUpdateDTO;
@@ -111,6 +112,11 @@ public class SolicitacaoController {
     public ResponseEntity<List<SolicitacaoPublicViewDTO>> getPublicSolicitacoesByCpf(@PathVariable String cpf){
         List<SolicitacaoPublicViewDTO> solicitacoes = service.buscarPacientePorCpf(cpf);
         return ResponseEntity.ok(solicitacoes);
+    }
+
+    @GetMapping("/buscar/{id}")
+    public ResponseEntity<SolicitacaoAgendamentoViewDTO> buscarPorId2 (@PathVariable Long id){
+    return ResponseEntity.ok(service.buscarSolicitacaoPorId(id));
     }
 }
 

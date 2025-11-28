@@ -1,4 +1,4 @@
-<script>
+<script lang="ts">
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { user, token } from '$lib/stores/auth.js';
@@ -6,13 +6,19 @@
   import Card2 from '$lib/Card2.svelte';
   import { getApi } from '$lib/api.js'; // Importa nosso helper que já envia o token!
   import Card3 from '$lib/Card3.svelte';
-  import Card4 from '$lib/Card4.svelte';
-  import UserMenu from '$lib/UserMenu.svelte';
+    import UserMenu from '$lib/UserMenu.svelte';
     import Menu3 from '$lib/Menu3.svelte';
 
 
   // Variáveis de estado para controlar a UI
-  let solicitacoes = [];
+  let resumo: {
+    totalSolicitacoes: number;
+    totalPendentes: number;
+    totalAgendadas: number;
+    totalConcluidas: number;
+    totalUrgentes: number;
+    pendentesPorUsf: Record<string, number>;
+  } | null = null;
   let isLoading = true; // Começa como 'true' para mostrar a mensagem de carregando
   let error = '';
 
@@ -26,7 +32,7 @@
   onMount(async () => {
     try {
       // Usa nosso helper 'getApi' que automaticamente anexa o token JWT
-      const response = await getApi('solicitacoes');
+      const response = await getApi('solicitacoes/resumo-dashboard');
 
       if (!response.ok) {
         // Se o token for inválido ou o servidor der outro erro, captura a mensagem.
@@ -34,7 +40,7 @@
         throw new Error(`Falha ao carregar os dados: ${response.status} ${errorData}`);
       }
       
-      solicitacoes = await response.json();
+      resumo = await response.json();
     } catch (e) {
       error = e.message;
     } finally {
@@ -43,16 +49,15 @@
     }
   });
 
-
-  $: pendentes = solicitacoes.filter(s => s.especialidades.some(esp => esp.status === 'AGUARDANDO')).length;
-  $: agendado = solicitacoes.filter(s => s.especialidades.some(esp => esp.status === 'AGENDADO')).length;
-  $: concluida = solicitacoes.filter(solicitacao => solicitacao.especialidades.some(esp => esp.status === "REALIZADO")).length;
-  $: totalDeSolicitacoes = solicitacoes.length;
-  $: urgencia = solicitacoes.filter(s => s.especialidades.some(esp => (esp.prioridade === 'URGENTE' || esp.prioridade === 'EMERGENCIA') && esp.status === 'AGUARDANDO')).length; 
+  $: totalDeSolicitacoes = resumo?.totalSolicitacoes ?? 0;
+  $: pendentes = resumo?.totalPendentes ?? 0;
+  $: agendado = resumo?.totalAgendadas ?? 0;
+  $: concluida = resumo?.totalConcluidas ?? 0;
+  $: urgencia = resumo?.totalUrgentes ?? 0; 
   
   const filtarPendentesPorUnidade = (unidade) => {
-    if (!solicitacoes || solicitacoes.length === 0) return 0;
-    return solicitacoes.filter(solicitacao => solicitacao.especialidades.some(esp => esp.status === 'AGUARDANDO') && solicitacao.usfOrigem === unidade).length;
+    if (!resumo || !resumo.pendentesPorUsf) return 0;
+    return resumo.pendentesPorUsf[unidade] ?? 0;
   };
 </script>
 
@@ -74,7 +79,7 @@
   <div class="flex min-h-screen bg-gray-100">
     <!-- Sidebar -->
 
-  <Menu3 activePage="/dashboard/unidade" />    <!-- Main Content -->
+  <Menu3 activePage="/dashboard" />    <!-- Main Content -->
     <div class="flex-1 flex flex-col">
       <!-- Header com boas-vindas e botão de logout -->
       <header class="bg-emerald-700 text-white shadow p-4 flex items-center justify-between">
@@ -117,9 +122,9 @@
           <section class="bg-emerald-300 rounded-lg shadow p-6">
             <h2 class="text-lg font-bold text-emerald-900 mb-4">📊 Totais</h2>
             <div class="grid grid-cols-1 sm:grid-cols-4 gap-6">
-              <Card2 title="Pendentes" value={pendentes} href="/usf" color="emerald-dark"/>
-              <Card2 title="Agendados" value={agendado} href="/paciente/agendados" color="emerald-dark"/>
-              <Card title="Concluídas" value={concluida} color="emerald-dark"/>
+              <Card2 header="Resumo" title="Pendentes" value={pendentes} href="/usf" color="emerald-dark"/>
+              <Card2 header="Resumo" title="Agendados" value={agendado} href="/paciente/agendados" color="emerald-dark"/>
+              <Card2 header="Resumo" title="Concluídas" value={concluida} href="/paciente/concluido" color="emerald-dark"/>
               <Card title="Total" value={totalDeSolicitacoes} color="emerald-dark"/>
             </div>
           </section>
@@ -127,7 +132,7 @@
            <section class="bg-emerald-200 rounded-lg shadow p-6">
             <h2 class="text-lg font-bold text-red-900 mb-4">📊 Alertas</h2>
             <div class="grid grid-cols-1 sm:grid-cols-1 gap-6">
-              <Card3 title="Urgência" value={urgencia} href="/paciente/urgentes" color="emerald-dark"/>
+              <Card3 header="Alertas" title="Urgência" value={urgencia} href="/paciente/urgentes" color="danger"/>
 
             </div>
           </section>

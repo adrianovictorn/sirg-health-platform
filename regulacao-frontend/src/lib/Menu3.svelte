@@ -27,7 +27,7 @@
   });
 </script>
 
-<aside class="w-64 bg-gray-800 text-white flex flex-col py-8 shadow-lg h-screen">
+<aside class="w-64 bg-gray-800 text-white flex flex-col py-8 shadow-lg min-h-screen">
   <h2 class="text-2xl font-bold text-center mb-8">SIRG</h2>
   <nav class="flex-1 flex flex-col space-y-2 px-6">
     <a href="/dashboard/unidade" class="py-2 px-4 rounded transition" class:bg-emerald-700={activePage === '/dashboard/unidade'} class:hover:bg-emerald-800={activePage !== '/dashboard/unidade'}>Dashboard</a>

@@ -23,6 +23,7 @@ import io.github.regulacao_marcarcao.regulacao_marcacao.dto.dashboard.DashboardR
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.paciente.PacienteResumoDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.solicitacaoEspecialidadeDTO.EspecialidadeAdicionarDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.solicitacoesDTO.AgendamentoSolicitacaoCreateDTO;
+import io.github.regulacao_marcarcao.regulacao_marcacao.dto.solicitacoesDTO.SolicitacaoAgendamentoViewDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.solicitacoesDTO.SolicitacaoCreateDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.solicitacoesDTO.SolicitacaoUpdateDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.solicitacoesDTO.SolicitacaoViewDTO;
@@ -430,7 +431,14 @@ public class SolicitacaoService {
     public List<SolicitacaoPublicViewDTO> buscarPacientePorCpf(String cpf){
         return solicitacaoRepository.findByCpfPacienteSemPonto(cpf).stream().map(SolicitacaoPublicViewDTO::fromSolicitacao).collect(Collectors.toList());
     }
+
+    @Transactional
+    public SolicitacaoAgendamentoViewDTO buscarSolicitacaoPorId(Long id){
+        return SolicitacaoAgendamentoViewDTO.fromEntity(solicitacaoRepository.findById(id).orElseThrow(() -> new EntityNotFoundException("Solicitação não encontrada !")));
+    }
 }
+
+
 
 
 

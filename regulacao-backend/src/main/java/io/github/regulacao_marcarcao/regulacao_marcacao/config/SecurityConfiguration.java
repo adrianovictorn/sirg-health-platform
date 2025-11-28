@@ -39,6 +39,10 @@ public class SecurityConfiguration {
                 auth.requestMatchers("/api/auth/**").permitAll();
                 auth.requestMatchers("/actuator/**").permitAll();
                 auth.requestMatchers(HttpMethod.GET, "/api/solicitacoes/public/**").permitAll();
+                // Fluxo de agendamento: busca pendentes e detalhes de solicitação
+                auth.requestMatchers(HttpMethod.GET, "/api/agendamentos/pendentes/buscar").permitAll();
+                auth.requestMatchers(HttpMethod.GET, "/api/agendamentos/pendentes/**").permitAll();
+                auth.requestMatchers(HttpMethod.GET, "/api/solicitacoes/buscar/**").permitAll();
                 auth.requestMatchers(HttpMethod.POST, "/api/pactos/convites/*/responder").permitAll();
                 auth.requestMatchers("/api/registry/**").permitAll();
                 auth.requestMatchers(HttpMethod.POST, "/api/registry/pactos/*/join-requests").permitAll();

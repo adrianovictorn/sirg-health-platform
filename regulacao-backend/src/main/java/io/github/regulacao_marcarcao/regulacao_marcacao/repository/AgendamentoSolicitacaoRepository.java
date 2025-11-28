@@ -1,5 +1,6 @@
 package io.github.regulacao_marcarcao.regulacao_marcacao.repository;
 
+import java.time.LocalDate;
 import java.util.List;
 
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -12,6 +13,7 @@ public interface AgendamentoSolicitacaoRepository extends JpaRepository<Agendame
 
         List<AgendamentoSolicitacao> findBySolicitacaoId(Long solicitacaoId);
 
+        List<AgendamentoSolicitacao> findByDataAgendada(LocalDate data);
  
 
 }

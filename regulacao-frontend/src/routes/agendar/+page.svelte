@@ -1,36 +1,64 @@
-<script lang="ts">
+﻿<script lang="ts">
   import { onMount } from 'svelte';
   import { jsPDF } from 'jspdf';
   import autoTable from 'jspdf-autotable';
   import { getApi, postApi } from '$lib/api';
   import { listarEspecialidadesCatalogo } from '$lib/especialidadesApi.js';
-    import Menu from '$lib/Menu.svelte';
-    import UserMenu from '$lib/UserMenu.svelte';
+  import Menu from '$lib/Menu.svelte';
+  import UserMenu from '$lib/UserMenu.svelte';
 
   interface Cidade {
-        id: number
-        nomeCidade: string
-        codigoIBGE: string
-        cep: string
-    }
+    id: number;
+    nomeCidade: string;
+    codigoIBGE: string;
+    cep: string;
+  }
 
   interface LocalAgendamento {
-    id: number
-    nomeLocal: string
-    endereco: string
-    numero: string
-    cidade?: Cidade | null
-    cidadeId?: number | null
-    cidadeNome?: string | null
+    id: number;
+    nomeLocal: string;
+    endereco: string;
+    numero: string;
+    cidade?: Cidade | null;
+    cidadeId?: number | null;
+    cidadeNome?: string | null;
+  }
+
+  interface EspecialidadeCatalogo {
+    id: number;
+    codigo: string;
+    nome: string;
+  }
+
+  interface EspecialidadeAgendar {
+    codigo: string;
+    nome?: string | null;
+  }
+
+  interface SolicitacaoResumo {
+    id: number;
+    nomePaciente: string;
+    cpfPaciente: string;
+    cns: string;
+    usfOrigem: string;
+  }
+
+  interface SolicitacaoDetalhe {
+    id: number;
+    nomePaciente: string;
+    cpfPaciente: string;
+    usfOrigem: string;
+    cns?: string | null;
+    especialidades: EspecialidadeAgendar[];
   }
 
   let locaisAgendamento = $state<LocalAgendamento[]>([]);
-  // --- Estado do Componente ---
-  let solicitacoes = $state<any[]>([]);
+  let solicitacoes = $state<SolicitacaoResumo[]>([]);
   let isLoading = $state(true);
   let error = $state('');
 
-  // Estado do formulário
+
+
   let solicitacaoId = $state('');
   let examesSelecionados = $state<string[]>([]);
   let dataAgendada = $state('');
@@ -38,58 +66,168 @@
   let localAgendamentoId = $state('');
   let observacoes = $state('');
   let valorBusca = $state('');
+  let paginaAtual = $state(0);
   let comboboxAberto = $state(false);
 
-  // <<< NOVO: Dicionário e função para traduzir nomes de exames >>>
-  // 1. Criamos um mapa para busca rápida dos nomes amigáveis.
   let especialidadeLabelMap = new Map<string, string>();
   let catalogoCarregado = false;
+  let catalogoEspecialidades = $state<EspecialidadeCatalogo[]>([]);
+
+  const solicitacoesFiltradas = $derived(
+    !valorBusca
+      ? solicitacoes
+      : solicitacoes.filter((s) => {
+          const termo = valorBusca.toLowerCase();
+          const nome = (s.nomePaciente || '').toLowerCase();
+          const cpf = s.cpfPaciente || '';
+          return nome.includes(termo) || cpf.includes(valorBusca);
+        })
+  );
+
   async function carregarCatalogoEspecialidades() {
     if (catalogoCarregado && especialidadeLabelMap.size > 0) {
       return;
     }
     try {
-      const lista = await listarEspecialidadesCatalogo();
-      especialidadeLabelMap = new Map(lista.map((e:any) => [e.codigo, e.nome]));
+      const lista = (await listarEspecialidadesCatalogo()) as EspecialidadeCatalogo[];
+      catalogoEspecialidades = lista;
+      especialidadeLabelMap = new Map(lista.map((e) => [e.codigo, e.nome]));
       catalogoCarregado = true;
     } catch (e) {
-      // mantém vazio; fallback usa replace('_',' ')
       console.warn('Falha ao carregar catálogo de especialidades', e);
     }
   }
 
-  // 2. Função auxiliar para obter o nome amigável.
   function getEspecialidadeLabel(valor: string): string {
     return especialidadeLabelMap.get(valor) || valor.replace(/_/g, ' ');
   }
-  // <<< FIM DA SEÇÃO NOVA >>>
 
+  function normalizarEspecialidadesParaAgendamento(especialidades: unknown): EspecialidadeAgendar[] {
+  if (!Array.isArray(especialidades)) {
+    return [];
+  }
 
-  async function carregarSolicitacoesPendentes() {
-    isLoading = true;
-    error = '';
-    try {
-      const response = await getApi('agendamentos/pendentes');
-      if (!response.ok) {
-        throw new Error('Erro ao carregar as solicitações pendentes.');
+  const resultado = especialidades
+    .map<EspecialidadeAgendar | null>((esp) => {
+      if (!esp) return null;
+
+      if (typeof esp === 'object') {
+        const asAny = esp as any;
+        const especialidadeObj =
+          typeof asAny.especialidadeSolicitada === 'object' && asAny.especialidadeSolicitada !== null
+            ? asAny.especialidadeSolicitada
+            : null;
+
+        const codigoBruto =
+          asAny.codigo ??
+          asAny.exameCodigo ??
+          (especialidadeObj ? especialidadeObj.codigo : asAny.especialidadeSolicitada) ??
+          asAny.especialidadeCodigoLegacy ??
+          asAny.nome;
+
+        const nomePreferencial = asAny.nome ?? (especialidadeObj ? especialidadeObj.nome : null);
+
+        if (!codigoBruto) {
+          return null;
+        }
+
+        const codigo = String(codigoBruto);
+
+        const encontrado = catalogoEspecialidades.find(
+          (e) => e.codigo?.toLowerCase() === codigo.toLowerCase()
+        );
+
+        const nome =
+          nomePreferencial ??
+          encontrado?.nome ??
+          especialidadeLabelMap.get(codigo) ??
+          getEspecialidadeLabel(codigo);
+
+        return { codigo, nome }; // compatível com EspecialidadeAgendar
       }
-      solicitacoes = await response.json();
+
+      const valor = String(esp);
+      const encontrado = catalogoEspecialidades.find(
+        (e) =>
+          e.codigo?.toLowerCase() === valor.toLowerCase() ||
+          e.nome?.toLowerCase() === valor.toLowerCase()
+      );
+
+      const codigo = encontrado?.codigo || valor;
+      const nome =
+        encontrado?.nome ??
+        especialidadeLabelMap.get(codigo) ??
+        getEspecialidadeLabel(codigo);
+
+      return { codigo, nome };
+    })
+    .filter((esp): esp is EspecialidadeAgendar => esp !== null);
+
+  return resultado;
+}
+
+
+  async function carregarSolicitacoesPendentes(termo: string = '', page = 0) {
+    error = '';
+    paginaAtual = page;
+    try {
+      const params = new URLSearchParams({
+        termo,
+        page: String(page),
+        size: '20'
+      });
+
+      const response = await getApi(`agendamentos/pendentes/buscar?${params.toString()}`);
+      if (!response.ok) {
+        const detalhe = await response.text().catch(() => '');
+        throw new Error(`Erro ao carregar as solicitações pendentes (${response.status}): ${detalhe || response.statusText}`);
+      }
+      const pageJson = await response.json();
+      solicitacoes = pageJson.content ?? pageJson;
     } catch (e: any) {
       error = e.message;
-      alert(e.message);
+      console.error('Falha ao buscar pendentes', e);
+      alert(e.message || 'Erro ao carregar as solicitações pendentes.');
+    }
+  }
+
+  let solicitacaoDetalhe = $state<SolicitacaoDetalhe | null>(null);
+  let carregandoDetalhe = $state(false);
+  async function selecionarSolicitacao(solicitacao: SolicitacaoResumo) {
+    const cpfLabel = solicitacao.cpfPaciente || 'CPF não informado';
+    valorBusca = `${solicitacao.nomePaciente} - ${cpfLabel}`;
+    solicitacaoId = String(solicitacao.id);
+    comboboxAberto = false;
+
+    carregandoDetalhe = true;
+    try {
+      const res = await getApi(`solicitacoes/buscar/${solicitacao.id}`);
+      if (!res.ok) {
+        const detalhe = await res.text().catch(() => '');
+        throw new Error(`Erro ao carregar detalhes da solicitação (${res.status}): ${detalhe || res.statusText}`);
+      }
+
+      const detalheResposta = await res.json();
+      const especialidadesNormalizadas = normalizarEspecialidadesParaAgendamento(detalheResposta?.especialidades);
+      solicitacaoDetalhe = {
+        ...detalheResposta,
+        especialidades: especialidadesNormalizadas
+      };
+      examesSelecionados = [];
+    } catch (e: any) {
+      alert(e.message ?? 'Erro ao carregar detalhes da solicitação');
+      solicitacaoDetalhe = null;
     } finally {
-      isLoading = false;
+      carregandoDetalhe = false;
     }
   }
 
   async function carregarLocaisAgendamento() {
     try {
       const res = await getApi('local/agendamento');
-
       if (!res.ok) {
         throw new Error('Erro ao receber dados do servidor!');
       }
-
       const data: LocalAgendamento[] = await res.json();
       locaisAgendamento = data;
 
@@ -103,20 +241,40 @@
   }
 
   onMount(async () => {
-    await Promise.all([
-      carregarCatalogoEspecialidades(),
-      carregarSolicitacoesPendentes(),
-      carregarLocaisAgendamento()
-    ]);
+    isLoading = true;
+    try {
+      await Promise.all([
+        carregarCatalogoEspecialidades(),
+        carregarSolicitacoesPendentes(''),
+        carregarLocaisAgendamento()
+      ]);
+    } finally {
+      isLoading = false;
+    }
   });
 
-  let solicitacaoSelecionada = $derived(
-    solicitacoes.find((s) => String(s.solicitacaoId) === String(solicitacaoId)) || null
-  );
+  let buscarTimeout: ReturnType<typeof setTimeout> | null = null;
+  $effect(() => {
+    const aberto = comboboxAberto;
+    const termo = valorBusca;
 
- 
+    if (!aberto) return;
 
-  
+    if (buscarTimeout) {
+      clearTimeout(buscarTimeout);
+    }
+
+    buscarTimeout = setTimeout(() => {
+      carregarSolicitacoesPendentes(termo);
+    }, 300);
+
+    return () => {
+      if (buscarTimeout) {
+        clearTimeout(buscarTimeout);
+      }
+    };
+  });
+
   const brasaoUrl =
     'https://upload.wikimedia.org/wikipedia/commons/9/97/Bras%C3%A3o_de_Concei%C3%A7%C3%A3o_do_Almeida.png';
 
@@ -137,27 +295,6 @@
       img.src = url;
     });
   }
-
-  const solicitacoesFiltradas = $derived(()=> {
-    if(!valorBusca){
-      return solicitacoes;
-    }
-    return solicitacoes.filter(s => s.nomePaciente.toLowerCase().includes(valorBusca.toLowerCase() || s.cpfPaciente.includes(valorBusca))); 
-
-  })
-
-  // Adicione esta função
-function selecionarSolicitacao(solicitacao) {
-  // Preenche o campo de busca com o nome do paciente para feedback visual
-  valorBusca = `${solicitacao.nomePaciente} — ${solicitacao.cpfPaciente}`; 
-
-  // Define o ID da solicitação na sua variável de estado principal
-  solicitacaoId = solicitacao.solicitacaoId; 
-
-  // Fecha a lista de opções
-    comboboxAberto = false;
-  }
-
 
   async function gerarComprovantePDF(dadosPDF: {
     solicitacaoId: number;
@@ -210,8 +347,7 @@ function selecionarSolicitacao(solicitacao) {
     doc.text('Comprovante de Agendamento', pageWidth / 2, currentY, { align: 'center' });
     currentY += 35;
 
-    // <<< ALTERADO: Traduz os nomes dos exames antes de criar a lista de infos >>>
-    const nomesAmigaveis = dadosPDF.examesSelecionados.map(exame => getEspecialidadeLabel(exame));
+    const nomesAmigaveis = dadosPDF.examesSelecionados.map((exame) => getEspecialidadeLabel(exame));
 
     const allInfo = [
         { label: 'ID Solicitação', value: String(dadosPDF.solicitacaoId), color: corDestaque, style: 'bold' },
@@ -219,7 +355,6 @@ function selecionarSolicitacao(solicitacao) {
         { label: 'CPF',            value: dadosPDF.cpfPaciente, color: corPadrao },
         { label: 'USF Origem',     value: dadosPDF.usfOrigem, color: corPadrao },
         ...(dadosPDF.cns ? [{ label: 'CNS', value: dadosPDF.cns, color: corPadrao }] : []),
-        // Usa a lista de nomes traduzidos
         { label: 'Exames Agendados', value: nomesAmigaveis.join(', '), color: corDestaque, style: 'bold' },
         { label: 'Data Agendada',  value: new Date(dadosPDF.dataAgendada + 'T00:00:00').toLocaleDateString('pt-BR'), color: corDestaque, style: 'bold' },
         { label: 'Turno',          value: dadosPDF.turno === 'MANHA' ? 'Manhã' : 'Tarde', color: corPadrao },
@@ -275,9 +410,9 @@ function selecionarSolicitacao(solicitacao) {
   }
 
   function enviarAgendamento(event: SubmitEvent) {
-    event.preventDefault(); // Prevenção do comportamento padrão
+    event.preventDefault();
 
-    if (!solicitacaoSelecionada) { // Simplificado para checar apenas a solicitação selecionada
+    if (!solicitacaoDetalhe) {
       alert('Por favor, selecione uma solicitação válida.');
       return;
     }
@@ -292,19 +427,15 @@ function selecionarSolicitacao(solicitacao) {
 
     const localIdNumber = localAgendamentoId ? Number(localAgendamentoId) : null;
 
-   const body: Record<string, unknown> = {
-     examesSelecionados,
-     dataAgendada,
-     observacoes,
-     turno,
+    const body: Record<string, unknown> = {
+      examesSelecionados,
+      dataAgendada,
+      observacoes,
+      turno,
       localAgendado: null
     };
 
-    if (localIdNumber !== null) {
-      body.localAgendamentoId = localIdNumber;
-    } else {
-      body.localAgendamentoId = null;
-    }
+    body.localAgendamentoId = localIdNumber !== null ? localIdNumber : null;
 
     try {
       postApi(`agendamentos/${solicitacaoId}`, body).then(async (resposta) => {
@@ -312,11 +443,11 @@ function selecionarSolicitacao(solicitacao) {
           alert('Agendamento realizado com sucesso!');
 
           await gerarComprovantePDF({
-            solicitacaoId: solicitacaoSelecionada.solicitacaoId,
-            nomePaciente: solicitacaoSelecionada.nomePaciente,
-            cpfPaciente: solicitacaoSelecionada.cpfPaciente,
-            usfOrigem: solicitacaoSelecionada.usfOrigem,
-            cns: solicitacaoSelecionada.cns,
+            solicitacaoId: solicitacaoDetalhe.id,
+            nomePaciente: solicitacaoDetalhe.nomePaciente,
+            cpfPaciente: solicitacaoDetalhe.cpfPaciente,
+            usfOrigem: solicitacaoDetalhe.usfOrigem,
+            cns: solicitacaoDetalhe.cns,
             examesSelecionados,
             dataAgendada,
             turno,
@@ -324,7 +455,6 @@ function selecionarSolicitacao(solicitacao) {
             observacoes
           });
 
-          // Resetar formulário
           solicitacaoId = '';
           examesSelecionados = [];
           dataAgendada = '';
@@ -332,6 +462,7 @@ function selecionarSolicitacao(solicitacao) {
           observacoes = '';
           turno = 'MANHA';
           valorBusca = '';
+          solicitacaoDetalhe = null;
 
           await carregarSolicitacoesPendentes();
           await carregarLocaisAgendamento();
@@ -341,7 +472,6 @@ function selecionarSolicitacao(solicitacao) {
             const texto = await resposta.text();
             mensagemErro = texto ? JSON.parse(texto).message ?? texto : '';
           } catch {
-            // mantém mensagemErro vazio caso parsing falhe
           }
 
           if (!mensagemErro) {
@@ -358,6 +488,42 @@ function selecionarSolicitacao(solicitacao) {
       alert('Erro de conexão. Verifique sua rede e tente novamente.');
     }
   }
+
+
+  let preparoSelecionado = $state('');
+
+    // textos pré-definidos de preparo
+    const PREPAROS: Record<string, string> = {
+      USG_ABD_TOTAL: `
+    - Levar exames de imagem anteriores;
+    - Jejum de 6 horas;
+    - Tomar água e não ir ao banheiro antes do exame;
+    - Não é necessário o uso de laxantes ou qualquer medicação;`,
+
+      USG_PARTES_MOLES_TIREOIDE: `
+    - Levar exames de imagem anteriores;`,
+
+      USG_RINS_PROSTATA: `
+    - Levar exames de imagem anteriores;
+    - Manter a bexiga cheia para o exame
+    (tomar água e não ir ao banheiro antes do exame);`,
+
+
+    LABORATORIO: `
+    - Horário do Laboratório 07:00
+    `
+
+
+    };
+
+    // quando o usuário muda o select:
+    function aplicarPreparo() {
+      if (preparoSelecionado) {
+        observacoes = PREPAROS[preparoSelecionado] ?? '';
+      } else {
+        observacoes = '';
+      }
+    }
 </script>
 
 <svelte:head>
@@ -386,10 +552,10 @@ function selecionarSolicitacao(solicitacao) {
       {:else}
         <div class="bg-white rounded-lg shadow-lg p-6">
           <h2 class="text-2xl font-bold text-emerald-800 mb-6">Novo Agendamento</h2>
-
+        
           <form class="space-y-6" onsubmit={enviarAgendamento}>
             <div class="flex flex-col">
-              <label for="selectSolicitacao" class="text-sm font-medium text-gray-700 mb-1">
+              <label for="combobox-agendamento" class="text-sm font-medium text-gray-700 mb-1">
                 Selecionar Solicitação Pendente
               </label>
              <div class="relative">
@@ -403,65 +569,68 @@ function selecionarSolicitacao(solicitacao) {
                       class="border border-gray-300 rounded-lg p-2 w-full focus:ring-emerald-500 focus:border-emerald-500"
                     />
 
-                    {#if comboboxAberto && solicitacoesFiltradas().length > 0}
+                    {#if comboboxAberto && solicitacoesFiltradas.length > 0}
                       <ul class="absolute z-10 w-full bg-white border border-gray-200 rounded-lg mt-1 max-h-60 overflow-y-auto shadow-lg">
-                        {#each solicitacoesFiltradas() as s (s.solicitacaoId)}
-                          <li 
-                            onmousedown={() => selecionarSolicitacao(s)}
-                            class="p-3 hover:bg-emerald-100 cursor-pointer"
-                          >
-                            {s.nomePaciente} — {s.cpfPaciente}
+                        {#each solicitacoesFiltradas as s (s.id)}
+                          <li class="p-0">
+                            <button
+                              type="button"
+                              onmousedown={() => selecionarSolicitacao(s)}
+                              class="w-full text-left p-3 hover:bg-emerald-100 cursor-pointer"
+                            >
+                              {s.nomePaciente} - {s.cpfPaciente || 'CPF não informado'}
+                            </button>
                           </li>
                         {/each}
                       </ul>
                     {/if}
 </div>
-              
+            </div>
 
-            {#if solicitacaoSelecionada}
+            {#if solicitacaoDetalhe}
               <div class="border-t pt-6 space-y-4">
                 <h3 class="text-lg font-semibold text-gray-800">Dados do Paciente</h3>
                 <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
                   <div>
-                    <label class="text-sm font-medium text-gray-700">Nome</label>
-                    <input type="text" value={solicitacaoSelecionada.nomePaciente} readonly class="w-full bg-gray-100 border-gray-300 rounded-lg p-2" />
+                    <label for="campo-nome" class="text-sm font-medium text-gray-700">Nome</label>
+                    <input id="campo-nome" type="text" value={solicitacaoDetalhe.nomePaciente} readonly class="w-full bg-gray-100 border-gray-300 rounded-lg p-2" />
                   </div>
                   <div>
-                    <label class="text-sm font-medium text-gray-700">CPF</label>
-                    <input type="text" value={solicitacaoSelecionada.cpfPaciente} readonly class="w-full bg-gray-100 border-gray-300 rounded-lg p-2" />
+                    <label for="campo-cpf" class="text-sm font-medium text-gray-700">CPF</label>
+                    <input id="campo-cpf" type="text" value={solicitacaoDetalhe.cpfPaciente} readonly class="w-full bg-gray-100 border-gray-300 rounded-lg p-2" />
                   </div>
                   <div>
-                    <label class="text-sm font-medium text-gray-700">USF Origem</label>
-                    <input type="text" value={solicitacaoSelecionada.usfOrigem} readonly class="w-full bg-gray-100 border-gray-300 rounded-lg p-2" />
+                    <label for="campo-usf" class="text-sm font-medium text-gray-700">USF Origem</label>
+                    <input id="campo-usf" type="text" value={solicitacaoDetalhe.usfOrigem} readonly class="w-full bg-gray-100 border-gray-300 rounded-lg p-2" />
                   </div>
                    <div>
-                    <label class="text-sm font-medium text-gray-700">CNS</label>
-                    <input type="text" value={solicitacaoSelecionada.cns || 'N/A'} readonly class="w-full bg-gray-100 border-gray-300 rounded-lg p-2" />
+                    <label for="campo-cns" class="text-sm font-medium text-gray-700">CNS</label>
+                    <input id="campo-cns" type="text" value={solicitacaoDetalhe.cns || 'N/A'} readonly class="w-full bg-gray-100 border-gray-300 rounded-lg p-2" />
                   </div>
                 </div>
 
-                <div class="flex flex-col mt-4">
-                  <label class="text-sm font-medium text-gray-700 mb-2">Exames Pendentes:</label>
-                  {#if solicitacaoSelecionada.especialidadesPendentes.length > 0}
+                <fieldset class="flex flex-col mt-4">
+                  <legend class="text-sm font-medium text-gray-700 mb-2">Exames Pendentes:</legend>
+                  {#if solicitacaoDetalhe.especialidades.length > 0}
                     <div class="space-y-2 border border-gray-200 rounded-lg p-3 max-h-60 overflow-y-auto">
-                      {#each solicitacaoSelecionada.especialidadesPendentes as especialidadeNome (especialidadeNome)}
+                      {#each solicitacaoDetalhe.especialidades as especialidade (especialidade.codigo)}
                         <label class="flex items-center space-x-2 p-2 rounded hover:bg-gray-50 cursor-pointer">
                           <input
                             type="checkbox"
-                            value={especialidadeNome}
+                            value={especialidade.codigo}
                             bind:group={examesSelecionados}
                             class="form-checkbox h-4 w-4 text-emerald-600 rounded focus:ring-emerald-500"
                           />
-                          <span class="text-gray-700">{getEspecialidadeLabel(especialidadeNome)}</span>
+                          <span class="text-gray-700">{especialidade.nome || getEspecialidadeLabel(especialidade.codigo)}</span>
                         </label>
                       {/each}
                     </div>
                   {:else}
                     <p class="text-sm text-gray-500 italic mt-2">Nenhum exame pendente para esta solicitação.</p>
                   {/if}
-                </div>
+                </fieldset>
 
-                {#if solicitacaoSelecionada.especialidadesPendentes.length > 0}
+                {#if solicitacaoDetalhe.especialidades.length > 0}
                   <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mt-4">
                     <div>
                       <label for="dataAgendada" class="text-sm font-medium text-gray-700 mb-1">Data do Agendamento</label>
@@ -491,6 +660,18 @@ function selecionarSolicitacao(solicitacao) {
                           </option>
                         {/each}
                       {/if}
+                    </select>
+                  </div>
+
+                  <div class="flex flex-col mt-4">
+                    <label for="orientacoes" class="text-sm font-medium text-gray-700 mb-1">Preparo</label>
+                    <select name="" id="" class="w-full border border-gray-300 rounded-lg p-2" bind:value={preparoSelecionado} onchange={aplicarPreparo}>
+                      <option value="">Selecione...</option>
+                      <option value="USG_ABD_TOTAL">Preparo de USG Abdomen Total</option>
+                      <option value="USG_PARTES_MOLES_TIREOIDE">Preparo de USG PARTES MOLES E USG TIREOIDE </option>
+                      <option value="USG_RINS_PROSTATA">Preparo de USG DE US DE RINS E VIAS URINÁRIAS,
+USG DE PRÓSTATA</option>
+                        <option value="LABORATORIO">Preparo de Laboratório</option>
                     </select>
                   </div>
                   <div class="flex flex-col mt-4">

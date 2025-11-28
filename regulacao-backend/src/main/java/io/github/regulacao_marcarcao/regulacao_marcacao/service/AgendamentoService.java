@@ -1,15 +1,20 @@
 package io.github.regulacao_marcarcao.regulacao_marcacao.service;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.stream.Collectors;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import io.github.regulacao_marcarcao.regulacao_marcacao.dto.agendamentoDTO.AgendamentoSendDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.agendamentoDTO.AgendamentoSolicitacaoSimpleViewDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.agendamentoDTO.AgendamentoViewDto;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.agendamentoDTO.MultiAgendamentoCreateDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.solicitacoesDTO.AgendamentoSolicitacaoCreateDTO;
+import io.github.regulacao_marcarcao.regulacao_marcacao.dto.solicitacoesDTO.SolicitacaoResumoDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.AgendamentoSolicitacao;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.LocalAgendamento;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.Solicitacao;
@@ -44,6 +49,13 @@ public class AgendamentoService {
                 .anyMatch(e -> e.getStatus() == StatusDaMarcacao.AGUARDANDO || e.getStatus() == StatusDaMarcacao.RETORNO || e.getStatus() == StatusDaMarcacao.RETORNO_POLICLINICA))
             .map(AgendamentoViewDto::fromSolicitacao)
             .collect(Collectors.toList());
+    }
+
+    @Transactional(readOnly = true)
+    public Page<SolicitacaoResumoDTO> buscarPendentesParaAutoComplete(String termo, Pageable pageable){
+        var statusPendentes = List.of(StatusDaMarcacao.RETORNO, StatusDaMarcacao.RETORNO_POLICLINICA, StatusDaMarcacao.AGUARDANDO);
+
+        return solicitacaoRepository.buscarPendentesPorTermo(statusPendentes, termo, pageable);
     }
 
     /**
@@ -193,6 +205,16 @@ public class AgendamentoService {
         } catch (IllegalArgumentException ex) {
             return null;
         }
+    }
+
+    @Transactional
+    public List<AgendamentoSendDTO> buscarPorDataparaEnvio(int dias){
+
+        LocalDate hoje = LocalDate.now();
+        LocalDate dataAlvo = hoje.plusDays(dias);
+        var agendamentos = agendamentoRepository.findByDataAgendada(dataAlvo);
+
+        return agendamentos.stream().map(AgendamentoSendDTO::fromEntity).toList();
     }
 
     @Transactional

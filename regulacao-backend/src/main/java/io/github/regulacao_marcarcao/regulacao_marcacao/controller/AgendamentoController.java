@@ -5,16 +5,19 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import io.github.regulacao_marcarcao.regulacao_marcacao.dto.agendamentoDTO.AgendamentoSendDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.agendamentoDTO.AgendamentoSolicitacaoSimpleViewDTO;
-import io.github.regulacao_marcarcao.regulacao_marcacao.dto.agendamentoDTO.AgendamentoViewDto;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.agendamentoDTO.ContagemPainelDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.agendamentoDTO.MultiAgendamentoCreateDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.agendamentoDTO.PacienteAgendadoDTO;
+import io.github.regulacao_marcarcao.regulacao_marcacao.dto.solicitacoesDTO.SolicitacaoResumoDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.SolicitacaoEspecialidade;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.enums.EspecialidadesEnum;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.SolicitacaoEspecialidadeRepository;
@@ -36,10 +39,11 @@ public class AgendamentoController {
     /**
      * Lista todas as solicitações pendentes para agendamento.
      */
-    @GetMapping("/pendentes")
-    public ResponseEntity<List<AgendamentoViewDto>> listarSolicitacoesPendentes() {
-        List<AgendamentoViewDto> pendentes = agendamentoService.listarSolicitacoesPendentes();
-        return ResponseEntity.ok(pendentes);
+    @GetMapping("/pendentes/buscar")
+    public ResponseEntity<Page<SolicitacaoResumoDTO>> buscarPendentes(@RequestParam(required = false, defaultValue = "") String termo, @RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "20") int size ) {
+        
+        PageRequest pageable = PageRequest.of(page, size);
+        return ResponseEntity.ok(agendamentoService.buscarPendentesParaAutoComplete(termo, pageable));
     }
 
     /**
@@ -228,7 +232,10 @@ public class AgendamentoController {
         return resultados;
     }
 
-
+    @GetMapping("/buscar/por/data")
+    public ResponseEntity<List<AgendamentoSendDTO>> buscarAgendamentoPorData(@RequestParam int dias){
+        return ResponseEntity.ok(agendamentoService.buscarPorDataparaEnvio(dias));
+    }
     
 
 
@@ -258,6 +265,8 @@ public class AgendamentoController {
             .distinct() // Garante que a mesma solicitação não apareça duplicada se tiver mais de um exame na mesma categoria
             .toList();
     }
+
+    
 
    
 }

@@ -1,9 +1,10 @@
 package io.github.regulacao_marcarcao.regulacao_marcacao.entity;
 
 import java.time.LocalDate;
+import java.util.List;
+
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.enums.LocalDeAgendamentoEnum;
 import jakarta.persistence.FetchType;
-import io.github.regulacao_marcarcao.regulacao_marcacao.entity.LocalAgendamento;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.enums.TurnoEnum;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -14,6 +15,7 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
+import jakarta.persistence.OneToMany;
 import jakarta.persistence.Table;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
@@ -45,6 +47,9 @@ public class AgendamentoSolicitacao {
     
     @Column(name = "observacoes", length = 500)
     private String observacoes;
+
+    @OneToMany(mappedBy = "agendamentoSolicitacao", fetch = FetchType.LAZY)
+    private List<SolicitacaoEspecialidade> especialidades;
     
 
     @ManyToOne()
@@ -54,6 +59,8 @@ public class AgendamentoSolicitacao {
     @Column(name = "turno")
     @Enumerated(EnumType.STRING)
     private TurnoEnum turno;
+
+
 
 }
 
