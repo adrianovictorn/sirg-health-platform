@@ -1,7 +1,10 @@
 package io.github.regulacao_marcarcao.regulacao_marcacao.entity;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
+
+import org.hibernate.annotations.CreationTimestamp;
 
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.enums.LocalDeAgendamentoEnum;
 import jakarta.persistence.FetchType;
@@ -59,6 +62,11 @@ public class AgendamentoSolicitacao {
     @Column(name = "turno")
     @Enumerated(EnumType.STRING)
     private TurnoEnum turno;
+
+
+    @CreationTimestamp
+    @Column(name = "data_criacao")
+    private LocalDateTime dataCriacao;
 
 
 

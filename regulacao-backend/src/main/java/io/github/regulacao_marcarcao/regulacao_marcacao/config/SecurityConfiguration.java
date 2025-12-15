@@ -39,6 +39,12 @@ public class SecurityConfiguration {
                 auth.requestMatchers("/api/auth/**").permitAll();
                 auth.requestMatchers("/actuator/**").permitAll();
                 auth.requestMatchers(HttpMethod.GET, "/api/solicitacoes/public/**").permitAll();
+                auth.requestMatchers( 
+                    "/swagger-ui.html",
+                                "/swagger-ui/index.html",
+                                "/swagger-ui/**",
+                                "/v3/api-docs",
+                                "/v3/api-docs/**").permitAll();
                 // Fluxo de agendamento: busca pendentes e detalhes de solicitação
                 auth.requestMatchers(HttpMethod.GET, "/api/agendamentos/pendentes/buscar").permitAll();
                 auth.requestMatchers(HttpMethod.GET, "/api/agendamentos/pendentes/**").permitAll();

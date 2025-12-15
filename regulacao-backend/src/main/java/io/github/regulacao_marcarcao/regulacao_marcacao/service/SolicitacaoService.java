@@ -1,4 +1,4 @@
-package io.github.regulacao_marcarcao.regulacao_marcacao.service;
+﻿package io.github.regulacao_marcarcao.regulacao_marcacao.service;
 
 import java.util.Arrays;
 import java.util.Comparator;
@@ -43,6 +43,7 @@ import io.github.regulacao_marcarcao.regulacao_marcacao.repository.SolicitacaoRe
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.SolicitacaoSpecification;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.solicitacoesDTO.SolicitacaoListFiltersDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.solicitacoesDTO.SolicitacaoPublicViewDTO;
+import io.github.regulacao_marcarcao.regulacao_marcacao.dto.solicitacoesDTO.SolicitacaoSimpleViewDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.StatusCountProjection;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.UsfPendentesProjection;
 import jakarta.persistence.EntityNotFoundException;
@@ -436,6 +437,8 @@ public class SolicitacaoService {
     public SolicitacaoAgendamentoViewDTO buscarSolicitacaoPorId(Long id){
         return SolicitacaoAgendamentoViewDTO.fromEntity(solicitacaoRepository.findById(id).orElseThrow(() -> new EntityNotFoundException("Solicitação não encontrada !")));
     }
+ 
+
 }
 
 

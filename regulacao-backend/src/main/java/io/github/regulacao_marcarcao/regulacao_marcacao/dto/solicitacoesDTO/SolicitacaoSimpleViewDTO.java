@@ -1,4 +1,4 @@
-package io.github.regulacao_marcarcao.regulacao_marcacao.dto.solicitacoesDTO;
+    package io.github.regulacao_marcarcao.regulacao_marcacao.dto.solicitacoesDTO;
 
 import java.util.List;
 
