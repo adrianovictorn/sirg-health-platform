@@ -109,7 +109,17 @@ public enum EspecialidadesEnum {
     ULTRASSONOGRAFIA_DOPPLER_VENOSO_MEMBRO_INFERIOR_BILATERAL(ItemCategoria.EXAME_OU_PROCEDIMENTO, "USG Doppler Venoso MI Bilateral"),
     ULTRASSONOGRAFIA_DOPPLER_CAROTIDAS_E_VERTEBRAIS(ItemCategoria.EXAME_OU_PROCEDIMENTO, "USG Doppler Carótidas e Vertebrais"),
     ULTRASSONOGRAFIA_MAMARIA(ItemCategoria.EXAME_OU_PROCEDIMENTO, "USG Mamária"),
-
+   
+    USG_PUNHO_ESQUERDO(ItemCategoria.EXAME_OU_PROCEDIMENTO, "USG Punho Esquerdo"),
+    USG_PUNHO_DIREITO(ItemCategoria.EXAME_OU_PROCEDIMENTO, "USG Punho Direito"),
+    USG_OMBRO_DIREITO(ItemCategoria.EXAME_OU_PROCEDIMENTO, "USG Ombro Direito"),
+    USG_OMBRO_ESQUERDO(ItemCategoria.EXAME_OU_PROCEDIMENTO, "USG Ombro Esquerdo"),
+    USG_JOELHO_ESQUERDO(ItemCategoria.EXAME_OU_PROCEDIMENTO, "USG Joelho Esquerdo"),
+    USG_JOELHO_D(ItemCategoria.EXAME_OU_PROCEDIMENTO, "USG Joelho Direito"),
+    USG_JOELHO_E(ItemCategoria.ESPECIALIDADE_MEDICA, "USG Joelho Esquerdo_"),
+    USG_DORSAL(ItemCategoria.EXAME_OU_PROCEDIMENTO, "USG Dorsal"),
+    USG_UMBILICAL(ItemCategoria.EXAME_OU_PROCEDIMENTO, "USG Umbilical"),
+    USG_DE_MAO(ItemCategoria.EXAME_OU_PROCEDIMENTO, "USG de Mão"),
 
     //RAIO X
     RAIO_X_TORAX_PA(ItemCategoria.EXAME_OU_PROCEDIMENTO, "Raio-X Tórax PA"),
