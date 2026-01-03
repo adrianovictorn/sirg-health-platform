@@ -85,7 +85,7 @@
   let examesDaSolicitacaoAtual = $state<any[]>([]);
 
   // --- Lógica de Carregamento e Envio ---
-
+//
   async function carregarListaSolicitacoes() {
     try {
       const response = await getApi('solicitacoes');
