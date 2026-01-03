@@ -1,4 +1,4 @@
-package io.github.regulacao_marcarcao.regulacao_marcacao.controller;
+﻿package io.github.regulacao_marcarcao.regulacao_marcacao.controller;
 
 import java.util.List;
 import org.springframework.data.domain.Page;
@@ -46,9 +46,11 @@ public class SolicitacaoController {
 
     @GetMapping
     @PreAuthorize("hasAnyRole('ADMIN', 'USER', 'RECEPCAO', 'ENFERMEIRO', 'MEDICO', 'COORD_TRANSPORTE')") 
-    public ResponseEntity<List<SolicitacaoViewDTO>> listarSolicitacoes(){
-       List<SolicitacaoViewDTO> lista = service.todasSolicitacoes();
-       return ResponseEntity.ok(lista);
+    public ResponseEntity<Page<SolicitacaoViewDTO>> listarSolicitacoes(
+        @RequestParam(defaultValue = "0", name = "page") int page,
+        @RequestParam(defaultValue = "10", name = "size") int size
+    ){
+       return ResponseEntity.ok(service.todasSolicitacoes(page, size));
     }
 
     @GetMapping("/pacientes")

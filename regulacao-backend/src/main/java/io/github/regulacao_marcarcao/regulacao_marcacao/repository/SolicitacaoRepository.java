@@ -61,4 +61,7 @@ public interface SolicitacaoRepository extends JpaRepository<Solicitacao, Long>,
         Pageable pageable
     );
 
+
+    Page<Solicitacao> findAll(Pageable pageable);
+
 }

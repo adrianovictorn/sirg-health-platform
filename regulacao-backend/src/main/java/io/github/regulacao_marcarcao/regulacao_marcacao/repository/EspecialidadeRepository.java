@@ -14,5 +14,6 @@ public interface EspecialidadeRepository extends JpaRepository<Especialidade, Lo
     List<Especialidade> findByCodigoIn(Collection<String> codigos);
     List<Especialidade> findByNomeIn(Collection<String> nomes);
     List<Especialidade> findByCategoria(ItemCategoria categoria);
+    List<Especialidade> findByCategoriaAndAtivoTrue(ItemCategoria categoria);
 }
 

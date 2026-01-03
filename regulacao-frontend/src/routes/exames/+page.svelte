@@ -1,20 +1,39 @@
 <script lang='ts'>
-  import { getApi, postApi } from '$lib/api';
+    import { getApi, postApi } from '$lib/api';
     import UserMenu from '$lib/UserMenu.svelte';
     import { Label } from 'bits-ui';
-  import { onMount } from 'svelte';
-  import { listarExamesProcedimentos } from '$lib/especialidadesApi.js';
+    import { onMount } from 'svelte';
+    import { listarExamesProcedimentos } from '$lib/especialidadesApi.js';
     import RoleBasedMenu from '$lib/RoleBasedMenu.svelte';
+    import { readonly } from 'svelte/store';
+
+    interface EspecialidadeDTO{
+      id: number,
+      codigo: string,
+      nome: string,
+    }
+
+    type CheckboxItem = {
+      id:number, label:string, value:string, selecionado:boolean
+    }
 
     let labelMap = new Map<string,string>();
-    let todosOsExamesDoEnum: { label:string, value:string, selecionado:boolean }[] = [];
+    let todosOsExamesDoEnum: { n }[] = [];
+    let exames = $state<EspecialidadeDTO[]>([])
 
     async function carregarExamesDoCatalogo() {
       try {
-        const lista = await listarExamesProcedimentos();
-        labelMap = new Map(lista.map((e:any) => [e.codigo, e.nome]));
-        todosOsExamesDoEnum = lista.map((e:any) => ({ label: e.nome, value: e.codigo, id: e.id, selecionado: false }));
-        examesDisponiveisParaCheckbox = todosOsExamesDoEnum;
+        const res = await getApi("/catalog/especialidades/listar/exames");
+        exames = (await res.json()) as EspecialidadeDTO[]
+
+        
+        examesDisponiveisParaCheckbox = exames.map((e) => ({
+          id: e.id,
+          label: e.nome,
+          value: e.codigo,
+          selecionado: false
+        })) ;
+
       } catch (e) {
         console.warn('Falha ao carregar catálogo de exames', e);
       }
@@ -22,7 +41,7 @@
 
  
   let termoBusca = $state('');
-  let examesDisponiveisParaCheckbox = $state(todosOsExamesDoEnum);
+  let examesDisponiveisParaCheckbox = $state<CheckboxItem[]>([])
   let listaDeSolicitacoesParaDropdown = $state<any[]>([]);
   let erroAoCarregar = $state<string | null>(null);
   let isUrgente = $state(false);
@@ -31,9 +50,7 @@
   let valorBusca = $state('');
   let comboboxAberto = $state(false);
 
-     const examesParaConsulta = $derived (examesDisponiveisParaCheckbox.filter(exame => {
-      return exame.label.toLowerCase().includes(termoBusca.toLowerCase());
-    }))
+     const examesParaConsulta = $derived(() => examesDisponiveisParaCheckbox.filter(exame => exame.label.toLocaleLowerCase().includes(termoBusca.toLocaleLowerCase())));
 
   const solicitacoesFiltradas = $derived(() => {
     if (!valorBusca) {
@@ -45,6 +62,10 @@
   });
 
   function selecionarSolicitacao(solicitacao) {
+    if(!solicitacao){
+      limparFormularioCompleto()
+      return;
+    }
     valorBusca = solicitacao.label;
     carregarDadosSolicitacao(solicitacao.value);
     comboboxAberto = false;
@@ -60,6 +81,7 @@
   let dataMalote = $state('');
   let observacoes = $state('');
   let inputsReadonly = $state(false);
+  let telefone = $state('');
   let examesDaSolicitacaoAtual = $state<any[]>([]);
 
   // --- Lógica de Carregamento e Envio ---
@@ -71,10 +93,12 @@
         throw new Error('Falha ao buscar a lista de solicitações.');
       }
       const data = await response.json();
-      listaDeSolicitacoesParaDropdown = data.map(sol => ({
-        value: sol.id,
-        label: `${sol.nomePaciente} (CPF: ${sol.cpfPaciente || 'N/A'})`
-      }));
+      listaDeSolicitacoesParaDropdown = data.content.map(s => ({
+        value: s.id,
+        label: `${s.nomePaciente} - (CPF: ${s.cpfPaciente || 'N/A'})`
+      }))
+
+      console.log(listaDeSolicitacoesParaDropdown)
     } catch (e: any) {
       erroAoCarregar = e.message;
     }
@@ -99,6 +123,7 @@
       datanascimento = s.datanascimento ? s.datanascimento.split('T')[0] : '';
       usfOrigem = s.usfOrigem || '';
       dataMalote = s.dataMalote ? s.dataMalote.split('T')[0] : '';
+      telefone = s.telefone || '';
       inputsReadonly = true;
       examesDisponiveisParaCheckbox.forEach(ex => ex.selecionado = false);
 
@@ -120,8 +145,7 @@
     const prioridadeDaSolicitacao = isUrgente ? 'URGENTE' : 'NORMAL';
 
 
-    // MODO UPDATE
-    // MODO UPDATE
+    
     if (idSolicitacao) {
       const paraAdicionar = examesSelecionados
         // A linha de filtro foi removida daqui
@@ -159,9 +183,17 @@
 
       const prioridadeDaSolicitacao = isUrgente ? 'URGENTE' : 'NORMAL';
       const payloadNovaSolicitacao = {
-        nomePaciente, cpfPaciente, cns, datanascimento, usfOrigem, dataMalote, observacoes,
+        usfOrigem, 
+        nomePaciente,
+        cpfPaciente,
+        cns, 
+        telefone,
+        datanascimento, 
+        dataMalote, 
+        observacoes,
         especialidades: examesSelecionados.map(sel => ({
             especialidadeId: sel.id,
+            especialidadeSolicitada: sel.value,
             status: 'AGUARDANDO',
             prioridade: prioridadeDaSolicitacao
         }))
@@ -170,7 +202,6 @@
       postApi('solicitacoes', payloadNovaSolicitacao).then(async res => {
         if (res.ok) {
             alert('Nova solicitação criada com sucesso!');
-            limparFormularioCompleto();
             await carregarListaSolicitacoes();
         } else {
             const errorData = await res.json().catch(() => ({}));
@@ -195,7 +226,11 @@
     examesDaSolicitacaoAtual = [];
     valorBusca = '';
   }
-  
+
+  function removerSolicitacaoSelecionada(){
+    selecionarSolicitacao(null)
+  }
+
   function formatarCPF(e: Event) {
     const target = e.target as HTMLInputElement;
     let value = target.value.replace(/\D/g, '').slice(0, 11);
@@ -222,31 +257,44 @@
     <main class="flex-1 overflow-auto p-6">
       <div class="bg-white rounded-lg shadow-lg p-6">
         
-        <div class="mb-6">
+        <div class="">
+          
           <label for="selectSolicitacao" class="block text-lg font-medium text-gray-700 mb-2">Carregar Solicitação Existente:</label>
-          <div class="relative">
-            <input 
-              id="combobox"
-              type="text" 
-              bind:value={valorBusca}
-              onfocus={() => comboboxAberto = true}
-              onblur={() => setTimeout(() => { comboboxAberto = false }, 150)}
-              placeholder="Digite para buscar ou selecione uma solicitação"
-              class="border border-gray-300 rounded-lg p-3 w-full focus:ring-emerald-500 focus:border-emerald-500 text-base"
-            />
-            
-           {#if comboboxAberto && solicitacoesFiltradas().length > 0}
-              <ul class="absolute z-10 w-full bg-white border border-gray-300 rounded-lg mt-1 max-h-60 overflow-y-auto">
-                {#each solicitacoesFiltradas() as sol (sol.value)}
-                  <li 
-                    onmousedown={() => selecionarSolicitacao(sol)}
-                    class="p-3 hover:bg-emerald-100 cursor-pointer"
-                  >
-                    {sol.label}
-                  </li>
-                {/each}
-              </ul>
-            {/if}
+          <div class=" relative grid grid-cols-[1fr_auto] items-center gap-2">
+            <div class="relative">
+              <input
+                id="combobox"
+                type="text"
+                bind:value={valorBusca}
+                onfocus={() => comboboxAberto = true}
+                onblur={() => setTimeout(() => { comboboxAberto = false }, 150)}
+                placeholder="Digite para buscar ou selecione uma solicitação"
+                class="border border-gray-300 rounded-lg p-3 w-full focus:ring-emerald-500 focus:border-emerald-500 text-base"
+              
+                />
+
+                 {#if comboboxAberto && solicitacoesFiltradas().length > 0}
+                  <ul class="absolute z-10 w-full bg-white border border-gray-300 rounded-lg mt-1 max-h-60 overflow-y-auto">
+                    {#each solicitacoesFiltradas() as sol (sol.value)}
+                      <li 
+                        onmousedown={() => selecionarSolicitacao(sol)}
+                        class="p-3 hover:bg-emerald-100 cursor-pointer"
+                      >
+                        {sol.label}
+                      </li>
+
+                      {/each}
+                    </ul>
+                {/if}
+            </div>
+
+              <button type="button" aria-label="Remover" onclick={removerSolicitacaoSelecionada}>
+                <svg class="w-6 h-6 text-gray-800 dark:text-white" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24">
+                <path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18 17.94 6M18 18 6.06 6"/>
+                </svg>
+            </button>
+
+          
           </div>
           {#if erroAoCarregar}
             <p class="text-red-500 text-sm mt-1">{erroAoCarregar}</p>
@@ -261,7 +309,7 @@
           
           <fieldset class="border border-gray-300 p-4 rounded-lg">
             <legend class="text-xl font-semibold text-gray-700 px-2">Dados do Paciente</legend>
-            <div class="grid grid-cols-1 lg:grid-cols-4 gap-6 mt-4">
+            <div class="grid grid-cols-1 lg:grid-cols-5 gap-6 mt-4">
               <div class="flex flex-col">
                 <label for="nomePaciente" class="text-sm font-medium text-gray-700 mb-1">Nome</label>
                 <input id="nomePaciente" type="text" bind:value={nomePaciente} readonly={inputsReadonly} class:bg-gray-100={inputsReadonly} class="border border-gray-300 rounded-lg p-2 focus:ring-emerald-500 focus:border-emerald-500" required />
@@ -277,6 +325,10 @@
               <div class="flex flex-col">
                 <label for="datanascimento" class="text-sm font-medium text-gray-700 mb-1">Data de Nasc.</label>
                 <input id="datanascimento" type="date" bind:value={datanascimento} readonly={inputsReadonly} class:bg-gray-100={inputsReadonly} class="border border-gray-300 rounded-lg p-2 focus:ring-emerald-500 focus:border-emerald-500" required />
+              </div>
+              <div>
+                <label for="telefone" class="text-sm font-medium text-gray-700 mb-1">Telefone</label>
+                <input id="telefone" type="text" bind:value={telefone} readonly={inputsReadonly} class:bg-gray-100={inputsReadonly} class="border border-gray-300 rounded-lg p-2 focus:ring-emerald-500 focus:border-emerald-500" >
               </div>
             </div>
           </fieldset>
@@ -322,7 +374,7 @@
             <input type="text" class="rounded  w-full border-gray-300 p-2" placeholder="Digite o exame aqui para agilizar a seleção..." bind:value={termoBusca}>
             <p class="text-xs text-gray-500 mb-3">Marque os exames desejados. Eles serão adicionados com status "AGUARDANDO" e prioridade "NORMAL".</p>
             <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-4 gap-y-3 mt-4 max-h-96 overflow-y-auto pr-2">
-              {#each examesParaConsulta as exameLab, i (exameLab.value)}
+              {#each examesParaConsulta() as exameLab, i (exameLab.value)}
                 <label for="exameChk-{i}" class="flex items-center space-x-2 p-2 border border-gray-200 rounded-md hover:bg-gray-50 transition cursor-pointer">
                   <input type="checkbox" id="exameChk-{i}" bind:checked={exameLab.selecionado} class="form-checkbox h-4 w-4 text-emerald-600 rounded focus:ring-emerald-500">
                   <span class="text-sm text-gray-700 select-none">{exameLab.label}</span>

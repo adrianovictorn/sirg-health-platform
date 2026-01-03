@@ -4,6 +4,7 @@ import io.github.regulacao_marcarcao.regulacao_marcacao.dto.especialidade.Especi
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.Especialidade;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.enums.ItemCategoria;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.EspecialidadeRepository;
+import io.github.regulacao_marcarcao.regulacao_marcacao.service.EspecialidadeService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -19,6 +20,12 @@ import java.util.stream.Collectors;
 public class EspecialidadeController {
 
     private final EspecialidadeRepository repository;
+    private final EspecialidadeService service;
+
+    @GetMapping("/listar/exames")
+    public ResponseEntity<List<EspecialidadeDTO>> listarExames(){
+        return ResponseEntity.ok(service.listarEspecialidades());
+    }
 
     @GetMapping
     public List<EspecialidadeDTO> listar() {

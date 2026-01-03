@@ -14,6 +14,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -43,7 +44,6 @@ import io.github.regulacao_marcarcao.regulacao_marcacao.repository.SolicitacaoRe
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.SolicitacaoSpecification;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.solicitacoesDTO.SolicitacaoListFiltersDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.solicitacoesDTO.SolicitacaoPublicViewDTO;
-import io.github.regulacao_marcarcao.regulacao_marcacao.dto.solicitacoesDTO.SolicitacaoSimpleViewDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.StatusCountProjection;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.UsfPendentesProjection;
 import jakarta.persistence.EntityNotFoundException;
@@ -280,8 +280,9 @@ public class SolicitacaoService {
     }
 
     @Transactional(readOnly = true)
-    public List<SolicitacaoViewDTO> todasSolicitacoes(){
-        return solicitacaoRepository.findAll().stream().map(SolicitacaoViewDTO::fromSolicitacao).collect(Collectors.toList());
+    public Page<SolicitacaoViewDTO> todasSolicitacoes(int page, int size){
+        Pageable pagina = PageRequest.of(page, size, Sort.by("nomePaciente").ascending());
+        return solicitacaoRepository.findAll(pagina).map(SolicitacaoViewDTO::fromSolicitacao);
     }
 
     @Transactional(readOnly = true)

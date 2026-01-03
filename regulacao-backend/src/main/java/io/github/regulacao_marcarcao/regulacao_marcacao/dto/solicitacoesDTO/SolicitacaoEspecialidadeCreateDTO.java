@@ -12,3 +12,4 @@ public record SolicitacaoEspecialidadeCreateDTO(
     StatusDaMarcacao status,
     PrioridadeDaMarcacaoEnum prioridade
 ) { }
+    
