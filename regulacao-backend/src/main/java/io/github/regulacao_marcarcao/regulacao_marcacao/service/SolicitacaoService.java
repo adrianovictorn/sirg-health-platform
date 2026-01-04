@@ -1,4 +1,4 @@
-﻿package io.github.regulacao_marcarcao.regulacao_marcacao.service;
+package io.github.regulacao_marcarcao.regulacao_marcacao.service;
 
 import java.util.Arrays;
 import java.util.Comparator;

@@ -1,4 +1,4 @@
-﻿package io.github.regulacao_marcarcao.regulacao_marcacao.controller;
+package io.github.regulacao_marcarcao.regulacao_marcacao.controller;
 
 import java.util.List;
 import org.springframework.data.domain.Page;
