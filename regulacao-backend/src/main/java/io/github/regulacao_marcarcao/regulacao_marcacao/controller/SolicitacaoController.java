@@ -20,6 +20,7 @@ import io.github.regulacao_marcarcao.regulacao_marcacao.dto.solicitacaoEspeciali
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.solicitacoesDTO.SolicitacaoAgendamentoViewDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.solicitacoesDTO.SolicitacaoCreateDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.solicitacoesDTO.SolicitacaoPublicViewDTO;
+import io.github.regulacao_marcarcao.regulacao_marcacao.dto.solicitacoesDTO.SolicitacaoSimpleViewDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.solicitacoesDTO.SolicitacaoUpdateDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.paciente.PacienteResumoDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.solicitacoesDTO.SolicitacaoViewDTO;
@@ -119,6 +120,15 @@ public class SolicitacaoController {
     @GetMapping("/buscar/{id}")
     public ResponseEntity<SolicitacaoAgendamentoViewDTO> buscarPorId2 (@PathVariable Long id){
     return ResponseEntity.ok(service.buscarSolicitacaoPorId(id));
+    }
+
+    @GetMapping("/buscar/por/nome/cpf")
+    public ResponseEntity<Page<SolicitacaoSimpleViewDTO>> buscarPorNomeOuCPF(
+        @RequestParam(defaultValue = "0", name = "page") int page,
+        @RequestParam(defaultValue = "10", name = "size") int size,
+        @RequestParam(required = false, name = "termo") String termo
+    ){
+        return ResponseEntity.ok(service.buscarPorNomeOuCpf(page, size, termo));
     }
 }
 

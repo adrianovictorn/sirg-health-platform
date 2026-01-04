@@ -63,5 +63,6 @@ public interface SolicitacaoRepository extends JpaRepository<Solicitacao, Long>,
 
 
     Page<Solicitacao> findAll(Pageable pageable);
+    Page<Solicitacao> findByNomePacienteContainingIgnoreCaseOrCpfPacienteContainingIgnoreCase(Pageable pageable, String nomePaciente, String cpfPaciente);
 
 }

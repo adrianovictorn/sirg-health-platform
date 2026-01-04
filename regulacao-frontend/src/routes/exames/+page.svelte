@@ -1,11 +1,8 @@
 <script lang='ts'>
     import { getApi, postApi } from '$lib/api';
     import UserMenu from '$lib/UserMenu.svelte';
-    import { Label } from 'bits-ui';
     import { onMount } from 'svelte';
-    import { listarExamesProcedimentos } from '$lib/especialidadesApi.js';
     import RoleBasedMenu from '$lib/RoleBasedMenu.svelte';
-    import { readonly } from 'svelte/store';
 
     interface EspecialidadeDTO{
       id: number,
@@ -18,14 +15,14 @@
     }
 
     let labelMap = new Map<string,string>();
-    let todosOsExamesDoEnum: { n }[] = [];
     let exames = $state<EspecialidadeDTO[]>([])
 
     async function carregarExamesDoCatalogo() {
       try {
         const res = await getApi("/catalog/especialidades/listar/exames");
-        exames = (await res.json()) as EspecialidadeDTO[]
+        const data = await res.json()
 
+        exames = data
         
         examesDisponiveisParaCheckbox = exames.map((e) => ({
           id: e.id,
@@ -49,17 +46,12 @@
   // Lógica do Combobox
   let valorBusca = $state('');
   let comboboxAberto = $state(false);
+  let size = $state(10)
+  let page = $state(0)
 
      const examesParaConsulta = $derived(() => examesDisponiveisParaCheckbox.filter(exame => exame.label.toLocaleLowerCase().includes(termoBusca.toLocaleLowerCase())));
 
-  const solicitacoesFiltradas = $derived(() => {
-    if (!valorBusca) {
-      return listaDeSolicitacoesParaDropdown;
-    }
-    return listaDeSolicitacoesParaDropdown.filter(sol =>
-      sol.label.toLowerCase().includes(valorBusca.toLowerCase())
-    );
-  });
+  
 
   function selecionarSolicitacao(solicitacao) {
     if(!solicitacao){
@@ -88,7 +80,13 @@
 //
   async function carregarListaSolicitacoes() {
     try {
-      const response = await getApi('solicitacoes');
+
+      const params = new URLSearchParams()
+      params.append("page", String(page))
+      params.append("size", String(size))
+      params.append("termo", valorBusca)
+
+      const response = await getApi(`solicitacoes/buscar/por/nome/cpf?${params.toString()}`);
       if (!response.ok) {
         throw new Error('Falha ao buscar a lista de solicitações.');
       }
@@ -202,6 +200,7 @@
       postApi('solicitacoes', payloadNovaSolicitacao).then(async res => {
         if (res.ok) {
             alert('Nova solicitação criada com sucesso!');
+            limparFormularioCompleto()
             await carregarListaSolicitacoes();
         } else {
             const errorData = await res.json().catch(() => ({}));
@@ -225,6 +224,7 @@
     examesDisponiveisParaCheckbox.forEach(ex => ex.selecionado = false);
     examesDaSolicitacaoAtual = [];
     valorBusca = '';
+    telefone = '';
   }
 
   function removerSolicitacaoSelecionada(){
@@ -268,14 +268,21 @@
                 bind:value={valorBusca}
                 onfocus={() => comboboxAberto = true}
                 onblur={() => setTimeout(() => { comboboxAberto = false }, 150)}
+                oninput={(e) => {
+                 const input = e.currentTarget as HTMLInputElement
+                 const valorDigitado = input.value
+                 valorBusca = valorDigitado
+                 carregarListaSolicitacoes()
+                 
+                }}
                 placeholder="Digite para buscar ou selecione uma solicitação"
                 class="border border-gray-300 rounded-lg p-3 w-full focus:ring-emerald-500 focus:border-emerald-500 text-base"
               
                 />
 
-                 {#if comboboxAberto && solicitacoesFiltradas().length > 0}
+                 {#if comboboxAberto && listaDeSolicitacoesParaDropdown.length > 0}
                   <ul class="absolute z-10 w-full bg-white border border-gray-300 rounded-lg mt-1 max-h-60 overflow-y-auto">
-                    {#each solicitacoesFiltradas() as sol (sol.value)}
+                    {#each listaDeSolicitacoesParaDropdown as sol (sol.value)}
                       <li 
                         onmousedown={() => selecionarSolicitacao(sol)}
                         class="p-3 hover:bg-emerald-100 cursor-pointer"
@@ -312,7 +319,7 @@
             <div class="grid grid-cols-1 lg:grid-cols-5 gap-6 mt-4">
               <div class="flex flex-col">
                 <label for="nomePaciente" class="text-sm font-medium text-gray-700 mb-1">Nome</label>
-                <input id="nomePaciente" type="text" bind:value={nomePaciente} readonly={inputsReadonly} class:bg-gray-100={inputsReadonly} class="border border-gray-300 rounded-lg p-2 focus:ring-emerald-500 focus:border-emerald-500" required />
+                <input id="nomePaciente" type="text" placeholder="Nome do Paciente" bind:value={nomePaciente} readonly={inputsReadonly} class:bg-gray-100={inputsReadonly} class="border border-gray-300 rounded-lg p-2 focus:ring-emerald-500 focus:border-emerald-500" required />
               </div>
               <div class="flex flex-col">
                 <label for="cpfPaciente" class="text-sm font-medium text-gray-700 mb-1">CPF</label>
@@ -328,7 +335,7 @@
               </div>
               <div>
                 <label for="telefone" class="text-sm font-medium text-gray-700 mb-1">Telefone</label>
-                <input id="telefone" type="text" bind:value={telefone} readonly={inputsReadonly} class:bg-gray-100={inputsReadonly} class="border border-gray-300 rounded-lg p-2 focus:ring-emerald-500 focus:border-emerald-500" >
+                <input id="telefone" type="text" bind:value={telefone} placeholder="Tel: (00) 0 0000-0000" maxlength="20" readonly={inputsReadonly} class:bg-gray-100={inputsReadonly} class="border border-gray-300 rounded-lg p-2 focus:ring-emerald-500 focus:border-emerald-500"  >
               </div>
             </div>
           </fieldset>
