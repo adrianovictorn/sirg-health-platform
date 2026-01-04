@@ -107,7 +107,7 @@ public class SolicitacaoController {
    @DeleteMapping("especialidades/{id}") 
     @PreAuthorize("hasAnyRole('ADMIN', 'USER', 'RECEPCAO', 'ENFERMEIRO', 'MEDICO')")
     public ResponseEntity<Void> deletarEspecialidade(@PathVariable Long id){
-        service.removerEspecialidade(id); // Chamando o serviço correto
+        service.removerEspecialidade(id); // Chamando o servico correto
         return ResponseEntity.noContent().build(); // Retorna 204 No Content
     }
 

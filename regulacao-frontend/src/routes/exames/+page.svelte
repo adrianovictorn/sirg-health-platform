@@ -19,8 +19,10 @@
 
     async function carregarExamesDoCatalogo() {
       try {
-        const res = await getApi("/catalog/especialidades/listar/exames");
+        const res = await getApi("catalog/especialidades/listar/exames");
+        console.log(`RES RECEBIDO EM CATALOGO: ${res}`)
         const data = await res.json()
+        console.log(`DATA RECEBIDA EM CATALOGO: ${data}`)
 
         exames = data
         

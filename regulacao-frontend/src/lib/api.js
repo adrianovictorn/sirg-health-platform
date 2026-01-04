@@ -53,7 +53,7 @@ async function send({ method, path, data }) {
   const url = `${base}/${path}`;
   const response = await fetch(url, opts);
   
-  // Se o token estiver invÃ¡lido/expirado (401), desloga o usuÃ¡rio.
+  // Se o token estiver inválido/expirado (401), desloga o usuÃ¡rio.
   if (response.status === 401) {
     token.set(null);
   }
@@ -61,7 +61,7 @@ async function send({ method, path, data }) {
   return response;
 }
 
-// FunÃ§Ãµes auxiliares para conveniÃªncia nas chamadas da API.
+// Função auxiliares para conveniÃªncia nas chamadas da API.
 export function getApi(path) {
   return send({ method: 'GET', path });
 }
