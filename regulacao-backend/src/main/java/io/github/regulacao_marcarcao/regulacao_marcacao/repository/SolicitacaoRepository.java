@@ -10,10 +10,13 @@ import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import io.github.regulacao_marcarcao.regulacao_marcacao.dto.solicitacoesDTO.SolicitacaoMinimalDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.solicitacoesDTO.SolicitacaoResumoDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.Solicitacao;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.enums.PrioridadeDaMarcacaoEnum;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.enums.StatusDaMarcacao;
+import io.github.regulacao_marcarcao.regulacao_marcacao.entity.enums.UsfEnum;
+import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.PendenciasPacienteProjection;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.StatusCountProjection;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.UsfPendentesProjection;
 
@@ -61,8 +64,43 @@ public interface SolicitacaoRepository extends JpaRepository<Solicitacao, Long>,
         Pageable pageable
     );
 
-
+    Page<PendenciasPacienteProjection> findByUsfOrigem(Pageable pageable, UsfEnum usfEnum);
     Page<Solicitacao> findAll(Pageable pageable);
     Page<Solicitacao> findByNomePacienteContainingIgnoreCaseOrCpfPacienteContainingIgnoreCase(Pageable pageable, String nomePaciente, String cpfPaciente);
 
+    @Query(value = """
+        SELECT 
+          s.id AS id,
+          s.nome_paciente AS nomePaciente,
+          s.cpf_paciente AS cpfPaciente,
+          s.datanascimento AS datanascimento,
+          s.cns AS cns,
+          STRING_AGG(DISTINCT e.nome, ', ' ORDER BY e.nome) AS especialidades
+        FROM solicitacao s
+        JOIN solicitacao_especialidade se ON s.id = se.solicitacao_id
+        JOIN especialidade e ON e.id = se.especialidade_id
+        WHERE se.status = :status
+          AND s.usf_origem = :usfOrigem
+          AND (
+                :termo IS NULL OR :termo = ''
+                OR lower(s.nome_paciente) LIKE concat('%', lower(:termo), '%')
+
+                OR (
+                  regexp_replace(:termo, '[^0-9]', '', 'g') <> ''
+                  AND regexp_replace(s.cpf_paciente, '[^0-9]', '', 'g')
+                    LIKE concat('%', regexp_replace(:termo, '[^0-9]', '', 'g'), '%')
+                )
+
+                OR s.cns LIKE concat('%', :termo, '%')
+                OR lower(e.nome) LIKE concat('%', lower(:termo), '%')
+              )
+        GROUP BY
+          s.id,
+          s.nome_paciente,
+          s.cpf_paciente,
+          s.datanascimento,
+          s.cns
+        ORDER BY s.nome_paciente ASC
+        """,nativeQuery = true)
+        Page<PendenciasPacienteProjection> listarPacientesPendentes(@Param("usfOrigem") String usfOrigem, @Param("status") String status, @Param("termo") String termo, Pageable pageable);
 }

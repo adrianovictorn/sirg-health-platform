@@ -1,8 +1,11 @@
 package io.github.regulacao_marcarcao.regulacao_marcacao.controller;
 
 import java.util.List;
-import org.springframework.data.domain.Page;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
@@ -19,6 +22,7 @@ import org.springframework.web.bind.annotation.RestController;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.solicitacaoEspecialidadeDTO.EspecialidadeAdicionarDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.solicitacoesDTO.SolicitacaoAgendamentoViewDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.solicitacoesDTO.SolicitacaoCreateDTO;
+import io.github.regulacao_marcarcao.regulacao_marcacao.dto.solicitacoesDTO.SolicitacaoMinimalDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.solicitacoesDTO.SolicitacaoPublicViewDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.solicitacoesDTO.SolicitacaoSimpleViewDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.solicitacoesDTO.SolicitacaoUpdateDTO;
@@ -27,6 +31,8 @@ import io.github.regulacao_marcarcao.regulacao_marcacao.dto.solicitacoesDTO.Soli
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.dashboard.DashboardResumoDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.User;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.enums.Roles;
+import io.github.regulacao_marcarcao.regulacao_marcacao.entity.enums.UsfEnum;
+import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.PendenciasPacienteProjection;
 import io.github.regulacao_marcarcao.regulacao_marcacao.service.SolicitacaoService;
 import jakarta.validation.Valid;
 import lombok.AllArgsConstructor;
@@ -130,7 +136,22 @@ public class SolicitacaoController {
     ){
         return ResponseEntity.ok(service.buscarPorNomeOuCpf(page, size, termo));
     }
+
+
+
+
+    @GetMapping("/buscar/por/status/usf")
+    public ResponseEntity<Page<PendenciasPacienteProjection>> buscarPorUsfeStatus(
+        @RequestParam(defaultValue = "0", name = "page") int page,
+        @RequestParam(defaultValue = "10", name = "size") int size,
+        @RequestParam(required = false, name = "termo") String termo,
+        @RequestParam(required = true, name = "usfOrigem") String usfEnum
+    ){
+        return ResponseEntity.ok(service.buscarPorStatusAguardandoeUsf(page, size, usfEnum, termo,"AGUARDANDO" ));
+    }
+
 }
+    
 
 
 

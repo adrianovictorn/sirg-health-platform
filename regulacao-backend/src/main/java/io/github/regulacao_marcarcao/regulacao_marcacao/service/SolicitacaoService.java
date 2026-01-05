@@ -16,6 +16,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -43,8 +44,10 @@ import io.github.regulacao_marcarcao.regulacao_marcacao.repository.SolicitacaoEs
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.SolicitacaoRepository;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.SolicitacaoSpecification;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.solicitacoesDTO.SolicitacaoListFiltersDTO;
+import io.github.regulacao_marcarcao.regulacao_marcacao.dto.solicitacoesDTO.SolicitacaoMinimalDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.solicitacoesDTO.SolicitacaoPublicViewDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.solicitacoesDTO.SolicitacaoSimpleViewDTO;
+import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.PendenciasPacienteProjection;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.StatusCountProjection;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.UsfPendentesProjection;
 import jakarta.persistence.EntityNotFoundException;
@@ -450,9 +453,21 @@ public class SolicitacaoService {
 
         return solicitacaoRepository.findByNomePacienteContainingIgnoreCaseOrCpfPacienteContainingIgnoreCase(pagina, termo, termo).map(SolicitacaoSimpleViewDTO::fromSolicitacao);
     } 
+
+    public Page<PendenciasPacienteProjection> buscarPorUsf(int page, int size, UsfEnum usfEnum){
+        Pageable pageable = PageRequest.of(page, size, Sort.by("nomePaciente").ascending());
+        return solicitacaoRepository.findByUsfOrigem(pageable, usfEnum);
+    }
+
+    public Page<PendenciasPacienteProjection> buscarPorStatusAguardandoeUsf(int page, int size, String usfEnum, String termo,String status){
+        Pageable pagina = PageRequest.of(page, size);
+
+        return solicitacaoRepository.listarPacientesPendentes(usfEnum, status, termo, pagina);
+    }
+}
  
 
-}
+
 
 
 

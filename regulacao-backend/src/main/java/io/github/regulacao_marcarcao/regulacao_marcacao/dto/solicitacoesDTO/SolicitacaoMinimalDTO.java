@@ -6,10 +6,10 @@ import java.util.List;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.AgendamentoSolicitacao;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.enums.UsfEnum;
 
-public record SolicitacaoMinimalDTO(
+public record  SolicitacaoMinimalDTO(
     String nomePaciente,
     String cpfPaciente,
-    LocalDate datanascimento,
+    LocalDate dataNascimento,
     UsfEnum usfOrigem,
     List<String> especialidades
 ) {
