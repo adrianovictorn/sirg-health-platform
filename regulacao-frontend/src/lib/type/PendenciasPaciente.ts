@@ -7,3 +7,13 @@ export type PacientePendentes = {
     nomePaciente: String,
 }
 
+export type UrgenciaEmergenciaPaciente = {
+    id: number | null,
+    cns: string,
+    cpfPaciente: string,
+    nomePaciente: string,
+    usfOrigem: string,
+    dataNascimento: [number, number,number],
+    itens: string
+}
+

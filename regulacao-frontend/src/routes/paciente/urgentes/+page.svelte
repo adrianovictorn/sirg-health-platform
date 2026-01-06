@@ -3,67 +3,50 @@
   import { getApi } from "$lib/api";
     import Menu from "$lib/Menu.svelte";
     import UserMenu from "$lib/UserMenu.svelte";
+    import type { UrgenciaEmergenciaPaciente } from "$lib/type/PendenciasPaciente";
 
   // --- Estado do Componente (Svelte 5 Runes) ---
   let isLoading = $state(true);
   let error = $state<string | null>(null);
-  let solicitacoesPendentes = $state<any[]>([]);
+  let solicitacoes = $state<UrgenciaEmergenciaPaciente[]>([]);
   
   let buscar = $state('');
   let currentPage = $state(1);
+  let totalPages = $state(0)
   const itemsPerPage = 10;
+  let totalPendentes = $state(0)
 
-  // --- Carregamento e Processamento de Dados (Client-Side) ---
-  onMount(async () => {
+
+  async function buscarUrgenteseEmergencias() {
+    
     try {
-      // 1. Busca os dados da API de forma autenticada
-      const response = await getApi('solicitacoes'); 
+      const response = await getApi("solicitacoes/buscar/por/urgentes?"); 
       if (!response.ok) {
         throw new Error('Falha ao carregar as solicitações do servidor.');
       }
-      const todasSolicitacoes = await response.json();
-
-      // 2. Filtra apenas as solicitações que têm itens pendentes
-      solicitacoesPendentes = todasSolicitacoes.filter((s: any) => 
-        s.especialidades.some((e: any) => (e.prioridade === 'URGENTE' || e.prioridade === 'EMERGENCIA') && e.status === 'AGUARDANDO')
-      );
-
+      const data = await response.json();
+      totalPages = data.totalPages
+     solicitacoes = data.content
+  
     } catch (e: any) {
       error = e.message;
     } finally {
       isLoading = false;
     }
+  }
+  
+  // --- Carregamento e Processamento de Dados (Client-Side) ---
+  onMount(async () => {
+    buscarUrgenteseEmergencias()
   });
 
   // --- Lógica Reativa com Runes ---
   // 3. Converte a sintaxe de reatividade de `$` para `$derived`
-  let filtradas = $derived(
-    buscar.trim()
-      ? solicitacoesPendentes.filter(s => {
-          const termo = buscar.toLowerCase();
-          const nomeMatch = s.nomePaciente.toLowerCase().includes(termo);
-          const cpfMatch = s.cpfPaciente.includes(termo);
-          const usfMatch = s.usfOrigem.toLowerCase().includes(termo);
-          const espMatch = s.especialidades.some((e: any) => e.especialidadeSolicitada.toLowerCase().includes(termo));
-          const prioMatch = s.especialidades.some((e: any) => e.prioridade.toLowerCase().includes(termo));
-          return nomeMatch || cpfMatch || usfMatch || espMatch || prioMatch;
-        })
-      : solicitacoesPendentes
-  );
+  
   
   // CORREÇÃO: Trocado 'filtrados' por 'filtradas' para corresponder ao nome da variável.
-  let totalPages = $derived(Math.ceil(filtradas.length / itemsPerPage));
-  let paged = $derived(filtradas.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage));
-
-  // Efeito para ajustar a página atual se a filtragem mudar
-  $effect(() => {
-      if (totalPages > 0 && currentPage > totalPages) {
-          currentPage = totalPages;
-      }
-  });
   
-  function prevPage() { if (currentPage > 1) currentPage--; }
-  function nextPage() { if (currentPage < totalPages) currentPage++; }
+  
 </script>
 
 
@@ -108,10 +91,10 @@
         {:else if error}
             <p class="text-center text-red-600 bg-red-100 p-4 rounded-lg">Erro ao carregar dados: {error}</p>
         {:else}
-            <p class="text-gray-600">Total: {filtradas.length}</p>
+            <p class="text-gray-600">Total: {totalPendentes}</p>
 
             <!-- List items -->
-            {#if filtradas.length === 0}
+            {#if totalPages === 0}
               <p class="text-center text-gray-500 py-10">
                 {#if buscar.trim()}
                     Nenhuma solicitação encontrada para "{buscar}".
@@ -121,9 +104,8 @@
               </p>
             {:else}
               <ul class="space-y-4">
-                {#each paged as s, idx (s.id)}
+                {#each solicitacoes as s}
                   <li class="bg-white border border-gray-200 rounded-lg p-4 hover:shadow transition flex">
-                    <div class="text-emerald-700 font-bold text-xl mr-4">{(currentPage - 1) * itemsPerPage + idx + 1}.</div>
                     <div class="flex-1">
                       <a href={`/paciente/${s.id}`} class="block hover:underline">
                         <h3 class="text-lg font-bold mb-2">{s.nomePaciente}</h3>
@@ -131,17 +113,14 @@
                       <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 text-sm">
                         <div><span class="font-semibold">CPF:</span> {s.cpfPaciente}</div>
                         <div><span class="font-semibold">USF:</span> {s.usfOrigem}</div>
-                        <div><span class="font-semibold">Data:</span> {s.dataMalote}</div>
+                        <div><span class="font-semibold">Data Nascimento:</span> {s.dataNascimento}</div>
                       
                         <div class="col-span-full">
                           <span class="font-semibold">Especialidades:</span>
                           <ul class="list-disc list-inside">
-                            {#each s.especialidades.filter(e => e.prioridade === 'URGENTE' || e.prioridade === 'EMERGENCIA') as e}
-                              <li>{e.especialidadeSolicitada} ({e.prioridade})</li>
-                            {/each}
+                              <li>{s.itens}</li>
                           </ul>
                         </div>
-                        <div class="col-span-full"><span class="font-semibold">Observações:</span> {s.observacoes}</div>
                       </div>
                     </div>
                   </li>
@@ -151,9 +130,9 @@
               <!-- Pagination controls -->
               {#if totalPages > 1}
                 <div class="flex justify-center items-center space-x-2 mt-6">
-                  <button onclick={prevPage} class="px-3 py-1 bg-emerald-600 text-white rounded disabled:opacity-50" disabled={currentPage === 1}>&laquo; Anterior</button>
+                  <button class="px-3 py-1 bg-emerald-600 text-white rounded disabled:opacity-50" disabled={currentPage === 1}>&laquo; Anterior</button>
                   <span class="text-gray-700">Página {currentPage} de {totalPages}</span>
-                  <button onclick={nextPage} class="px-3 py-1 bg-emerald-600 text-white rounded disabled:opacity-50" disabled={currentPage === totalPages}>Próximo &raquo;</button>
+                  <button  class="px-3 py-1 bg-emerald-600 text-white rounded disabled:opacity-50" disabled={currentPage === totalPages}>Próximo &raquo;</button>
                 </div>
               {/if}
             {/if}

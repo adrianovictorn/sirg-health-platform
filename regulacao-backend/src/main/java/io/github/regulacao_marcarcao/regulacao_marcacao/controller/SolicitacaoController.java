@@ -33,6 +33,7 @@ import io.github.regulacao_marcarcao.regulacao_marcacao.entity.User;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.enums.Roles;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.enums.UsfEnum;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.PendenciasPacienteProjection;
+import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.UrgenciaEmergenciaPacienteProjection;
 import io.github.regulacao_marcarcao.regulacao_marcacao.service.SolicitacaoService;
 import jakarta.validation.Valid;
 import lombok.AllArgsConstructor;
@@ -148,6 +149,14 @@ public class SolicitacaoController {
         @RequestParam(required = true, name = "usfOrigem") String usfEnum
     ){
         return ResponseEntity.ok(service.buscarPorStatusAguardandoeUsf(page, size, usfEnum, termo,"AGUARDANDO" ));
+    }
+
+    @GetMapping("/buscar/por/urgentes")
+    public ResponseEntity<Page<UrgenciaEmergenciaPacienteProjection>> buscarUrgenteseEmergencia(
+        @RequestParam(defaultValue = "0", name = "page") int page,
+        @RequestParam(defaultValue = "10", name = "size") int size
+    ){
+        return ResponseEntity.ok(service.buscarPorUrgenteeEmergencia(page, size));
     }
 
 }

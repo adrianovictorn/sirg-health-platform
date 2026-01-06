@@ -49,6 +49,7 @@ import io.github.regulacao_marcarcao.regulacao_marcacao.dto.solicitacoesDTO.Soli
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.solicitacoesDTO.SolicitacaoSimpleViewDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.PendenciasPacienteProjection;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.StatusCountProjection;
+import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.UrgenciaEmergenciaPacienteProjection;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.UsfPendentesProjection;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
@@ -464,8 +465,15 @@ public class SolicitacaoService {
 
         return solicitacaoRepository.listarPacientesPendentes(usfEnum, status, termo, pagina);
     }
+
+    public Page<UrgenciaEmergenciaPacienteProjection> buscarPorUrgenteeEmergencia(int page, int size){
+        Pageable pagina = PageRequest.of(page, size);
+
+        return solicitacaoRepository.listarPacientesUrgenteseEmergencias(pagina);
+
+    }
+
 }
- 
 
 
 

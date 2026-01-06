@@ -17,6 +17,7 @@ import io.github.regulacao_marcarcao.regulacao_marcacao.entity.enums.StatusDaMar
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.enums.UsfEnum;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.PendenciasPacienteProjection;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.StatusCountProjection;
+import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.UrgenciaEmergenciaPacienteProjection;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.UsfPendentesProjection;
 
 
@@ -123,5 +124,35 @@ public interface SolicitacaoRepository extends JpaRepository<Solicitacao, Long>,
         nativeQuery = true)
         Page<PendenciasPacienteProjection> listarPacientesPendentes(@Param("usfOrigem") String usfOrigem, @Param("status") String status, @Param("termo") String termo, Pageable pageable);
 
-        
+
+        @Query(
+            value = """
+              SELECT 
+                s.id AS id,
+                s.nome_paciente AS nomePaciente,
+                s.cpf_paciente AS cpfPaciente,
+                s.datanascimento AS dataNascimento,
+                s.cns AS cns,
+                s.usf_origem AS usfOrigem,
+                STRING_AGG(DISTINCT (e.nome || ' - ' || se.prioridade), ', ' ORDER BY e.nome || ' - ' || se.prioridade) AS itens
+              FROM solicitacao s
+              JOIN solicitacao_especialidade se ON s.id = se.solicitacao_id
+              JOIN especialidade e ON se.especialidade_id = e.id
+              WHERE se.status IN ('AGUARDANDO', 'RETORNO', 'RETORNO_POLICLINICA')
+                AND se.prioridade IN ('URGENTE', 'EMERGENCIA')
+              GROUP BY
+                s.id, s.nome_paciente, s.cpf_paciente, s.datanascimento, s.cns, s.usf_origem
+              ORDER BY s.nome_paciente ASC
+            """,
+            countQuery = """
+              SELECT COUNT(DISTINCT s.id)
+              FROM solicitacao s
+              JOIN solicitacao_especialidade se ON s.id = se.solicitacao_id
+              WHERE se.status IN ('AGUARDANDO', 'RETORNO', 'RETORNO_POLICLINICA')
+                AND se.prioridade IN ('URGENTE', 'EMERGENCIA')
+            """,
+            nativeQuery = true
+          )
+          Page<UrgenciaEmergenciaPacienteProjection> listarPacientesUrgenteseEmergencias(Pageable pageable);
+
 }
