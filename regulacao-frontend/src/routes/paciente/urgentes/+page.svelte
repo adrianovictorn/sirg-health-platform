@@ -13,20 +13,26 @@
   let buscar = $state('');
   let currentPage = $state(1);
   let totalPages = $state(0)
-  const itemsPerPage = 10;
+  let page = $state(0)
   let totalPendentes = $state(0)
+  let paginaAtual = $state(0)
 
 
   async function buscarUrgenteseEmergencias() {
+
+    const params = new URLSearchParams()
+    params.append("page", String(page))
     
     try {
-      const response = await getApi("solicitacoes/buscar/por/urgentes?"); 
+      const response = await getApi(`solicitacoes/buscar/por/urgentes?${params.toString()}`); 
       if (!response.ok) {
         throw new Error('Falha ao carregar as solicitações do servidor.');
       }
       const data = await response.json();
       totalPages = data.totalPages
-     solicitacoes = data.content
+      solicitacoes = data.content
+      totalPendentes = data.totalElements
+      paginaAtual = page 
   
     } catch (e: any) {
       error = e.message;
@@ -40,12 +46,15 @@
     buscarUrgenteseEmergencias()
   });
 
-  // --- Lógica Reativa com Runes ---
-  // 3. Converte a sintaxe de reatividade de `$` para `$derived`
-  
-  
-  // CORREÇÃO: Trocado 'filtrados' por 'filtradas' para corresponder ao nome da variável.
-  
+ function paginaAnterior(){
+  page -= 1
+  buscarUrgenteseEmergencias()
+ }
+
+ function proximaPagina(){
+  page += 1
+  buscarUrgenteseEmergencias()
+ }
   
 </script>
 
@@ -130,9 +139,11 @@
               <!-- Pagination controls -->
               {#if totalPages > 1}
                 <div class="flex justify-center items-center space-x-2 mt-6">
-                  <button class="px-3 py-1 bg-emerald-600 text-white rounded disabled:opacity-50" disabled={currentPage === 1}>&laquo; Anterior</button>
+                  <button class="px-3 py-1 bg-emerald-600 text-white rounded disabled:opacity-50" type="button" onclick={paginaAnterior} disabled={paginaAtual === 0}>&laquo; Anterior</button>
                   <span class="text-gray-700">Página {currentPage} de {totalPages}</span>
-                  <button  class="px-3 py-1 bg-emerald-600 text-white rounded disabled:opacity-50" disabled={currentPage === totalPages}>Próximo &raquo;</button>
+                  <button  class="px-3 py-1 bg-emerald-600 text-white rounded disabled:opacity-50" type="button" onclick={proximaPagina} disabled={paginaAtual + 1 === totalPages}>Próximo &raquo;</button>
+
+                 
                 </div>
               {/if}
             {/if}
