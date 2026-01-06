@@ -139,7 +139,11 @@ public interface SolicitacaoRepository extends JpaRepository<Solicitacao, Long>,
               JOIN solicitacao_especialidade se ON s.id = se.solicitacao_id
               JOIN especialidade e ON se.especialidade_id = e.id
               WHERE se.status IN ('AGUARDANDO', 'RETORNO', 'RETORNO_POLICLINICA')
-                AND se.prioridade IN ('URGENTE', 'EMERGENCIA')
+                AND se.prioridade IN ('URGENTE', 'EMERGENCIA') AND
+                (:termo IS NULL OR :termo = ''
+                OR s.nome_paciente ILIKE '%' || :termo || '%'
+                OR s.cpf_paciente ILIKE '%' || :termo || '%'
+                )
               GROUP BY
                 s.id, s.nome_paciente, s.cpf_paciente, s.datanascimento, s.cns, s.usf_origem
               ORDER BY s.nome_paciente ASC
@@ -149,10 +153,14 @@ public interface SolicitacaoRepository extends JpaRepository<Solicitacao, Long>,
               FROM solicitacao s
               JOIN solicitacao_especialidade se ON s.id = se.solicitacao_id
               WHERE se.status IN ('AGUARDANDO', 'RETORNO', 'RETORNO_POLICLINICA')
-                AND se.prioridade IN ('URGENTE', 'EMERGENCIA')
+                AND se.prioridade IN ('URGENTE', 'EMERGENCIA') AND 
+                (:termo IS NULL OR :termo = ''
+                  OR s.nome_paciente ILIKE '%' || :termo || '%'
+                  OR s.cpf_paciente ILIKE '%' || :termo || '%'
+                )
             """,
             nativeQuery = true
           )
-          Page<UrgenciaEmergenciaPacienteProjection> listarPacientesUrgenteseEmergencias(Pageable pageable);
+          Page<UrgenciaEmergenciaPacienteProjection> listarPacientesUrgenteseEmergencias(Pageable pageable, @Param("termo") String termo);
 
 }

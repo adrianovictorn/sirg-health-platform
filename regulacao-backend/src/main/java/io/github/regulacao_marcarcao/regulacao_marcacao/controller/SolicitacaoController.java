@@ -154,9 +154,10 @@ public class SolicitacaoController {
     @GetMapping("/buscar/por/urgentes")
     public ResponseEntity<Page<UrgenciaEmergenciaPacienteProjection>> buscarUrgenteseEmergencia(
         @RequestParam(defaultValue = "0", name = "page") int page,
-        @RequestParam(defaultValue = "10", name = "size") int size
+        @RequestParam(defaultValue = "10", name = "size") int size,
+        @RequestParam(required = false, name = "termo") String termo
     ){
-        return ResponseEntity.ok(service.buscarPorUrgenteeEmergencia(page, size));
+        return ResponseEntity.ok(service.buscarPorUrgenteeEmergencia(page, size, termo));
     }
 
 }

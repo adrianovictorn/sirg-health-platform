@@ -466,10 +466,10 @@ public class SolicitacaoService {
         return solicitacaoRepository.listarPacientesPendentes(usfEnum, status, termo, pagina);
     }
 
-    public Page<UrgenciaEmergenciaPacienteProjection> buscarPorUrgenteeEmergencia(int page, int size){
+    public Page<UrgenciaEmergenciaPacienteProjection> buscarPorUrgenteeEmergencia(int page, int size, String termo){
         Pageable pagina = PageRequest.of(page, size);
 
-        return solicitacaoRepository.listarPacientesUrgenteseEmergencias(pagina);
+        return solicitacaoRepository.listarPacientesUrgenteseEmergencias(pagina, termo);
 
     }
 
