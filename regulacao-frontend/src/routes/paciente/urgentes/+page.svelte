@@ -23,7 +23,7 @@
     const params = new URLSearchParams()
     params.append("page", String(page))
     params.append("size", String(size))
-    params.append("termo", buscar)
+    params.append("termo", buscar.trim())
     
     try {
       const response = await getApi(`solicitacoes/buscar/por/urgentes?${params.toString()}`); 
@@ -66,8 +66,6 @@
 </svelte:head>
 
 <div class="flex min-h-screen bg-gray-100">
-
-
   
   <!-- Sidebar navigation -->
   <Menu activePage="/urgentes" />
@@ -93,9 +91,8 @@
               bind:value={buscar}
               class="flex-1 border border-gray-300 rounded-lg p-2 focus:ring-emerald-500 focus:border-emerald-500"
               oninput={(e) => {
-                const input = e.currentTarget as HTMLInputElement
-                const valorDigitado = input.value
-                buscar = valorDigitado
+                const buscar = (e.currentTarget as HTMLInputElement).value
+                page = 0;
                 buscarUrgenteseEmergencias()
               }}
             />
