@@ -10,7 +10,6 @@ import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
-import io.github.regulacao_marcarcao.regulacao_marcacao.dto.solicitacoesDTO.SolicitacaoMinimalDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.solicitacoesDTO.SolicitacaoResumoDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.Solicitacao;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.enums.PrioridadeDaMarcacaoEnum;
@@ -101,6 +100,28 @@ public interface SolicitacaoRepository extends JpaRepository<Solicitacao, Long>,
           s.datanascimento,
           s.cns
         ORDER BY s.nome_paciente ASC
-        """,nativeQuery = true)
+        """,
+        countQuery = """
+          SELECT COUNT(DISTINCT s.id)
+            FROM solicitacao s
+            JOIN solicitacao_especialidade se ON s.id = se.solicitacao_id
+            JOIN especialidade e ON e.id = se.especialidade_id
+            WHERE se.status = :status
+              AND s.usf_origem = :usfOrigem
+              AND (
+                :termo IS NULL OR :termo = ''
+                OR lower(s.nome_paciente) LIKE concat('%', lower(:termo), '%')
+                OR (
+                  regexp_replace(:termo, '[^0-9]', '', 'g') <> ''
+                  AND regexp_replace(s.cpf_paciente, '[^0-9]', '', 'g')
+                    LIKE concat('%', regexp_replace(:termo, '[^0-9]', '', 'g'), '%')
+                )
+                OR s.cns LIKE concat('%', :termo, '%')
+                OR lower(e.nome) LIKE concat('%', lower(:termo), '%')
+              )
+        """,
+        nativeQuery = true)
         Page<PendenciasPacienteProjection> listarPacientesPendentes(@Param("usfOrigem") String usfOrigem, @Param("status") String status, @Param("termo") String termo, Pageable pageable);
+
+        
 }
