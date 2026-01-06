@@ -76,7 +76,7 @@
   <div class="flex-1 flex flex-col">
     <!-- Header -->
     <header class="bg-emerald-700 text-white shadow p-4 flex items-center justify-between">
-      <h1 class="text-xl font-semibold">Pacientes Pendentes</h1>
+      <h1 class="text-xl font-semibold">Pacientes Urgentes</h1>
           <UserMenu/>
     </header>
 

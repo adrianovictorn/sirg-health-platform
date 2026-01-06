@@ -103,7 +103,7 @@
       <li class="text-white px-4 py-2 rounded-full cursor-pointer hover:bg-gray-700 transition text-sm md:text-lg">
         <a href="/">Início</a>
       </li>
-      <li class="bg-emerald-600 text-white px-4 py-2 rounded-full cursor-pointer hover:bg-emerald-700 transition text-sm md:text-lg shadow">
+      <li class="hidden md:block bg-emerald-600 text-white px-4 py-2 rounded-full cursor-pointer hover:bg-emerald-700 transition text-sm md:text-lg shadow">
         <a href="/paciente/consultar">Consultar Solicitação</a>
       </li>
       <li class="text-white px-4 py-2 rounded-full cursor-pointer hover:bg-gray-700 transition text-sm md:text-lg">

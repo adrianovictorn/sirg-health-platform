@@ -9,7 +9,7 @@
   </div>
   <nav>
     <ul class="list-none flex flex-wrap gap-4 md:gap-6">
-      <li class="bg-emerald-600 text-white px-4 py-2 rounded-full cursor-pointer hover:bg-emerald-700 transition text-sm md:text-lg shadow">
+      <li class="hidden md:block  md:bg-emerald-600 md:text-white md:px-4 md:py-2 md:rounded-full md:cursor-pointer md:hover:bg-emerald-700 md:transition  md:text-lg shadow">
         <a href="/paciente/consultar">Consultar Solicitação</a>
       </li>
       <li class="text-white px-4 py-2 rounded-full cursor-pointer hover:bg-gray-700 transition text-sm md:text-lg">
