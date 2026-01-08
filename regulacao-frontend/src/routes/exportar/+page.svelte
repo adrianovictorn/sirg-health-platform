@@ -417,9 +417,10 @@
 
   onMount(async () => {
     try {
-      const res = await getApi('solicitacoes');
+      const res = await getApi('solicitacoes?size=10000');
       if (!res.ok) throw new Error('Falha ao carregar dados do servidor.');
-      allSolicitacoes = await res.json();
+      const data = await res.json();
+      allSolicitacoes = Array.isArray(data) ? data : (data?.content ?? []);
     } catch (e) {
       alert('Não foi possível carregar os dados das solicitações.');
       console.error(e);
