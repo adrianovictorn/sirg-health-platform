@@ -91,7 +91,7 @@
 
   onMount(async () => {
     try {
-      const response = await getApi('solicitacoes?size=1000');
+      const response = await getApi('solicitacoes?size=100');
       if (!response.ok) throw new Error('Falha ao carregar dados.');
       
       const solicitacoes = await response.json();

@@ -39,7 +39,7 @@
         carregando = true;
         erro = null;
         try {
-            const res = await getApi('solicitacoes?size=1000');
+            const res = await getApi('solicitacoes?size=100');
             if (!res.ok) {
                 throw new Error('Falha ao carregar as solicitações');
             }
