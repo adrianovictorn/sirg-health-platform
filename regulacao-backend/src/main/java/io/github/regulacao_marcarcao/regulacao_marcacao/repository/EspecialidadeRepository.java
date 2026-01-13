@@ -2,6 +2,9 @@ package io.github.regulacao_marcarcao.regulacao_marcacao.repository;
 
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.Especialidade;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.enums.ItemCategoria;
+
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.Collection;
@@ -15,5 +18,7 @@ public interface EspecialidadeRepository extends JpaRepository<Especialidade, Lo
     List<Especialidade> findByNomeIn(Collection<String> nomes);
     List<Especialidade> findByCategoria(ItemCategoria categoria);
     List<Especialidade> findByCategoriaAndAtivoTrue(ItemCategoria categoria);
+    Page<Especialidade> findAll(Pageable pageable);
+    Page<Especialidade> findByNomeContainingIgnoreCase(String nome, Pageable pageable);
 }
 

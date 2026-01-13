@@ -48,6 +48,7 @@
     buscarUrgenteseEmergencias()
   });
 
+
  function paginaAnterior(){
   page -= 1
   buscarUrgenteseEmergencias()

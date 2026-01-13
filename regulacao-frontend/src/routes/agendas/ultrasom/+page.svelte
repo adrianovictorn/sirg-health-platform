@@ -36,12 +36,13 @@
     async function carregarSolicitacoes() {
         carregando = true;
         erro = null;
-        try {
-            const res = await getApi('solicitacoes');
+     try {
+            const res = await getApi('solicitacoes?size=1000');
             if (!res.ok) {
                 throw new Error('Falha ao carregar as solicitações');
             }
-            const todasSolicitacoes = await res.json();
+            const solicitacoes = await res.json();
+            const todasSolicitacoes = await solicitacoes.content;
             const hoje = getHojeFormatado();
 
             solicitacoesDeHoje = todasSolicitacoes.filter(solicitacao =>

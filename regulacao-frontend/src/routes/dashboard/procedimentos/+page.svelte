@@ -91,10 +91,11 @@
 
   onMount(async () => {
     try {
-      const response = await getApi('solicitacoes');
+      const response = await getApi('solicitacoes?size=1000');
       if (!response.ok) throw new Error('Falha ao carregar dados.');
       
-      const todasSolicitacoes = await response.json();
+      const solicitacoes = await response.json();
+      const todasSolicitacoes = solicitacoes.content
       const hoje = getHojeFormatado();
 
       // Calcula a contagem para cada painel

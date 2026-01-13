@@ -36,5 +36,9 @@ public class Especialidade {
 
     @Column(nullable = false)
     private Boolean ativo = true;
+    
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "grupo_relatorio_id", nullable = true)
+    private GrupoRelatorio grupoRelatorio;
 }
 

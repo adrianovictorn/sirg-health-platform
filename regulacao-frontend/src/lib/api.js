@@ -32,7 +32,7 @@ const BASE_URL = '/api';
 async function send({ method, path, data }) {
   // Pega o valor atual do token da nossa store de autenticaÃ§Ã£o.
   const currentToken = get(token); 
-
+  
   const opts = { 
     method,
     headers: {}
@@ -70,6 +70,9 @@ export function postApi(path, data) {
   return send({ method: 'POST', path, data });
 }
 
+export function patchApi(path){
+  return send({method: 'PATCH', path});
+}
 
 export function putApi(path, data) {
   return send({ method: 'PUT', path, data });

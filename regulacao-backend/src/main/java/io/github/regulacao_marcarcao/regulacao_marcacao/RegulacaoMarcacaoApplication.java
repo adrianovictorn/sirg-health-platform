@@ -10,5 +10,4 @@ public class RegulacaoMarcacaoApplication {
 		SpringApplication.run(RegulacaoMarcacaoApplication.class, args);
 	}
 
-}
-	
+} 

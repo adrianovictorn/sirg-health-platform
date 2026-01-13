@@ -1,6 +1,5 @@
 package io.github.regulacao_marcarcao.regulacao_marcacao.service;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.regulacao_marcarcao.regulacao_marcacao.config.InstanceContext;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.pacto.convite.*;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.Pacto;
@@ -32,7 +31,6 @@ public class PactoConviteService {
     private final RabbitTemplate rabbitTemplate;
     private final InstanceContext instanceContext;
     private final PactoService pactoService;
-    private final ObjectMapper objectMapper;
 
     @Transactional
     public List<ConviteViewDTO> listarMeusConvites(io.github.regulacao_marcarcao.regulacao_marcacao.entity.enums.PactoConviteStatus status) {
