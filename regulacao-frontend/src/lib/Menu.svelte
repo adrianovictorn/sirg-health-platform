@@ -73,7 +73,7 @@
     <a href="/agendar" class={linkClasses('/agendar')}>Agendamento</a>
     <a href="/dashboard/procedimentos/data" class={linkClasses('/dashboard/procedimentos/data')}>Agenda do Dia</a>
     <a href="/paciente" class={linkClasses('/paciente')}>Paciente</a>
-    <a href="/exportar" class={linkClasses('/exportar')}>Relatórios</a>
+    <a href="/relatorio" class={linkClasses('/relatorio')}>Relatórios</a>
 
     <!-- Painel Gerencial -->
     <div>
@@ -91,10 +91,10 @@
         <div class="pl-4 mt-2 space-y-2">
           <a href="/cadastrar/cid" class={linkClasses('/cadastrar/cid')}>Cadastrar CID</a>
           <a href="/listar/cid" class={linkClasses('/listar/cid')}>Listar CID</a>
-          <a href="/cadastrar/especialidade" class={linkClasses('/cadastrar/especialidade')}>Cadastrar Especialidade</a>
-          <a href="/cadastrar/grupo-relatorio" class={linkClasses('/cadastrar/grupo-relatorio')}>Cadastrar Grupo</a>
+          <a href="/cadastrar/especialidade" class={linkClasses('/cadastrar/especialidade')}>Especialidade</a>
+          <a href="/cadastrar/grupo-relatorio" class={linkClasses('/cadastrar/grupo-relatorio')}>Grupo Relatório</a>
           <a href="/cadastrar/cidade" class={linkClasses('/cadastrar/cidade')}>Cadastrar Cidade</a>
-          <a href="/cadastrar/cidade/local-agendamento" class={linkClasses('/cadastrar/cidade/local-agendamento')}> Local de Agendamento</a>
+          <a href="/cadastrar/cidade/local-agendamento" class={linkClasses('/cadastrar/cidade/local-agendamento')}> Local Agendamento</a>
         </div>
       {/if}
     </div>

@@ -9,6 +9,7 @@
     id: number
     codigo: string
     nome: string
+    ativo: boolean
   }
 
   interface EspecialidadeViewDTO{
@@ -87,7 +88,8 @@
   async function carregarGrupo() {
     try {
       const data = await listarGrupoRelatorio();
-      grupoRelatorio = data;
+      let lista = data;
+      grupoRelatorio = lista.filter((g) => g.ativo === true) 
     } catch (e:any) {
        erro = e?.message || 'Falha ao carregar lista';
     }

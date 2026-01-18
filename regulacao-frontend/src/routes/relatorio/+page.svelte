@@ -93,7 +93,9 @@
     try {
       const res = await getApi('grupo-relatorio/listar')
       const data = await res.json();
-      grupos = Array.isArray(data) ? data : (data?.content ?? []);
+      let lista = Array.isArray(data) ? data : (data?.content ?? []);
+      
+      grupos = lista.filter((g) => g.ativo === true)
       if(!res.ok){
         alert("Erro ao buscar dados de Grupo")
       }
@@ -277,7 +279,7 @@
 </svelte:head>
 
 <div class="flex min-h-screen bg-gray-100">
-    <Menu activePage="/exportar" />
+    <Menu activePage="/relatorio" />
 
   <div class="flex-1 flex flex-col">
     <header class="bg-emerald-700 text-white shadow p-4 flex items-center justify-between">
