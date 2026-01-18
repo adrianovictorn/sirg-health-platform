@@ -186,7 +186,7 @@ public interface SolicitacaoEspecialidadeRepository extends JpaRepository<Solici
                     JOIN especialidade e ON e.id = se.especialidade_id
                     JOIN grupo_relatorio gr ON gr.id = e.grupo_relatorio_id
                     JOIN agendamento_solicitacao ag ON ag.id = se.agendamento_id 
-                    WHERE (gr.codigo = :grupo) and (se.status = 'AGENDADO') and (ag.local_agendado = 'HOSPITAL_DE_CONCEICAO_DO_ALMEIDA' AND ag.data_agendada = :data) 
+                    WHERE (gr.codigo = :grupo) and (se.status = 'AGENDADO') and (ag.local_agendamento_id = 3 AND ag.data_agendada = :data) 
                     GROUP BY
                         s.id,
                         s.nome_paciente, 
@@ -207,7 +207,7 @@ public interface SolicitacaoEspecialidadeRepository extends JpaRepository<Solici
                 JOIN especialidade e ON e.id = se.especialidade_id
                 JOIN grupo_relatorio gr ON gr.id = e.grupo_relatorio_id
                 JOIN agendamento_solicitacao ag ON ag.id = se.agendamento_id 
-                WHERE (gr.codigo = :grupo) and (se.status = 'AGENDADO') and (ag.local_agendado = 'HOSPITAL_DE_CONCEICAO_DO_ALMEIDA' AND ag.data_agendada = :data) 
+                WHERE (gr.codigo = :grupo) and (se.status = 'AGENDADO') and (ag.local_agendamento_id = 3 AND ag.data_agendada = :data) 
                 """, nativeQuery = true)    
             long totalPacientesAgendadosPorGrupoELocal(@Param("grupo") String grupo, @Param("data") LocalDate data);
 
