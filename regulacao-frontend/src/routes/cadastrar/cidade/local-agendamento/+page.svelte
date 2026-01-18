@@ -311,6 +311,7 @@
               <table class="min-w-full divide-y divide-gray-200 text-sm">
                 <thead class="bg-gray-50">
                   <tr>
+                    <th class="px-4 py-2 text-left font-medium text-gray-600">Id</th>
                     <th class="px-4 py-2 text-left font-medium text-gray-600">Nome</th>
                     <th class="px-4 py-2 text-left font-medium text-gray-600">Endereço</th>
                     <th class="px-4 py-2 text-left font-medium text-gray-600">Número</th>
@@ -321,6 +322,9 @@
                 <tbody class="divide-y divide-gray-100">
                   {#each locaisFiltrados as loc}
                     <tr class="hover:bg-gray-50">
+                      <td class="px-4 py-2 text-gray-700">
+                        {loc.id}
+                      </td>
                       <td class="px-4 py-2 text-gray-700">
                         {#if localAgendamentoId === loc.id}
                           <input

@@ -1,137 +1,170 @@
 ﻿<script lang="ts">
-  import { onMount } from 'svelte';
-  import { getApi } from '$lib/api.js';
-  import RoleBasedMenu from '$lib/RoleBasedMenu.svelte';
-  import UserMenu from '$lib/UserMenu.svelte';
+    import { goto } from "$app/navigation";
+    import { getApi } from "$lib/api";
+    import Content from "$lib/Content.svelte";
+    import { onMount } from "svelte";
 
-  // --- Estado do Componente ---
-  let isLoading = $state(true);
-  let error = $state('');
-  
-  // A variável final que será renderizada na tela
-  let paineisDeProcedimentos = $state([]);
-
-  // --- Definições Visuais (Responsabilidade do Frontend) ---
-  const metadadosPaineis = {
-    'Laboratório': { href: '/agendas/laboratorio', color: 'bg-sky-500', icon: `<path stroke-linecap="round" stroke-linejoin="round" d="M7.5 21L3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5" />` },
-    'Raio X': { href: '/agendas/raio-x', color: 'bg-indigo-500', icon: `<path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75l3 3m0 0l3-3m-3 3v-7.5M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />` },
-    'Ultrassonografia': { href: '/agendas/ultrasom', color: 'bg-purple-500', icon: `<path stroke-linecap="round" stroke-linejoin="round" d="M9 4.5v15m6-15v15m-10.875 0h15.75c.621 0 1.125-.504 1.125-1.125V5.625c0-.621-.504-1.125-1.125-1.125H4.125C3.504 4.5 3 5.004 3 5.625v12.75c0 .621.504 1.125 1.125 1.125z" />` },
-    'Doppler': { href: '/agendas/doppler', color: 'bg-teal-500', icon: `<path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />` },
-    'Eletrocardiograma': { href: '/agendas/eletrocardiograma', color: 'bg-rose-500', icon: `<path stroke-linecap="round" stroke-linejoin="round" d="M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12Z" />` },
-    'Pediatra': { href: '/agendas/pediatra', color: 'bg-amber-500', icon: `<path stroke-linecap="round" stroke-linejoin="round" d="M15.182 15.182a4.5 4.5 0 01-6.364 0M21 12a9 9 0 11-18 0 9 9 0 0118 0zM9 9.75h.008v.008H9v-.008zm6 0h.008v.008H15v-.008z" />` },
-    'Ortopedista': { href: '/agendas/ortopedista', color: 'bg-cyan-600', icon: `<path stroke-linecap="round" stroke-linejoin="round" d="M19.5 12c0-1.232-.046-2.453-.138-3.662a4.006 4.006 0 00-3.7-3.7 48.678 48.678 0 00-7.324 0 4.006 4.006 0 00-3.7 3.7c-.092 1.21-.138 2.43-.138 3.662a4.006 4.006 0 003.7 3.7 48.656 48.656 0 007.324 0 4.006 4.006 0 003.7-3.7zM12 12h.008v.008H12V12z" />` },
-    'Cardiologista': { href: '/agendas/cardiologista', color: 'bg-rose-600', icon: `<path stroke-linecap="round" stroke-linejoin="round" d="M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12z" />` },
-    'Ecocardiograma': { href: '/agendas/ecocardiograma', color: 'bg-rose-600', icon: `<path stroke-linecap="round" stroke-linejoin="round" d="M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12z" />` },
-    'Cirurgião Geral': { href: '/agendas/cirurgiao-geral', color: 'bg-emerald-600', icon: `<path stroke-linecap="round" stroke-linejoin="round" d="M19.5 12c0-1.232-.046-2.453-.138-3.662a4.006 4.006 0 00-3.7-3.7 48.678 48.678 0 00-7.324 0 4.006 4.006 0 00-3.7 3.7c-.092 1.21-.138 2.43-.138 3.662a4.006 4.006 0 003.7 3.7 48.656 48.656 0 007.324 0 4.006 4.006 0 003.7-3.7zM12 12h.008v.008H12V12z" />`},
-    'Dermatologista': { href: '/agendas/dermatologista', color: 'bg-rose-600', icon: `<path stroke-linecap="round" stroke-linejoin="round" d="M19.5 12c0-1.232-.046-2.453-.138-3.662a4.006 4.006 0 00-3.7-3.7 48.678 48.678 0 00-7.324 0 4.006 4.006 0 00-3.7 3.7c-.092 1.21-.138 2.43-.138 3.662a4.006 4.006 0 003.7 3.7 48.656 48.656 0 007.324 0 4.006 4.006 0 003.7-3.7zM12 12h.008v.008H12V12z" />`},
-    'Procedimento Dermatologista': { href: '/agendas/procedimento_dermatologista', color: 'bg-rose-700', icon: `<path stroke-linecap="round" stroke-linejoin="round" d="M19.5 12c0-1.232-.046-2.453-.138-3.662a4.006 4.006 0 00-3.7-3.7 48.678 48.678 0 00-7.324 0 4.006 4.006 0 00-3.7 3.7c-.092 1.21-.138 2.43-.138 3.662a4.006 4.006 0 003.7 3.7 48.656 48.656 0 007.324 0 4.006 4.006 0 003.7-3.7zM12 12h.008v.008H12V12z" />`},
-    'Neuropediatra': { href: '/agendas/neuropediatria', color: 'bg-yellow-400', icon: `<path stroke-linecap="round" stroke-linejoin="round" d="M19.5 12c0-1.232-.046-2.453-.138-3.662a4.006 4.006 0 00-3.7-3.7 48.678 48.678 0 00-7.324 0 4.006 4.006 0 00-3.7 3.7c-.092 1.21-.138 2.43-.138 3.662a4.006 4.006 0 003.7 3.7 48.656 48.656 0 007.324 0 4.006 4.006 0 003.7-3.7zM12 12h.008v.008H12V12z" />` },
-  };
-
-  // --- Lógica de Data ---
-  function getHojeFormatado() {
-    const hoje = new Date();
-    return hoje.toISOString().split('T')[0]; // Formato YYYY-MM-DD
-  }
-
-  let dataSelecionada = $state(getHojeFormatado());
-  let dataFormatada = $state('');
-
-  // --- Lógica de Dados ---
-  async function buscarEProcessarContagem(data: string) {
-    isLoading = true;
-    error = '';
-    try {
-      // 1. Busca os dados crus do backend
-      const response = await getApi(`agendamentos/contagem-por-data?data=${data}`);
-      if (!response.ok) {
-        throw new Error(`Falha na API: ${response.statusText}`);
-      }
-      const contagens = await response.json();
-
-      // 2. Formata a data selecionada para exibição
-      const [ano, mes, dia] = data.split('-');
-      const dataObj = new Date(Number(ano), Number(mes) - 1, Number(dia));
-      dataFormatada = dataObj.toLocaleDateString('pt-BR', { timeZone: 'UTC', weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
-
-      // 3. Combina os dados da API com os dados visuais do frontend
-      paineisDeProcedimentos = contagens.map(item => ({
-        ...item, // vem da API: { label, count }
-        ...(metadadosPaineis[item.label] || {}) // adiciona do frontend: { href, color, icon }
-      }));
-
-    } catch (e) {
-      error = e.message;
-    } finally {
-      isLoading = false;
+    type formPacientePorGrupo = {
+        grupo: string
+        data: string
     }
-  }
 
-  // Efeito reativo do Svelte 5: roda sempre que `dataSelecionada` mudar.
-  $effect(() => {
-    buscarEProcessarContagem(dataSelecionada);
-  });
+    interface GrupoViewDTO {
+        id: number
+        codigo: string
+        nome: string
+        total: number
+    }
+
+    let form = $state<formPacientePorGrupo[]>([])
+    let grupos = $state<GrupoViewDTO[]>([])
+    let totalPorGrupo = $state<Record<string, number>>({})
+    let dataSelecionanda = $state(new Date().toISOString().slice(0,10))
+
+    let carregando = $state(false)
+
+    const dataPorExtenso = $derived(() => {
+        const [ano, mes, dia] = dataSelecionanda.split("-").map(Number);
+
+        const d = new Date(Date.UTC(ano, mes - 1, dia));
+
+        return new Intl.DateTimeFormat("pt-br", {
+            weekday: "long",
+            day: "numeric",
+            month: "long",
+            year: "numeric",
+            timeZone: "UTC"
+        }).format(d)
+    })
+    
+    async function listarGrupos() {
+        try {
+            const res = await getApi("/grupo-relatorio/listar")
+           if(!res.ok){
+            throw new Error("Erro ao receber dados do Grupo")
+           }
+           return await res.json();
+        } catch (error) {
+            throw new Error("Erro ao se conectar ao servidor !")
+        }
+    }
+
+
+    async function contarPacientesPorGrupo() {
+        grupos = await listarGrupos()
+        const novo: Record<string, number> = {};
+        
+        try{
+           for (const gr of grupos) {
+               const params = new URLSearchParams()
+               params.append("grupo",gr.codigo)
+               params.append("data", dataSelecionanda)
+
+               const res = await getApi(`especialidades/contar/pacientes/por/grupo?${params.toString()}`)
+                if (!res.ok) throw new Error(`Erro ao contar grupo ${gr.codigo}`);
+
+               novo[gr.codigo] = await res.json()
+           }
+
+           totalPorGrupo = novo
+           
+       }catch(error){
+        throw new Error ("Erro ao conectar ao servidor !")
+       }
+    }
+    
+
+    onMount(() => {
+        listarGrupos()
+        contarPacientesPorGrupo()
+        
+    })
+
+    $effect(() => {
+        if(dataSelecionanda){
+            contarPacientesPorGrupo()
+        }
+    })
+
+    const COLORS = [
+        {class: "bg-emerald-600", hover:"hover:bg-green-800" }, {class:"bg-sky-600", hover:"hover:bg-red-800"}, {class: "bg-amber-500", hover:"hover:bg-red-800"}, {class:"bg-rose-600", hover:"hover:bg-fuchsia-600"}, {class: "bg-violet-500", hover:"hover:bg-orange-600"}, {class: "bg-gray-300", hover: "hover:bg-gray-600"}, {class: 'bg-cyan-600', hover: 'bg-cyan-700'}]
+
+    const ICONS = [
+        `<path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 18.5A2.493 2.493 0 0 1 7.51 20H7.5a2.468 2.468 0 0 1-2.4-3.154 2.98 2.98 0 0 1-.85-5.274 2.468 2.468 0 0 1 .92-3.182 2.477 2.477 0 0 1 1.876-3.344 2.5 2.5 0 0 1 3.41-1.856A2.5 2.5 0 0 1 12 5.5m0 13v-13m0 13a2.493 2.493 0 0 0 4.49 1.5h.01a2.468 2.468 0 0 0 2.403-3.154 2.98 2.98 0 0 0 .847-5.274 2.468 2.468 0 0 0-.921-3.182 2.477 2.477 0 0 0-1.875-3.344A2.5 2.5 0 0 0 14.5 3 2.5 2.5 0 0 0 12 5.5m-8 5a2.5 2.5 0 0 1 3.48-2.3m-.28 8.551a3 3 0 0 1-2.953-5.185M20 10.5a2.5 2.5 0 0 0-3.481-2.3m.28 8.551a3 3 0 0 0 2.954-5.185"/>`,
+        `<path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12.01 6.001C6.5 1 1 8 5.782 13.001L12.011 20l6.23-7C23 8 17.5 1 12.01 6.002Z"/>`,
+        `<path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 6H6m12 4H6m12 4H6m12 4H6"/>`,
+        `<path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 4h12M6 4v16M6 4H5m13 0v16m0-16h1m-1 16H6m12 0h1M6 20H5M9 7h1v1H9V7Zm5 0h1v1h-1V7Zm-5 4h1v1H9v-1Zm5 0h1v1h-1v-1Zm-3 4h2a1 1 0 0 1 1 1v4h-4v-4a1 1 0 0 1 1-1Z"/>
+`
+    ]
+
+    const cards = $derived(
+        grupos.map((grupo, index) => ({
+        label: grupo.nome,
+        grupo: grupo.codigo,
+        class: COLORS[index % COLORS.length].class,
+        hover: COLORS[index % COLORS.length].hover,
+        icon: ICONS[index % ICONS.length],
+        total: totalPorGrupo[grupo.codigo] ?? 0
+        }))
+    );
+
+    function abrirDetalhe(grupo: string) {
+        const qs = new URLSearchParams()
+        qs.append("data", dataSelecionanda)
+
+        goto(`/agendas/${grupo}?${qs.toString()}`)
+    }
+    
 </script>
+<Content titleH1="Quantitativos por Data" page="/dashboard/procedimentos" >
 
-<svelte:head>
-    <title>Painel de Procedimentos</title>
-</svelte:head>
+    <section class="max-w-screen flex justify-start m-5 ">
+        <div class="bg-emerald-800 w-[0.5%] ">
 
-<div class="flex min-h-screen bg-gray-50">
-  <RoleBasedMenu activePage="/dashboard/procedimentos" />
-
-  <div class="flex-1 flex flex-col">
-    <header class="bg-emerald-700 text-white shadow p-4 flex items-center justify-between">
-      <h1 class="text-xl font-semibold">Painel de Procedimentos</h1>
-      <UserMenu />
-    </header>
-
-    <main class="flex-1 p-6 overflow-auto">
-      {#if isLoading}
-        <div class="text-center py-10"><p>Carregando...</p></div>
-      {:else if error}
-        <div class="text-center py-10 text-red-600"><p>Erro ao carregar: {error}</p></div>
-      {:else}
-        <div class="max-w-7xl mx-auto">
-          <div class="mb-8 p-4 border-l-4 border-emerald-500 bg-emerald-50 rounded-r-lg">
-            <h2 class="text-2xl font-bold text-gray-800">Agendamentos do Dia</h2>
-            <p class="text-gray-600">{dataFormatada}</p>
-
-             <div class="mt-4">
-                <label for="data-busca" class="text-gray-700 font-semibold">Buscar por outra data:</label>
-                <input 
-                    type="date" 
-                    id="data-busca" 
-                    bind:value={dataSelecionada}
-                    class="mt-1 block w-full md:w-auto border-gray-300 rounded-md shadow-sm focus:ring-emerald-500 focus:border-emerald-500"
-                />
-            </div>
-          </div>
-
-          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-            {#each paineisDeProcedimentos as procedimento}
-      <a href={procedimento.href} class="block group">                
-           <div class="bg-white rounded-xl shadow-md p-6 transform transition-all duration-300 hover:shadow-xl hover:-translate-y-1">
-                  <div class="flex items-start justify-between">
-                    <div class="flex-shrink-0 w-12 h-12 {procedimento.color} text-white rounded-lg flex items-center justify-center">
-                      <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                        {@html procedimento.icon}
-                      </svg>
-                    </div>
-                    <div class="text-right">
-                      <p class="text-5xl font-bold text-gray-800">{procedimento.count}</p>
-                      <p class="text-sm text-gray-500">agendados</p>
-                    </div>
-                  </div>
-                  <h3 class="mt-4 text-lg font-semibold text-gray-900 group-hover:text-emerald-600 transition-colors">
-                    {procedimento.label}
-                  </h3>
-                </div>
-              </a>
-            {/each}
-          </div>
         </div>
-      {/if}
-    </main>
-  </div>
-</div>
+        <div class="bg-emerald-200 w-[98%] p-5 rounded-r-lg">
+            <h2 class="font-semibold text-3xl text-gray-800">Agendamentos do Dia</h2>
+            <p class="text-gray-700 mt-2">{dataPorExtenso()}</p>
+            <form action="" class="mt-3 w-full">
+                <h3 class="font-medium text-gray-800 ">Buscar por outra Data:</h3>
+                <input type="date" class="mt-2 border-gray-400 rounded-lg" bind:value={dataSelecionanda}>
+            </form>
+        </div>
+    </section>
+    
+
+    <div class="grid grid-cols-5 gap-4 p-5 bg-white ">
+    {#each cards as card }
+            <div role="button" tabindex="0" onclick={() => abrirDetalhe(card.grupo)} onkeydown={(e) => {
+                if(e.key === 'Enter' || e.key === ' '){
+                    e.preventDefault();
+                    abrirDetalhe(card.grupo)
+                }
+            }} class={`shadow-xl rounded-xl p-4 mt-2 m-2 w-full border-gray-900 hover:text-emerald-600 transform transition-transform duration-200 ease-out hover:scale-[1.03] hover:-translate-y-1 `}>
+                <div class="flex gap-5 border-gray-800 text-center w-full ">
+                    <div class={`${card.class} ${card.hover} flex gap-4 rounded-2xl p-3 border border-gray-300`}>
+                        <svg viewBox="0 0 24 24" class="w-6 h-6 text-white  " fill="none">
+                            {@html card.icon}
+                        </svg>
+                    </div>
+                    <div class="flex flex-1 align-middle items-center justify-end">
+                        <p class="font-bold text-gray-700 text-4xl ">
+                            {card.total}
+                        </p>
+                    </div>
+                </div>
+                <div class="flex flex-1 justify-end">
+                    <p class=" font-semibold text-[0.8rem] mt-2 text-gray-600 ">Total Agendado</p>
+                </div>
+                <div class="flex p-5 justify-center">
+                    
+                </div>
+                
+                <p  class="text-start font-semibold text-[1rem] "> 
+                    {card.label}
+                </p>
+                
+            </div>
+            {/each}
+    </div>
+</Content>

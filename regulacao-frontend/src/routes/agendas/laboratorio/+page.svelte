@@ -84,10 +84,6 @@
                 throw new Error('Erro ao atualizar o status em lote.'); 
             }
 
-            // 3. Remover a chamada de API duplicada para observações
-            // A linha abaixo foi removida pois agora é desnecessária.
-            // await putApi(`solicitacoes/${solicitacao.id}`, { observacoes: solicitacao.observacoesEdit });
-
             await carregarSolicitacoes(); // Recarrega os dados da página
         } catch (e) {
             alert(e.message);

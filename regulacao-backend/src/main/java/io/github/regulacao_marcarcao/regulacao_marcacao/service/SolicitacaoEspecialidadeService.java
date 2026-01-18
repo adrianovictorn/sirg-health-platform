@@ -1,9 +1,14 @@
 package io.github.regulacao_marcarcao.regulacao_marcacao.service;
 
+import java.time.LocalDate;
 import java.util.List;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 
+import io.github.regulacao_marcarcao.regulacao_marcacao.dto.agendamentoDTO.ObservacaoRequestDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.solicitacaoEspecialidadeDTO.EspecialidadeUpdateDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.solicitacaoEspecialidadeDTO.EspecialidadesStatusUpdateDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.solicitacaoEspecialidadeDTO.SolicitacaoEspecialidadeViewDTO;
@@ -12,6 +17,9 @@ import io.github.regulacao_marcarcao.regulacao_marcacao.entity.SolicitacaoEspeci
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.enums.StatusDaMarcacao;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.AgendamentoSolicitacaoRepository;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.SolicitacaoEspecialidadeRepository;
+import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.PainelEspecialidadeProjection;
+import jakarta.persistence.EntityNotFoundException;
+
 import org.springframework.transaction.annotation.Transactional;
 import lombok.RequiredArgsConstructor;
 
@@ -108,6 +116,15 @@ public class SolicitacaoEspecialidadeService {
         return viewDTOs;
     }
 
+    public Page<PainelEspecialidadeProjection> listarPacientesAgendadosPorGrupo(int page, int size, String grupo, LocalDate data){
+        Pageable pagina = PageRequest.of(page, size);
+        return especialidadeRepository.listarPacientesAgendadosPorDataEGrupoELocal(grupo, data, pagina);
+    }
+
+    public long contarPacientesAgendadosPorDataEGrupo(String grupo, LocalDate data){
+        return especialidadeRepository.totalPacientesAgendadosPorGrupoELocal(grupo, data);
+    }
+
 
     @Transactional  
     public void confirmarProcedimento(Long id){
@@ -119,10 +136,17 @@ public class SolicitacaoEspecialidadeService {
 
 
     @Transactional
-     public void faltouProcedimento(Long id){
+     public void faltouProcedimento(Long id, ObservacaoRequestDTO dto){
       SolicitacaoEspecialidade especialidadeExistente =  especialidadeRepository.findById(id).orElseThrow(() -> new RuntimeException("Especialidade não encontrada"));
-
       especialidadeExistente.setStatus(StatusDaMarcacao.CANCELADO);
-      especialidadeRepository.save(especialidadeExistente);
+
+      String obs = (dto == null) ? null : dto.observacao();
+      var agendamento = especialidadeExistente.getAgendamentoSolicitacao();
+      
+      if (agendamento != null && obs != null && !obs.isBlank()) {
+        agendamento.setObservacoes(obs);
+      }
+    
+    especialidadeRepository.save(especialidadeExistente);
     }
 }

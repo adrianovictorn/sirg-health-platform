@@ -44,10 +44,20 @@ public class GrupoRelatorioService {
      return mapper.toViewDTO(salvo);
    }
 
+   public void ativarOrInativarGrupo(Long id){
+    GrupoRelatorio grupoRelatorioExistente = grupoRelatorioRepository.findById(id).orElseThrow(() -> new EntityNotFoundException("Grupo Relatório não encontrado !"));
+    grupoRelatorioExistente.setAtivo(!grupoRelatorioExistente.getAtivo());
+
+    grupoRelatorioRepository.save(grupoRelatorioExistente);
+    
+   }
+
    public void deletarGrupoRelatorio(Long id){
      GrupoRelatorio grupoRelatorioExistente = grupoRelatorioRepository.findById(id).orElseThrow(() -> new EntityNotFoundException("Grupo Relatório não encontrado !"));
      grupoRelatorioRepository.delete(grupoRelatorioExistente);
    }
+
+   
    
 }
 

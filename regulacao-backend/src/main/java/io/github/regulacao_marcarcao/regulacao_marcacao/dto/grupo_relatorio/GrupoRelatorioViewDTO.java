@@ -9,7 +9,8 @@ public record GrupoRelatorioViewDTO(
     String codigo,
     String nome,
     List<EspecialidadeSimpleViewDTO> especialidades,
-    Boolean ativo
+    Boolean ativo,
+    Boolean direcionadoHospital
 ) {
    
 } 

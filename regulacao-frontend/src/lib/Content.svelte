@@ -13,7 +13,7 @@
       <UserMenu />
     </header>
 
-    <main class="flex">
+    <main class="flex flex-1 bg-gray-200 flex-col">
         <slot></slot>
     </main>
   </div>

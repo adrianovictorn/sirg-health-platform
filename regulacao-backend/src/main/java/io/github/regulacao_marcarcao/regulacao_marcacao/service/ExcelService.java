@@ -1,11 +1,9 @@
 package io.github.regulacao_marcarcao.regulacao_marcacao.service;
 
-import io.github.regulacao_marcarcao.regulacao_marcacao.entity.AgendamentoSolicitacao;
-import io.github.regulacao_marcarcao.regulacao_marcacao.entity.Solicitacao;
-import io.github.regulacao_marcarcao.regulacao_marcacao.entity.SolicitacaoEspecialidade;
-import io.github.regulacao_marcarcao.regulacao_marcacao.entity.enums.EspecialidadesEnum;
-import io.github.regulacao_marcarcao.regulacao_marcacao.entity.enums.StatusDaMarcacao;
+
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.SolicitacaoEspecialidadeRepository;
+import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.RelatorioGrupoAgendadoProjection;
+import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.RelatorioGrupoPendenteProjection;
 import lombok.RequiredArgsConstructor;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.ss.util.CellRangeAddress;
@@ -21,8 +19,7 @@ import java.io.InputStream;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
-import java.util.Map;
-import java.util.stream.Collectors;
+
 
 @Service
 @RequiredArgsConstructor
@@ -30,17 +27,18 @@ public class ExcelService {
 
     private final SolicitacaoEspecialidadeRepository especialidadeRepository;
 
-    public ByteArrayInputStream gerarPlanilhaAguardando(List<EspecialidadesEnum> tipos) throws IOException {
-        if (tipos == null || tipos.isEmpty()) {
+    public ByteArrayInputStream gerarPlanilhaAguardando(String grupo) throws IOException {
+        if (grupo == null || grupo.isEmpty()) {
             return new ByteArrayInputStream(new ByteArrayOutputStream().toByteArray());
         }
 
-        List<String> codigos = tipos.stream().map(Enum::name).toList();
-        List<SolicitacaoEspecialidade> especialidades = especialidadeRepository.findByStatusAndEspecialidadeCodigos(StatusDaMarcacao.AGUARDANDO, codigos);
+        List<RelatorioGrupoPendenteProjection> rows = especialidadeRepository.listarPendentesPorGrupo(grupo);
 
-        Map<Solicitacao, List<SolicitacaoEspecialidade>> pendentesPorPaciente = especialidades.stream()
-                .collect(Collectors.groupingBy(SolicitacaoEspecialidade::getSolicitacao));
 
+         if (rows == null || rows.isEmpty()) {
+            return new ByteArrayInputStream(new ByteArrayOutputStream().toByteArray());
+        }
+        
         XSSFWorkbook workbook = new XSSFWorkbook();
         Sheet sheet = workbook.createSheet("Relatório de Pendências");
 
@@ -138,40 +136,32 @@ public class ExcelService {
         DateTimeFormatter fmt = DateTimeFormatter.ofPattern("dd/MM/yyyy");
         int r = 7;
         
-        for (Map.Entry<Solicitacao, List<SolicitacaoEspecialidade>> entry : pendentesPorPaciente.entrySet()) {
+        for (RelatorioGrupoPendenteProjection it: rows) {
             Row row = sheet.createRow(r++);
             
-            Solicitacao sol = entry.getKey();
-            List<SolicitacaoEspecialidade> listaDeEspecialidades = entry.getValue();
-
             float alturaBase = 18f;
-            int procedimentosPorLinha = 3; 
-            int numeroDeLinhas = (int) Math.ceil((double) listaDeEspecialidades.size() / procedimentosPorLinha);
-            row.setHeightInPoints(Math.max(alturaBase, numeroDeLinhas * alturaBase));
+            int caracteresPorLinha = 45;
+            int linhas = Math.max(1, (int) Math.ceil((double) safe(it.getEspecialidades()).length() / caracteresPorLinha));
+            row.setHeightInPoints(Math.max(alturaBase, linhas * alturaBase));
 
-            Cell c0 = row.createCell(0); c0.setCellValue(sol.getNomePaciente()); c0.setCellStyle(dataStyle);
-            Cell c1 = row.createCell(1); c1.setCellValue(sol.getCpfPaciente()); c1.setCellStyle(centerStyle);
-            Cell c2 = row.createCell(2); c2.setCellValue(sol.getCns()); c2.setCellStyle(centerStyle);
-            Cell c3 = row.createCell(3); c3.setCellValue(sol.getDataNascimento() != null ? sol.getDataNascimento().format(fmt) : ""); c3.setCellStyle(centerStyle);
-            Cell c4 = row.createCell(4); c4.setCellValue(sol.getUsfOrigem().name()); c4.setCellStyle(centerStyle);
+            Cell c0 = row.createCell(0); c0.setCellValue(it.getNomePaciente()); c0.setCellStyle(dataStyle);
+            Cell c1 = row.createCell(1); c1.setCellValue(it.getCpfPaciente()); c1.setCellStyle(centerStyle);
+            Cell c2 = row.createCell(2); c2.setCellValue(it.getCns()); c2.setCellStyle(centerStyle);
+            Cell c3 = row.createCell(3); c3.setCellValue(it.getDataNascimento() != null ? it.getDataNascimento().format(fmt) : ""); c3.setCellStyle(centerStyle);
+            Cell c4 = row.createCell(4); c4.setCellValue(safe(it.getUsfOrigem())); c4.setCellStyle(centerStyle);
 
-            String especialidadesAgrupadas = listaDeEspecialidades.stream()
-                    .map(esp -> esp.getEspecialidadeSolicitada() != null ? esp.getEspecialidadeSolicitada().getNome() : esp.getEspecialidadeCodigoLegacy())
-                    .collect(Collectors.joining(", "));
             
-            Cell c5 = row.createCell(5); c5.setCellValue(especialidadesAgrupadas); c5.setCellStyle(dataStyle);
+            
+            Cell c5 = row.createCell(5); c5.setCellValue(it.getEspecialidades()); c5.setCellStyle(dataStyle);
             
             Cell c6 = row.createCell(6);
-            c6.setCellValue(sol.getDataMalote() != null ? sol.getDataMalote().format(fmt) : "");
+            c6.setCellValue(it.getDataMalote() != null ? it.getDataMalote().format(fmt) : "");
             c6.setCellStyle(centerStyle);
 
-            String prioridadesAgrupadas = listaDeEspecialidades.stream()
-                .map(esp -> esp.getPrioridade().name())
-                .distinct()
-                .collect(Collectors.joining(", "));
+            
 
             Cell c7 = row.createCell(7);
-            c7.setCellValue(prioridadesAgrupadas);
+            c7.setCellValue(it.getPrioridade());
             c7.setCellStyle(centerStyle);
         }
 
@@ -198,20 +188,20 @@ public class ExcelService {
         return new ByteArrayInputStream(out.toByteArray());
     }
 
-    public boolean haDadosParaRelatorioAguardando(List<EspecialidadesEnum> tipos) {
-        List<String> codigos = tipos != null ? tipos.stream().map(Enum::name).toList() : List.of();
-        return tipos != null && !tipos.isEmpty() && especialidadeRepository.countByStatusAndEspecialidadeCodigos(StatusDaMarcacao.AGUARDANDO, codigos) > 0;
+    public boolean haDadosParaRelatorioAguardando(String grupo) {
+         if (grupo == null || grupo.isBlank()) return false;
+        return especialidadeRepository.countPendentesPorGrupo(grupo) > 0;        
     }
 
-    public ByteArrayInputStream gerarPlanilhaAgendamentos(List<EspecialidadesEnum> tipos, LocalDate data) throws IOException {
-        if (tipos == null || tipos.isEmpty()) {
+    public ByteArrayInputStream gerarPlanilhaAgendamentos(String grupo, LocalDate data) throws IOException {
+        if (grupo == null || grupo.isEmpty()) {
             return new ByteArrayInputStream(new ByteArrayOutputStream().toByteArray());
         }
-        List<String> codigos = tipos.stream().map(Enum::name).toList();
-        List<SolicitacaoEspecialidade> especialidades = especialidadeRepository.findAgendadasPorDataECodigos(data, codigos);
+        List<RelatorioGrupoAgendadoProjection> rows = especialidadeRepository.listarAgendadosPorGrupoEData(grupo, data);
         
-        Map<Solicitacao, List<SolicitacaoEspecialidade>> agendamentosPorPaciente = especialidades.stream()
-                .collect(Collectors.groupingBy(SolicitacaoEspecialidade::getSolicitacao));
+       if (rows == null || rows.isEmpty()) {
+        return new ByteArrayInputStream(new ByteArrayOutputStream().toByteArray());
+       }
 
         XSSFWorkbook workbook = new XSSFWorkbook();
         Sheet sheet = workbook.createSheet("Relatório de Agendamentos");
@@ -312,37 +302,30 @@ public class ExcelService {
         DateTimeFormatter fmt = DateTimeFormatter.ofPattern("dd/MM/yyyy");
         int r = 7;
         
-        for (Map.Entry<Solicitacao, List<SolicitacaoEspecialidade>> entry : agendamentosPorPaciente.entrySet()) {
+        for (RelatorioGrupoAgendadoProjection it : rows) {
             Row row = sheet.createRow(r++);
             
-            Solicitacao sol = entry.getKey();
-            List<SolicitacaoEspecialidade> listaDeEspecialidades = entry.getValue();
 
             float alturaBase = 18f;
-            int procedimentosPorLinha = 3; 
-            int numeroDeLinhas = (int) Math.ceil((double) listaDeEspecialidades.size() / procedimentosPorLinha);
-            row.setHeightInPoints(Math.max(alturaBase, numeroDeLinhas * alturaBase));
+            int caracteresPorLinha = 45;
+            int linhas = Math.max(1, (int) Math.ceil((double) safe(it.getEspecialidades()).length() / caracteresPorLinha));
+            row.setHeightInPoints(Math.max(alturaBase, linhas * alturaBase));
 
-            Cell c0 = row.createCell(0); c0.setCellValue(sol.getNomePaciente()); c0.setCellStyle(dataStyle);
-            Cell c1 = row.createCell(1); c1.setCellValue(sol.getCpfPaciente()); c1.setCellStyle(centerStyle);
-            Cell c2 = row.createCell(2); c2.setCellValue(sol.getCns()); c2.setCellStyle(centerStyle);
-            Cell c3 = row.createCell(3); c3.setCellValue(sol.getDataNascimento() != null ? sol.getDataNascimento().format(fmt) : ""); c3.setCellStyle(centerStyle);
-            Cell c4 = row.createCell(4); c4.setCellValue(sol.getUsfOrigem().name()); c4.setCellStyle(centerStyle);
+            Cell c0 = row.createCell(0); c0.setCellValue(it.getNomePaciente()); c0.setCellStyle(dataStyle);
+            Cell c1 = row.createCell(1); c1.setCellValue(it.getCpfPaciente()); c1.setCellStyle(centerStyle);
+            Cell c2 = row.createCell(2); c2.setCellValue(it.getCns()); c2.setCellStyle(centerStyle);
+            Cell c3 = row.createCell(3); c3.setCellValue(it.getDataNascimento() != null ? it.getDataNascimento().format(fmt) : ""); c3.setCellStyle(centerStyle);
+            Cell c4 = row.createCell(4); c4.setCellValue(safe(it.getUsfOrigem())); c4.setCellStyle(centerStyle);
 
-            String especialidadesAgrupadas = listaDeEspecialidades.stream()
-                    .map(esp -> esp.getEspecialidadeSolicitada() != null ? esp.getEspecialidadeSolicitada().getNome() : esp.getEspecialidadeCodigoLegacy())
-                    .collect(Collectors.joining(", "));
-            
-            Cell c5 = row.createCell(5); c5.setCellValue(especialidadesAgrupadas); c5.setCellStyle(dataStyle);
+            Cell c5 = row.createCell(5); c5.setCellValue(it.getEspecialidades()); c5.setCellStyle(dataStyle);
 
-            AgendamentoSolicitacao ag = listaDeEspecialidades.get(0).getAgendamentoSolicitacao();
             
             Cell c6 = row.createCell(6);
-            c6.setCellValue(ag != null && ag.getDataAgendada() != null ? ag.getDataAgendada().format(fmt) : "");
+            c6.setCellValue(it.getDataAgendada() != null ? it.getDataAgendada().format(fmt) : "");
             c6.setCellStyle(centerStyle);
 
             Cell c7 = row.createCell(7);
-            c7.setCellValue(ag != null && ag.getTurno() != null ? ag.getTurno().name() : "");
+            c7.setCellValue(safe(it.getTurno()));
             c7.setCellStyle(centerStyle);
         }
 
@@ -369,8 +352,13 @@ public class ExcelService {
         return new ByteArrayInputStream(out.toByteArray());
     }
 
-    public boolean haDadosParaRelatorio(List<EspecialidadesEnum> tipos, LocalDate data) {
-        List<String> codigos = tipos != null ? tipos.stream().map(Enum::name).toList() : List.of();
-        return tipos != null && !tipos.isEmpty() && especialidadeRepository.countAgendadasPorDataECodigos(data, codigos) > 0;
+    public boolean haDadosParaRelatorio(String grupo, LocalDate data) {
+        if (grupo == null || grupo.isBlank() || data == null) return false;
+        return especialidadeRepository.countAgendadosPorGrupoEData(grupo, data) > 0;
     }
+
+    private static String safe(String s) {
+        return s == null ? "" : s;
+    }
+
 }

@@ -119,4 +119,6 @@ public class EspecialidadeService {
                 .replace('Ç','C')
                 .replaceAll("[^A-Z0-9]+","_");
     }
+
+
 }

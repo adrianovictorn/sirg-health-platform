@@ -50,4 +50,10 @@ public class GrupoRelatorioController {
         service.deletarGrupoRelatorio(id);
         return ResponseEntity.noContent().build();
     }
+
+    @PatchMapping("/ativarOrDesativar/{id}")
+    public ResponseEntity<Void> ativarOrDesativar(@PathVariable Long id){
+        service.ativarOrInativarGrupo(id);
+        return ResponseEntity.noContent().build();
+    }
 }

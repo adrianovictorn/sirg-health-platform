@@ -74,6 +74,10 @@ export function patchApi(path){
   return send({method: 'PATCH', path});
 }
 
+export function patchApiData(path, data){
+  return send({method: 'PATCH', path, data});
+}
+
 export function putApi(path, data) {
   return send({ method: 'PUT', path, data });
 }

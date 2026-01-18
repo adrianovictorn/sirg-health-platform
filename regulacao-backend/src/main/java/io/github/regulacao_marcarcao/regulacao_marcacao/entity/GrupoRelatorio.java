@@ -31,6 +31,9 @@ public class GrupoRelatorio {
     @Column(name = "ativo")
     private Boolean ativo;
 
+    @Column(name = "direcionado_hospital", nullable = false)
+    private boolean direcionadoHospital = false;
+
     @OneToMany(mappedBy = "grupoRelatorio",fetch = FetchType.LAZY, cascade = CascadeType.ALL)
     private List<Especialidade> especialidades;
 }

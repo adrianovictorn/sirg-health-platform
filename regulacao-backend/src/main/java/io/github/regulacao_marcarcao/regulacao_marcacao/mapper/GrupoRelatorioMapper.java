@@ -28,6 +28,7 @@ public interface GrupoRelatorioMapper {
 
     List<GrupoRelatorioViewDTO> toViewDTOList(List<GrupoRelatorio> entities);
 
+    @BeanMapping(nullValuePropertyMappingStrategy = IGNORE)
     @Mapping(target = "id", ignore = true)
     @Mapping(target = "especialidades", ignore = true)
     void updateFromDto(GrupoRelatorioUpdateDTO dto, @MappingTarget GrupoRelatorio entity);

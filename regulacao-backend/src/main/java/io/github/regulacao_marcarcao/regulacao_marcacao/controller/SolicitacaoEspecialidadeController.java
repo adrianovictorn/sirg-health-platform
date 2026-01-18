@@ -1,18 +1,24 @@
 package io.github.regulacao_marcarcao.regulacao_marcacao.controller;
 
+import java.time.LocalDate;
 import java.util.List;
 
+import org.springframework.data.domain.Page;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import io.github.regulacao_marcarcao.regulacao_marcacao.dto.agendamentoDTO.ObservacaoRequestDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.solicitacaoEspecialidadeDTO.EspecialidadeUpdateDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.solicitacaoEspecialidadeDTO.EspecialidadesStatusUpdateDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.solicitacaoEspecialidadeDTO.SolicitacaoEspecialidadeViewDTO;
+import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.PainelEspecialidadeProjection;
 import io.github.regulacao_marcarcao.regulacao_marcacao.service.SolicitacaoEspecialidadeService;
 import lombok.RequiredArgsConstructor;
 
@@ -74,15 +80,33 @@ public class SolicitacaoEspecialidadeController {
         return ResponseEntity.ok(service.listarStatusCancelado());
     }
 
-     @PutMapping("{id}/realizado")
+    @GetMapping("/listar/pacientes/por/grupo")
+    public ResponseEntity<Page<PainelEspecialidadeProjection>> listarPacientesAgendadosPorDataEGrupoELocal(
+        @RequestParam(defaultValue = "0", name = "page") int page,
+        @RequestParam(defaultValue = "10", name =  "size") int size,
+        @RequestParam(required = true, name = "grupo") String grupo,
+        @RequestParam(required = true, name =  "data") LocalDate data
+    ){
+        return ResponseEntity.ok(service.listarPacientesAgendadosPorGrupo(page, size, grupo, data));
+    }
+
+     @GetMapping("/contar/pacientes/por/grupo")
+    public ResponseEntity<Long> contarPacientesAgendadosPorDataEGrupoELocal(
+        @RequestParam(required = true, name = "grupo") String grupo,
+        @RequestParam(required = true, name =  "data") LocalDate data
+    ){
+        return ResponseEntity.ok(service.contarPacientesAgendadosPorDataEGrupo(grupo, data));
+    }
+
+     @PatchMapping  ("{id}/realizado")
      public ResponseEntity<Void> confirmarEspecialidade (@PathVariable Long id){
         service.confirmarProcedimento(id);
         return ResponseEntity.noContent().build();
     }
 
     @PutMapping("{id}/faltou")
-    public ResponseEntity<Void> faltouEspecialidade (@PathVariable Long id){
-        service.faltouProcedimento(id);
+    public ResponseEntity<Void> faltouEspecialidade (@PathVariable Long id, @RequestBody(required = false) ObservacaoRequestDTO dto){
+        service.faltouProcedimento(id, dto);
         return ResponseEntity.noContent().build();
     }
 
