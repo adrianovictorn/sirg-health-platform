@@ -14,6 +14,7 @@
         codigo: string
         nome: string
         total: number
+        direcionadoHospital: boolean
     }
 
     let form = $state<formPacientePorGrupo[]>([])
@@ -39,11 +40,13 @@
     
     async function listarGrupos() {
         try {
-            const res = await getApi("/grupo-relatorio/listar")
+            const res = await getApi("grupo-relatorio/listar")
            if(!res.ok){
             throw new Error("Erro ao receber dados do Grupo")
            }
-           return await res.json();
+           const data = await res.json();
+           const lista = Array.isArray(data) ? data : (data?.content ?? []);
+           return lista.filter((grupo) => grupo.direcionadoHospital);
         } catch (error) {
             throw new Error("Erro ao se conectar ao servidor !")
         }
