@@ -55,7 +55,7 @@ public class EspecialidadeController {
     ){
         return ResponseEntity.ok(service.listarTodasEspecialidadesPaginado(page, size, nome));
     }
-
+    
     @PostMapping
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<EspecialidadeViewDTO> criar(@RequestBody EspecialidadeCreateDTO dto) {

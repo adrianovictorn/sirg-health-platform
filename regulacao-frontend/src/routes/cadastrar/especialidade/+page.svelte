@@ -3,7 +3,7 @@
   import UserMenu from '$lib/UserMenu.svelte';
   import { onMount } from 'svelte';
   import { listarEspecialidadesCatalogo, criarEspecialidadeCatalogo, listarGrupoRelatorio } from '$lib/especialidadesApi.js';
-    import { patchApi, putApi } from '$lib/api';
+    import { getApi, patchApi, putApi } from '$lib/api';
 
   interface GrupoRelatorioSimpleViewDTO{
     id: number
@@ -35,6 +35,10 @@
   let termoBusca = $state('');
   let modoEdicao = $state(false)
   let idEmEdicao = $state<number>(0)
+  let pageIndex = $state(0)
+  let pageSize = $state(20)
+  let totalPages = $state(0)
+
   
 
   function normalize(s: string) {
@@ -48,9 +52,17 @@
   
 
   async function carregarLista() {
+    const params = new URLSearchParams()
+    params.append("size", String(pageSize))
+    params.append("page", String(pageIndex))
+    params.append("nome", termoBusca)
     try {
-      const data = await listarEspecialidadesCatalogo();
-      lista = data;
+      const res = await getApi(`catalog/especialidades/buscar/por/nome?${params.toString()}`)
+      console.log(res)
+      const data = await res.json()
+      lista = data.content
+      totalPages = data.totalPages
+      pageIndex = data.number
     } catch (e: any) {
       erro = e?.message || 'Falha ao carregar lista';
     }
@@ -149,6 +161,16 @@
     console.log(`ID VINDO DO GRUPO RELATÓRIO: ${grupoRelatorioId}`)
   } 
 
+  function proximaPagina(){
+    pageIndex += 1
+    carregarLista()
+  }
+
+  function paginaAnterior(){
+    pageIndex -= 1
+    carregarLista()
+  }
+
   onMount(()=> {
     carregarLista()
     carregarGrupo()
@@ -222,7 +244,7 @@
             type="text"
             class="border border-gray-300 rounded-lg p-2 w-full md:w-96"
             placeholder="Buscar por nome, código ou categoria..."
-            bind:value={termoBusca}
+            bind:value={termoBusca} oninput={carregarLista}
           />
           <button
             class="px-3 py-2 text-sm bg-gray-100 rounded border border-gray-300 hover:bg-gray-200"
@@ -282,6 +304,13 @@
             </tbody>
           </table>
         </div>
+      </div>
+      <div class="flex text-center justify-center gap-2 bg-emerald-700 rounded-b-lg text-white">
+        <button hidden={pageIndex <= 0} onclick={paginaAnterior}>Anterior</button>
+        <button>{pageIndex + 1}</button>
+        <p> de </p>
+        <button>{totalPages}</button>
+        <button hidden={pageIndex + 1 >= totalPages} onclick={proximaPagina}>Próximo</button>
       </div>
     </main>
   </div>

@@ -13,6 +13,7 @@ export async function listarEspecialidadesMedicas() {
   return await res.json();
 }
 
+
 export async function listarGrupoRelatorio(){
   const res = await getApi('grupo-relatorio/listar')
   if(!res.ok) throw new Error('Falha ao listar grupos de relatório');

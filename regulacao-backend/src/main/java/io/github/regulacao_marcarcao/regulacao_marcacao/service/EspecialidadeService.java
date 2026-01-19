@@ -108,6 +108,15 @@ public class EspecialidadeService {
     }
 
 
+
+    public Page<EspecialidadeViewDTO> buscarPorNome(int page, int size, String nome){
+        Pageable pagina = PageRequest.of(page, size, Sort.by("nome").ascending());
+        if (nome == null || nome.isBlank()) {
+            return especialidadeRepository.findAll(pagina).map(mapper::toViewDTO);
+        }
+        return especialidadeRepository.findByNomeContainingIgnoreCase(nome, pagina).map(mapper::toViewDTO);
+    }
+    
     private String gerarCodigo(String nome) {
         String base = nome == null ? "ESPECIALIDADE" : nome;
         return base.trim().toUpperCase(Locale.ROOT)
