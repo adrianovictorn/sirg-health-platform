@@ -49,6 +49,7 @@
 
   <nav class="flex-1 flex flex-col space-y-2 px-6">
     <a href="/dashboard" class={linkClasses('/dashboard')}>Dashboard</a>
+    <a href="/indicadores" class={linkClasses('/indicadores')}>Indicadores</a>
 
     <!-- Solicitação -->
     <div>

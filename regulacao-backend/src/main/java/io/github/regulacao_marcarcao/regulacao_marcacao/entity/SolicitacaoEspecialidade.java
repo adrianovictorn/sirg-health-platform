@@ -1,5 +1,10 @@
 package io.github.regulacao_marcarcao.regulacao_marcacao.entity;
 
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+
+import org.hibernate.annotations.CreationTimestamp;
+
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.enums.PrioridadeDaMarcacaoEnum;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.enums.StatusDaMarcacao;
 import jakarta.persistence.*;
@@ -44,4 +49,8 @@ public class SolicitacaoEspecialidade {
     @Enumerated(EnumType.STRING)
     @Column(name = "prioridade")
     private PrioridadeDaMarcacaoEnum prioridade;
+
+    @CreationTimestamp
+    @Column(name = "data_cadastro")
+    private LocalDateTime dataDeCadastro;
 }

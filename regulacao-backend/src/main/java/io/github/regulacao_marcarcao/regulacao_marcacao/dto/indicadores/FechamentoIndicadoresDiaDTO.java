@@ -29,6 +29,7 @@ public record FechamentoIndicadoresDiaDTO(
         GrupoRelatorio grupoRelatorio = entity.getGrupoRelatorio();
         LocalAgendamento localAgendamento = entity.getLocalAgendamento();
         User usuario = entity.getFechadoPor();
+        UserViewDTO fechadoPor = usuario == null ? null : UserViewDTO.from(usuario);
         
         return new FechamentoIndicadoresDiaDTO(
             entity.getId(),
@@ -41,7 +42,7 @@ public record FechamentoIndicadoresDiaDTO(
             entity.getCanceladosTotal(),
             entity.getSolicitacoesCadastradasTotal(),
             entity.getFechadoEm(),
-            UserViewDTO.from(usuario)
+            fechadoPor
         );
     }
 

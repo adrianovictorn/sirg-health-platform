@@ -5,6 +5,10 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -14,6 +18,7 @@ import io.github.regulacao_marcarcao.regulacao_marcacao.repository.FechamentoInd
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.GrupoRelatorioRepository;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.LocalAgendamentoRepository;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.SolicitacaoEspecialidadeRepository;
+import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.GraficoGrupoPorDataProjection;
 
 @Service
 public class FechamentoIndicadoresDiaService {
@@ -84,7 +89,25 @@ public class FechamentoIndicadoresDiaService {
         return FechamentoIndicadoresDiaDTO.fromDTO(f);
     }
 
+    //Consultar total de Paciente Agendado do Dia
+    public long totalDePacientesAgendadosDoDia(LocalDate data){
+        return fechamentoIndicadoresDiaRepository.totalDeAgendadosDoDia(data);
+    }
 
+    //Consultar total de Pacientes novos Cadastro do Dia
+    public long totalDePacientesNovosCadastradosDoDia(LocalDate data){
+        return fechamentoIndicadoresDiaRepository.totalDeSolicitacoesCadastradasDoDia(data);
+    }
+
+    //Consultar total de Solicitações de Especialidade Cadastrados do Dia
+    public long totalSolicitacaoEspecialidadeDoDia(LocalDate data){
+        return fechamentoIndicadoresDiaRepository.totalDeSolicitacoesEspecialidadesDoDia(data);
+    }
+
+    public Page<GraficoGrupoPorDataProjection> totalDeAgendamentoPorGrupoEPeriodo(int page, int size, LocalDate inicio, LocalDate intervalo){
+        Pageable pagina = PageRequest.of(page, size);
+        return fechamentoIndicadoresDiaRepository.totalDeAgendamentoPorGrupoEPeriodo(inicio, intervalo,  pagina);
+    }
 
     private boolean passouDoLimite(LocalDate dataReferencia){
         ZoneId zone = ZoneId.of("America/Bahia");
