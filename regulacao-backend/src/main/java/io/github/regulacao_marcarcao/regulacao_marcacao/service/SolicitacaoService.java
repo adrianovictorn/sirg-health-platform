@@ -471,6 +471,10 @@ public class SolicitacaoService {
 
     }
 
+    public long totalPacientesCadastrados(){
+        return solicitacaoRepository.count();
+    }
+
 }
 
 

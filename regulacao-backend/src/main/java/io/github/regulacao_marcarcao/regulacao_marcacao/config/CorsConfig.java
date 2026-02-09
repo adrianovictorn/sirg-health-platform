@@ -17,6 +17,9 @@ public class CorsConfig {
 
         config.addAllowedOrigin("http://localhost:5173");
         config.addAllowedOrigin("https://sirg.ddns.net"); // Para produção
+        config.addAllowedOrigin("http://192.168.1.181:5173");
+        config.addAllowedOrigin("http://192.168.1.38:5173");
+        config.addAllowedOrigin("http://192.168.0.101:5173");
 
         config.addAllowedHeader("*");
         config.addAllowedMethod("*");

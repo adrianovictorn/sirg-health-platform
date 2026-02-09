@@ -130,4 +130,18 @@ public class EspecialidadeService {
     }
 
 
+    public long totalEspecialidades(){
+        return especialidadeRepository.count();
+    }
+
+    public Page<String> listarNomeDasEspecialidades(int page, int size, String nome){
+        Pageable pagina = PageRequest.of(page, size, Sort.by("nome").ascending());
+        if (nome.isEmpty() || nome == null) {
+            return especialidadeRepository.listarNomeDasEspecialidades(pagina);
+        }
+
+        return especialidadeRepository.listarNomeComFiltroDasEspecialidades(pagina, nome);
+    }
+
+
 }

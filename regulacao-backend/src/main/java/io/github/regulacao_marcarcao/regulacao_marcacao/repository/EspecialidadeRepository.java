@@ -6,6 +6,8 @@ import io.github.regulacao_marcarcao.regulacao_marcacao.entity.enums.ItemCategor
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.util.Collection;
 import java.util.List;
@@ -20,5 +22,37 @@ public interface EspecialidadeRepository extends JpaRepository<Especialidade, Lo
     List<Especialidade> findByCategoriaAndAtivoTrue(ItemCategoria categoria);
     Page<Especialidade> findAll(Pageable pageable);
     Page<Especialidade> findByNomeContainingIgnoreCase(String nome, Pageable pageable);
+ 
+    @Query(value = """
+           SELECT 
+                nome
+            FROM especialidade
+            ORDER BY nome ASC
+            """, nativeQuery = true)
+    Page<String> listarNomeDasEspecialidades(Pageable pageable);
+
+
+    @Query(value = """
+           SELECT 
+                nome
+            FROM especialidade
+            WHERE nome ILIKE %:termo%
+            ORDER BY nome ASC
+            """,
+            countQuery = """
+            SELECT COUNT(*)
+            FROM especialidade
+            WHERE nome ILIKE %:termo%        
+            """,
+            nativeQuery = true)
+    Page<String> listarNomeComFiltroDasEspecialidades(Pageable pageable, @Param("termo") String termo);
+   
+   
+    @Query(value = """
+            SELECT 
+                nome
+            FROM especialidade
+            """, nativeQuery = true)
+    List<String> listarTodosNomesDasEspecialidades();
 }
 

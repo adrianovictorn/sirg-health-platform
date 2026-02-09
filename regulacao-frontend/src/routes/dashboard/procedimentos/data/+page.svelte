@@ -125,7 +125,7 @@
         <div class="bg-emerald-800 w-[0.5%] ">
 
         </div>
-        <div class="bg-emerald-200 w-[98%] p-5 rounded-r-lg">
+        <div class="bg-emerald-200 w-[98%] p-5  rounded-r-lg">
             <h2 class="font-semibold text-3xl text-gray-800">Agendamentos do Dia</h2>
             <p class="text-gray-700 mt-2">{dataPorExtenso()}</p>
             <form action="" class="mt-3 w-full">
@@ -136,14 +136,14 @@
     </section>
     
 
-    <div class="grid grid-cols-5 gap-4 p-5 bg-white ">
+    <div class="grid grid-cols-1 md:grid-cols-5 gap-4 p-10 bg-white ">
     {#each cards as card }
             <div role="button" tabindex="0" onclick={() => abrirDetalhe(card.grupo)} onkeydown={(e) => {
                 if(e.key === 'Enter' || e.key === ' '){
                     e.preventDefault();
                     abrirDetalhe(card.grupo)
                 }
-            }} class={`shadow-xl rounded-xl p-4 mt-2 m-2 w-full border-gray-900 hover:text-emerald-600 transform transition-transform duration-200 ease-out hover:scale-[1.03] hover:-translate-y-1 `}>
+            }} class={`shadow-xl rounded-xl border p-4 mt-2 m-2 w-full border-gray-300 hover:text-emerald-600 transform transition-transform duration-200 ease-out hover:scale-[1.03] hover:-translate-y-1 `}>
                 <div class="flex gap-5 border-gray-800 text-center w-full ">
                     <div class={`${card.class} ${card.hover} flex gap-4 rounded-2xl p-3 border border-gray-300`}>
                         <svg viewBox="0 0 24 24" class="w-6 h-6 text-white  " fill="none">

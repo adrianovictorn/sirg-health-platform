@@ -374,7 +374,7 @@
 <div class="flex h-screen bg-gray-100">
     <RoleBasedMenu activePage="/paciente" />
 
-    <div class="flex-1 flex flex-col">
+    <div class="grid grid-cols-1 md:flex md:flex-1 md:flex-col">
         <header class="bg-emerald-700 text-white p-4 flex justify-between items-center shadow-md">
             {#if isLoading}
                 <h1 class="text-xl font-semibold">Carregando Dados do Paciente...</h1>
@@ -533,6 +533,7 @@
                         {/if}
                     {/if}
                 </section>
+                
                 <!-- Seção Histórico de Agendamentos -->
                  <section class="bg-white rounded-lg shadow p-6">
                     <h2 class="text-lg font-bold text-emerald-800 mb-4 border-b pb-2">Histórico de Agendamentos Ativos</h2>
@@ -604,9 +605,10 @@
                         <div class="border border-gray-200 rounded-md">
                             <ul class="divide-y divide-gray-200">
                                 {#each especPendentes as e (e.id)}
-                                    <li class="p-3 flex justify-between items-center hover:bg-gray-50">
-                                        <span class="text-gray-800 font-medium">{getNomeEspecialidade(e.especialidadeSolicitada)}</span>
-                                        <div class="flex items-center space-x-3">
+                                    <li class="p-3 md:flex justify-between items-center hover:bg-gray-50">
+                                        <span class="text-gray-800 font-medium ">{getNomeEspecialidade(e.especialidadeSolicitada)}</span>
+                                        
+                                        <div class="grid grid-cols-1 md:flex gap-1 items-center ">
                                             {#if e.status === 'AGUARDANDO'}
                                                 <span class="px-3 py-1 text-xs font-semibold rounded-full bg-yellow-100 text-yellow-800">{e.status}</span>
                                             {/if}
@@ -626,12 +628,13 @@
                                                 Encaminhar
                                             </button>
                                             <button onclick={() => removerEspecialidade(e.id)} 
-                                                class="p-2 rounded-full text-gray-400 hover:bg-red-100 hover:text-red-600 transition-colors"
+                                                class="p-2 rounded-full text-gray-400 hover:bg-red-100 hover:text-red-600 transition-colors hidden md:block"
                                                 title="Remover Especialidade">
                                                 <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                                                     <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
                                                 </svg>
                                             </button>
+                                            <button onclick={() => removerEspecialidade(e.id)} type="button" class="md:hidden px-3 py-1 text-xs rounded bg-red-600 text-white hover:bg-red-700">Remover</button>
                                         </div>
                                     </li>
                                 {/each}

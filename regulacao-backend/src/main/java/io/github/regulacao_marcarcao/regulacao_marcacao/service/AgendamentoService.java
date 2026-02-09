@@ -263,4 +263,8 @@ public class AgendamentoService {
             }
         } catch (Exception ignore) {}
     }
+
+    public long totalAgendamentos(){
+        return agendamentoRepository.count();
+    }
 }

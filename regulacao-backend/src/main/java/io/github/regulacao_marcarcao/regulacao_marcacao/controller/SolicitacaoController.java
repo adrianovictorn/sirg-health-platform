@@ -156,6 +156,7 @@ public class SolicitacaoController {
         return ResponseEntity.ok(service.buscarPorUrgenteeEmergencia(page, size, termo));
     }
 
+
 }
     
 

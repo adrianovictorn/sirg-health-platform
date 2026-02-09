@@ -4,11 +4,11 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
+import java.util.List;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
-import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -18,6 +18,7 @@ import io.github.regulacao_marcarcao.regulacao_marcacao.repository.FechamentoInd
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.GrupoRelatorioRepository;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.LocalAgendamentoRepository;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.SolicitacaoEspecialidadeRepository;
+import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.EspecialidadesMaisSolicitadasProjection;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.GraficoGrupoPorDataProjection;
 
 @Service
@@ -109,11 +110,17 @@ public class FechamentoIndicadoresDiaService {
         return fechamentoIndicadoresDiaRepository.totalDeAgendamentoPorGrupoEPeriodo(inicio, intervalo,  pagina);
     }
 
+    public List<EspecialidadesMaisSolicitadasProjection> top10EspecialidadesPendentes(){
+        return fechamentoIndicadoresDiaRepository.countEspecialidadesPendentesTop10();
+    }
+
     private boolean passouDoLimite(LocalDate dataReferencia){
         ZoneId zone = ZoneId.of("America/Bahia");
         var agora = ZonedDateTime.now(zone);
         var limite = dataReferencia.plusDays(1).atStartOfDay(zone);
         return !agora.isBefore(limite);
     }
+
+    
     
 }

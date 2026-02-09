@@ -14,6 +14,7 @@ import org.springframework.data.repository.query.Param;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.agendamentoDTO.ContagemPainelPorDataLocalDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.SolicitacaoEspecialidade;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.enums.StatusDaMarcacao;
+import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.EspecialidadesMaisSolicitadasProjection;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.PainelEspecialidadeProjection;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.RelatorioGrupoAgendadoProjection;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.RelatorioGrupoPendenteProjection;
@@ -223,5 +224,9 @@ public interface SolicitacaoEspecialidadeRepository extends JpaRepository<Solici
                     WHERE (gr.id = :grupoId) and (se.status = :status) and (ag.local_agendamento_id = :localId AND ag.data_agendada = :data) 
                     """, nativeQuery = true)
                     long countAgendamentosPorGrupoEData(@Param("grupoId")Long grupoId, @Param("localId") Long localId, @Param("data") LocalDate data, @Param("status")String status);
+
+
+
+                    
 
 }

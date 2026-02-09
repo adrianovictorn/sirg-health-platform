@@ -1,6 +1,7 @@
 package io.github.regulacao_marcarcao.regulacao_marcacao.controller;
 
 import java.time.LocalDate;
+import java.util.List;
 
 import org.springframework.data.domain.Page;
 import org.springframework.http.ResponseEntity;
@@ -10,6 +11,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.indicadores.FechamentoIndicadoresDiaDTO;
+import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.EspecialidadesMaisSolicitadasProjection;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.GraficoGrupoPorDataProjection;
 import io.github.regulacao_marcarcao.regulacao_marcacao.service.FechamentoIndicadoresDiaService;
 
@@ -51,5 +53,11 @@ public class FechamentoIndicadoresController {
         @RequestParam(name = "intervalo", required = true) LocalDate intervalo
     ){
         return ResponseEntity.ok(fechamentoIndicadoresDiaService.totalDeAgendamentoPorGrupoEPeriodo(page, size, inicio, intervalo));
+    }
+
+
+    @GetMapping("/especialidades/pendentes/top10")
+    public ResponseEntity<List<EspecialidadesMaisSolicitadasProjection>> totalEspecialidadesPendentesTop10(){
+        return ResponseEntity.ok(fechamentoIndicadoresDiaService.top10EspecialidadesPendentes());
     }
 }

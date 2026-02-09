@@ -1,6 +1,7 @@
 package io.github.regulacao_marcarcao.regulacao_marcacao.repository;
 
 import java.time.LocalDate;
+import java.util.List;
 import java.util.Optional;
 
 import org.springframework.data.domain.Page;
@@ -10,6 +11,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.FechamentoIndicadoresDia;
+import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.EspecialidadesMaisSolicitadasProjection;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.GraficoGrupoPorDataProjection;
 
 public interface FechamentoIndicadoresDiaRepository extends JpaRepository<FechamentoIndicadoresDia, Long> {
@@ -61,4 +63,21 @@ public interface FechamentoIndicadoresDiaRepository extends JpaRepository<Fecham
                 gr.nome
             """,nativeQuery = true)
     Page<GraficoGrupoPorDataProjection> totalDeAgendamentoPorGrupoEPeriodo(@Param("inicio") LocalDate inicio, @Param("intervalo") LocalDate intervalo, Pageable pagina);
+
+    @Query(value = """
+            SELECT 
+                e.id AS id,
+                e.nome AS nome,
+                count(*) as total
+            FROM solicitacao_especialidade se
+            JOIN especialidade e ON se.especialidade_id = e.id
+            JOIN grupo_relatorio gr ON gr .id = e.grupo_relatorio_id
+            WHERE se.status = 'AGUARDANDO' 
+            GROUP BY
+                e.id,
+                e.nome
+            ORDER BY total ASC
+            LIMIT 10
+            """,nativeQuery = true)
+    List<EspecialidadesMaisSolicitadasProjection> countEspecialidadesPendentesTop10();
 }

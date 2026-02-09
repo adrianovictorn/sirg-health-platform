@@ -38,6 +38,7 @@ public class SecurityConfiguration {
                 // 2. Define as rotas públicas: login e actuator.
                 auth.requestMatchers("/api/auth/**").permitAll();
                 auth.requestMatchers("/actuator/**").permitAll();
+                auth.requestMatchers("/api/transparencia/**").permitAll();
                 auth.requestMatchers(HttpMethod.GET, "/api/solicitacoes/public/**").permitAll();
                 auth.requestMatchers( 
                     "/swagger-ui.html",
