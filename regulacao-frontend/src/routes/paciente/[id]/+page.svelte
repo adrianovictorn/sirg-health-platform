@@ -19,6 +19,7 @@
         especialidadeSolicitada: string;
         status: string;
         prioridade: string;
+        dataDeCadastro: DataArray;
         agendamentoId?: number | null;
     };
 
@@ -353,6 +354,12 @@
         await salvarCids();
     }
 
+    type DataArray = [number,number,number,number,number]
+    function dataHorarioMinutoLocal(data: DataArray){
+       const [y,m,d,hh,mm] = data;
+        return `${String(d).padStart(2,"0")}/${String(m).padStart(2,"0")}/${String(y).padStart(4,"0")} às ${hh}:${mm}`
+    }
+
 
     let historico: EspecialidadeItem[] = $derived(especialidades as unknown as EspecialidadeItem[]);
     let especPendentes: EspecialidadeItem[] = $derived(
@@ -605,19 +612,24 @@
                         <div class="border border-gray-200 rounded-md">
                             <ul class="divide-y divide-gray-200">
                                 {#each especPendentes as e (e.id)}
-                                    <li class="p-3 md:flex justify-between items-center hover:bg-gray-50">
+                                    <li class="p-3 md:grid grid-cols-3 justify-between gap-5 items-center hover:bg-gray-50">
                                         <span class="text-gray-800 font-medium ">{getNomeEspecialidade(e.especialidadeSolicitada)}</span>
+                                        <div class="grid grid-cols-1 m-auto justify-center">
+                                            <p class="text-[14px] text-center m-auto ">Data de Cadastro: <span class="text-[14px]">{dataHorarioMinutoLocal(e.dataDeCadastro)}</span></p>
+                                        </div>
                                         
-                                        <div class="grid grid-cols-1 md:flex gap-1 items-center ">
-                                            {#if e.status === 'AGUARDANDO'}
-                                                <span class="px-3 py-1 text-xs font-semibold rounded-full bg-yellow-100 text-yellow-800">{e.status}</span>
-                                            {/if}
-                                           {#if e.status === 'RETORNO' || e.status === 'RETORNO_POLICLINICA'}
-                                             <span class="px-3 py-1 text-xs font-semibold rounded-full bg-blue-200 text-blue-800">{e.status}</span>
-                                           {/if}
+                                        <div class="grid grid-cols-1 md:grid-cols-4 justify-center gap-1 w-full  items-center ">
+                                            <div class="flex flex-col ">
+                                                {#if e.status === 'AGUARDANDO'}
+                                                    <span class=" py-1 text-xs font-semibold  rounded-full bg-yellow-100 text-yellow-800">{e.status}</span>
+                                                {/if}
+                                                                                           {#if e.status === 'RETORNO' || e.status === 'RETORNO_POLICLINICA'}
+                                                 <span class="px-3 py-1 text-xs font-semibold rounded-full bg-blue-200 text-blue-800">{e.status}</span>
+                                                                                           {/if}
+                                            </div>
                                             <select bind:value={e.prioridade} 
                                                     onchange={(event) => handlePrioridadeChange(e.id, event)}
-                                                    class="text-sm border-gray-300 rounded-md shadow-sm focus:ring-emerald-500 focus:border-emerald-500 transition duration-150 ease-in-out py-1">
+                                                    class="text-sm border-gray-300 rounded-md shadow-sm focus:ring-emerald-500 px-4 focus:border-emerald-500 transition duration-150 ease-in-out py-1">
                                                 <option value="NORMAL">Normal</option>
                                                 <option value="URGENTE">Urgente</option>
                                                 <option value="EMERGENCIA">Emergência</option>
@@ -628,8 +640,8 @@
                                                 Encaminhar
                                             </button>
                                             <button onclick={() => removerEspecialidade(e.id)} 
-                                                class="p-2 rounded-full text-gray-400 hover:bg-red-100 hover:text-red-600 transition-colors hidden md:block"
-                                                title="Remover Especialidade">
+                                                class="p-2 rounded-full text-gray-400 hover:bg-red-100 hover:text-red-600 transition-colors hidden w-8 md:block"
+                                                title="Remover Especialidade" aria-label="Remover especialidade">
                                                 <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                                                     <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
                                                 </svg>

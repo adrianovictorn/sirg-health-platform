@@ -16,10 +16,12 @@ public class CorsConfig {
         config.setAllowCredentials(true);
 
         config.addAllowedOrigin("http://localhost:5173");
-        config.addAllowedOrigin("https://sirg.ddns.net"); // Para produção
+        config.addAllowedOrigin("https://sirg.com.br"); // Para produção
         config.addAllowedOrigin("http://192.168.1.181:5173");
         config.addAllowedOrigin("http://192.168.1.38:5173");
+        config.addAllowedOrigin("http://192.168.56.1:5173");
         config.addAllowedOrigin("http://192.168.0.101:5173");
+                config.addAllowedOrigin("http://10.64.81.111:5173");
 
         config.addAllowedHeader("*");
         config.addAllowedMethod("*");
