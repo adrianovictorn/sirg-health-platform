@@ -20,7 +20,7 @@
       params.append("nome", termo)
 
       try {
-        const res = await getApi(`/transparencia/buscar/especialidade?${params.toString()}`)
+        const res = await getApi(`transparencia/buscar/especialidade?${params.toString()}`)
         const data = await res.json()
         especialidade = await data.content
         if(!res.ok){
