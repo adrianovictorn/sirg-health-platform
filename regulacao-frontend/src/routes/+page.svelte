@@ -34,9 +34,9 @@
     async function carregarDadosTransparencia() {
       try {
         const[rPac, rAg, rEs] = await Promise.all([
-          getApi("/transparencia/total/pacientes"),
-          getApi("/transparencia/total/agendamentos"),
-          getApi("/transparencia/total/especialidades")
+          getApi("transparencia/total/pacientes"),
+          getApi("transparencia/total/agendamentos"),
+          getApi("transparencia/total/especialidades")
         ])
 
         const [pacientes, agendamentos, especialidades] = await Promise.all([
