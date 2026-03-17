@@ -7,5 +7,6 @@ public enum StatusDaMarcacao {
     CANCELADO,
     REALIZADO,
     RETORNO,
-    RETORNO_POLICLINICA
+    RETORNO_POLICLINICA,
+    GEL
 }

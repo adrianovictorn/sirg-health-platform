@@ -21,12 +21,13 @@ export async function listarGrupoRelatorio(){
 }
 
 // Cria uma especialidade no catálogo (admin)
-export async function criarEspecialidadeCatalogo({ codigo, nome, categoria, grupoRelatorioId, ativo = true }) {
+export async function criarEspecialidadeCatalogo({ codigo, nome, categoria, grupoRelatorioId, vagas = 0, ativo = true }) {
   const res = await (await import('$lib/api.js')).postApi('catalog/especialidades', {
     codigo,
     nome,
     categoria,
     grupoRelatorioId,
+    vagas,
     ativo
   });
   return res;

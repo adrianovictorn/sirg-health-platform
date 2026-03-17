@@ -15,6 +15,7 @@ import io.github.regulacao_marcarcao.regulacao_marcacao.dto.agendamentoDTO.Conta
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.SolicitacaoEspecialidade;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.enums.StatusDaMarcacao;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.EspecialidadesMaisSolicitadasProjection;
+import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.PacientesGelProjection;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.PainelEspecialidadeProjection;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.RelatorioGrupoAgendadoProjection;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.RelatorioGrupoPendenteProjection;
@@ -227,6 +228,50 @@ public interface SolicitacaoEspecialidadeRepository extends JpaRepository<Solici
 
 
 
-                    
+            @Query(
+                    value = """
+                    SELECT 
+                        s.nome_paciente AS nomePaciente,
+                        s.cpf_paciente AS cpfPaciente,
+                        s.cns AS cns,
+                        s.usf_origem AS usfOrigem,
+                        s.datanascimento AS dataNascimento,
+                        e.nome AS especialidade,
+                        se.prioridade AS prioridade
+                    FROM solicitacao s 
+                    JOIN solicitacao_especialidade se ON se.solicitacao_id = s.id
+                    JOIN especialidade e ON e.id = se.especialidade_id
+                    WHERE se.status = 'GEL'
+                      AND (
+                        :termo IS NULL OR :termo = ''
+                        OR lower(s.nome_paciente) LIKE concat('%', lower(:termo), '%')
+                        OR lower(s.usf_origem) LIKE concat('%', lower(:termo), '%')
+                        OR (
+                          regexp_replace(:termo, '[^0-9]', '', 'g') <> ''
+                          AND regexp_replace(s.cpf_paciente, '[^0-9]', '', 'g')
+                            LIKE concat('%', regexp_replace(:termo, '[^0-9]', '', 'g'), '%')
+                        )
+                      )
+                    ORDER BY s.nome_paciente ASC
+                    """,
+                    countQuery = """
+                    SELECT COUNT(*)
+                    FROM solicitacao s 
+                    JOIN solicitacao_especialidade se ON se.solicitacao_id = s.id
+                    JOIN especialidade e ON e.id = se.especialidade_id
+                    WHERE se.status = 'GEL'
+                      AND (
+                        :termo IS NULL OR :termo = ''
+                        OR lower(s.nome_paciente) LIKE concat('%', lower(:termo), '%')
+                        OR lower(s.usf_origem) LIKE concat('%', lower(:termo), '%')
+                        OR (
+                          regexp_replace(:termo, '[^0-9]', '', 'g') <> ''
+                          AND regexp_replace(s.cpf_paciente, '[^0-9]', '', 'g')
+                            LIKE concat('%', regexp_replace(:termo, '[^0-9]', '', 'g'), '%')
+                        )
+                      )
+                    """,
+                    nativeQuery = true)
+            Page<PacientesGelProjection> listarPacientesGel(@Param("termo") String termo, Pageable page);
 
 }

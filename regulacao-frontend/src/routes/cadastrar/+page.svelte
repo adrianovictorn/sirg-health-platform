@@ -304,14 +304,11 @@
 												<option value="AGUARDANDO">Aguardando</option>
 												<option value="RETORNO">Retorno</option>
 												<option value="RETORNO_POLICLINICA">Retorno Policlinica</option>
-												<option value="AGENDADO">Agendado</option>
-												<option value="REALIZADO">Realizado</option>
-												<option value="CANCELADO">Cancelado</option>
+												<option value="GEL">Gel</option>
 											</select>
 											<select bind:value={esp.prioridade} class="border-gray-300 rounded-lg p-2">
 												<option value="NORMAL">Normal</option>
 												<option value="URGENTE">Urgente</option>
-												<option value="EMERGENCIA">Emergência</option>
 											</select>
 											<button type="button" on:click={() => removerEspecialidade(i)} class="text-red-500 hover:text-red-700 font-medium">✕ Remover</button>
 										</div>

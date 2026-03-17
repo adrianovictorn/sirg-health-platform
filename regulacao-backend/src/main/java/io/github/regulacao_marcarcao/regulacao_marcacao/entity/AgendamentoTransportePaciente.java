@@ -1,8 +1,7 @@
 package io.github.regulacao_marcarcao.regulacao_marcacao.entity;
 
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.enums.TurnoEnum;
-import io.github.regulacao_marcarcao.regulacao_marcacao.entity.LocalAgendamento;
-import jakarta.persistence.CascadeType;
+
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;

@@ -17,6 +17,7 @@
     totalAgendadas: number;
     totalConcluidas: number;
     totalUrgentes: number;
+    totalGel: number;
     pendentesPorUsf: Record<string, number>;
   } | null = null;
   let isLoading = true; // Começa como 'true' para mostrar a mensagem de carregando

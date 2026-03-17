@@ -22,6 +22,7 @@ import io.github.regulacao_marcarcao.regulacao_marcacao.entity.SolicitacaoEspeci
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.enums.LocalDeAgendamentoEnum;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.enums.StatusDaMarcacao;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.AgendamentoSolicitacaoRepository;
+import io.github.regulacao_marcarcao.regulacao_marcacao.repository.EspecialidadeRepository;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.LocalAgendamentoRepository;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.SolicitacaoEspecialidadeRepository;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.SolicitacaoRepository;
@@ -35,7 +36,8 @@ public class AgendamentoService {
     private final SolicitacaoRepository solicitacaoRepository;
     private final AgendamentoSolicitacaoRepository agendamentoRepository;
     private final LocalAgendamentoRepository localAgendamentoRepository;
-    private final SolicitacaoEspecialidadeRepository especialidadeRepository;
+    private final SolicitacaoEspecialidadeRepository solicitacaoEspecialidadeRepository;
+    private final EspecialidadeRepository especialidadeRepository;
     private final io.github.regulacao_marcarcao.regulacao_marcacao.config.InstanceContext instanceContext;
     private final org.springframework.amqp.rabbit.core.RabbitTemplate rabbitTemplate;
 
@@ -123,6 +125,30 @@ public class AgendamentoService {
     public AgendamentoSolicitacaoSimpleViewDTO criarAgendamentoParaMultiplosExames(Long solicitacaoId, MultiAgendamentoCreateDTO dto) {
         Solicitacao solicitacao = solicitacaoRepository.findById(solicitacaoId)
                 .orElseThrow(() -> new EntityNotFoundException("Solicitação não encontrada com o ID: " + solicitacaoId));
+
+        // Valida capacidade de cada especialidade selecionada para a data de agendamento
+        var solicitadosPorCodigo = dto.examesSelecionados().stream()
+                .map(String::trim)
+                .filter(c -> !c.isBlank())
+                .map(String::toUpperCase)
+                .collect(Collectors.groupingBy(c -> c, Collectors.counting()));
+
+        for (var entry : solicitadosPorCodigo.entrySet()) {
+            String codigo = entry.getKey();
+            long quantidadeSelecionada = entry.getValue();
+
+            var especialidadesDB = especialidadeRepository.findByCodigoIn(List.of(codigo));
+            if (especialidadesDB.isEmpty()) {
+                continue;
+            }
+
+            long capacidade = especialidadesDB.stream().mapToLong(e -> e.getVagas() != null ? e.getVagas() : 0).sum();
+            long jaAgendados = solicitacaoEspecialidadeRepository.countAgendadasPorDataECodigos(dto.dataAgendada(), List.of(codigo));
+
+            if (capacidade > 0 && (jaAgendados + quantidadeSelecionada > capacidade)) {
+                throw new IllegalStateException("Capacidade excedida para " + codigo + " em " + dto.dataAgendada() + ". Vagas=" + capacidade + ", agendados=" + jaAgendados + ", solicitados=" + quantidadeSelecionada);
+            }
+        }
 
         // 1. Cria a entidade de agendamento.
         AgendamentoSolicitacao novoAgendamento = new AgendamentoSolicitacao();
@@ -223,7 +249,7 @@ public class AgendamentoService {
             .orElseThrow(() -> new EntityNotFoundException("Agendamento não encontrado."));
 
         // Salva as alterações nas especialidades
-        especialidadeRepository.desvincularAgendamento(id);
+        solicitacaoEspecialidadeRepository.desvincularAgendamento(id);
 
         // Agora, deleta o agendamento
         agendamentoRepository.delete(agendamento);

@@ -28,6 +28,7 @@ import io.github.regulacao_marcarcao.regulacao_marcacao.dto.solicitacoesDTO.Soli
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.dashboard.DashboardResumoDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.User;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.enums.Roles;
+import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.PacientesGelProjection;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.PendenciasPacienteProjection;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.UrgenciaEmergenciaPacienteProjection;
 import io.github.regulacao_marcarcao.regulacao_marcacao.service.SolicitacaoService;
@@ -89,6 +90,15 @@ public class SolicitacaoController {
     public ResponseEntity<SolicitacaoViewDTO> buscarPorId (@PathVariable Long id){
         SolicitacaoViewDTO solicitacao = service.getSolicitacaoById(id);
         return ResponseEntity.ok(solicitacao);
+    }
+
+    @GetMapping("/pacientes/gel")
+    public ResponseEntity<Page<PacientesGelProjection>> listarPacientesGel(
+        @RequestParam(name = "page", defaultValue = "0") int page,
+        @RequestParam(name = "size", defaultValue = "10") int size,
+        @RequestParam(name = "search", required = false) String search
+    ){
+        return ResponseEntity.ok(service.listarPacientesGel(page, size, search));
     }
 
     @PutMapping("/{id}")

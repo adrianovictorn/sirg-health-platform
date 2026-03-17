@@ -1,0 +1,2 @@
+ALTER TABLE especialidade
+    ADD COLUMN vagas INTEGER NOT NULL DEFAULT 0;

@@ -20,6 +20,7 @@ import io.github.regulacao_marcarcao.regulacao_marcacao.dto.agendamentoDTO.Pacie
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.solicitacoesDTO.SolicitacaoResumoDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.SolicitacaoEspecialidade;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.enums.EspecialidadesEnum;
+import io.github.regulacao_marcarcao.regulacao_marcacao.repository.EspecialidadeRepository;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.SolicitacaoEspecialidadeRepository;
 import io.github.regulacao_marcarcao.regulacao_marcacao.service.AgendamentoService; // Mantido AgendamentoService
 import io.github.regulacao_marcarcao.regulacao_marcacao.service.SolicitacaoService; // Importar SolicitacaoService também
@@ -34,6 +35,7 @@ public class AgendamentoController {
     private final AgendamentoService agendamentoService;
     private final SolicitacaoService solicitacaoService;
     private final SolicitacaoEspecialidadeRepository solicitacaoRepo;
+    private final EspecialidadeRepository especialidadeRepository;
 
 
     /**
@@ -212,24 +214,53 @@ public class AgendamentoController {
 
     @GetMapping("/contagem-por-data")
     public List<ContagemPainelDTO> consultarAgendamentoPorData(
-            @RequestParam("data") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate data) {
+            @RequestParam("data") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate data,
+            @RequestParam(value = "grupo", required = false) String grupo) {
         
         List<ContagemPainelDTO> resultados = new ArrayList<>();
 
-        // Itera sobre a definição dos painéis
-        for (Map.Entry<String, List<EspecialidadesEnum>> painel : PAINEIS_ENUMS.entrySet()) {
+        List<Map.Entry<String, List<EspecialidadesEnum>>> paineis = new ArrayList<>(PAINEIS_ENUMS.entrySet());
+        if (grupo != null && !grupo.isBlank()) {
+            paineis = PAINEIS_ENUMS.entrySet().stream()
+                .filter(e -> e.getKey().equalsIgnoreCase(grupo))
+                .toList();
+        }
+
+        for (Map.Entry<String, List<EspecialidadesEnum>> painel : paineis) {
             String label = painel.getKey();
             List<EspecialidadesEnum> enums = painel.getValue();
             List<String> codigos = enums.stream().map(Enum::name).toList();
-            
-            // Aqui está a chamada à sua query, exatamente como você queria!
-            long count = solicitacaoRepo.countDistinctSolicitacoesPorDataECodigos(data, codigos);
-            
-            // Adiciona o resultado (apenas dados) à lista
-            resultados.add(new ContagemPainelDTO(label, count));
+
+            long agendados = solicitacaoRepo.countDistinctSolicitacoesPorDataECodigos(data, codigos);
+
+            var especialidadesDoGrupo = especialidadeRepository.findByCodigoIn(codigos);
+            boolean semLimite = especialidadesDoGrupo.stream().anyMatch(e -> e.getVagas() == null || e.getVagas() == 0);
+            long capacidade = semLimite
+                ? 0
+                : especialidadesDoGrupo.stream().mapToLong(e -> e.getVagas() != null ? e.getVagas() : 0).sum();
+
+            long restante = semLimite ? -1 : Math.max(0, capacidade - agendados);
+
+            resultados.add(new ContagemPainelDTO(label, agendados, capacidade, restante));
         }
         
         return resultados;
+    }
+
+    @GetMapping("/contagem-por-data-especialidade")
+    public ContagemPainelDTO consultarAgendamentoPorDataEspecialidade(
+            @RequestParam("data") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate data,
+            @RequestParam("codigo") String codigo) {
+
+        long agendados = solicitacaoRepo.countDistinctSolicitacoesPorDataECodigos(data, List.of(codigo.toUpperCase()));
+
+        long capacidade = especialidadeRepository.findByCodigoIn(List.of(codigo.toUpperCase())).stream()
+            .mapToLong(e -> e.getVagas() != null ? e.getVagas() : 0)
+            .sum();
+
+        long restante = capacidade > 0 ? Math.max(0, capacidade - agendados) : -1;
+
+        return new ContagemPainelDTO(codigo, agendados, capacidade, restante);
     }
 
     @GetMapping("/buscar/por/data")

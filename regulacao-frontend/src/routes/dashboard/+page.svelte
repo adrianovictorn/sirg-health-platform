@@ -17,6 +17,7 @@
     totalAgendadas: number;
     totalConcluidas: number;
     totalUrgentes: number;
+    totalGel: number;
     pendentesPorUsf: Record<string, number>;
   } | null = null;
   let isLoading = true; // Começa como 'true' para mostrar a mensagem de carregando
@@ -54,6 +55,7 @@
   $: agendado = resumo?.totalAgendadas ?? 0;
   $: concluida = resumo?.totalConcluidas ?? 0;
   $: urgencia = resumo?.totalUrgentes ?? 0; 
+  $: gel = resumo?.totalGel ?? 0;
   
   const filtarPendentesPorUnidade = (unidade) => {
     if (!resumo || !resumo.pendentesPorUsf) return 0;
@@ -137,6 +139,17 @@
             </div>
           </section>
 
+          <div class="text-xl font-bold">
+            <h2>Outros Procedimentos</h2>
+          </div>
+
+          <section class="bg-emerald-700/30 rounded-lg shadow p-6">
+            <h2 class="text-lg font-medium p-2 text-color">Procedimentos Externos</h2>
+            <div class="grid grid-cols-1 sm:grid-cols-1 gap-6">
+              <Card3 header="Procedimentos" title="Gel" value={gel} href="/paciente/gel" color="danger"></Card3>
+            </div>
+
+          </section>
           
         </div>
       </main>

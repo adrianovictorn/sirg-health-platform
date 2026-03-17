@@ -25,11 +25,19 @@
         
     }
 
+    type VagasPorGrupo = {
+        label: string
+        count: number
+        capacidade: number
+        restante: number
+    }
+
     const grupo = $derived(() => page.params.especialidade)
     const data = $derived(() => page.url.searchParams.get("data") ?? new Date().toISOString().slice(0,10))
     let carregando = $state(false)
     let pacientes = $state<PainelEspecialidadeProjection[]>([])
     let pageData = $state<Page<PainelEspecialidadeProjection> | null>(null)
+    let vagasInfo = $state<VagasPorGrupo | null>(null)
     let pageIndex = $state(0)
     let pageSize = $state(10)
     let adicionarObservacao = $state(false)
@@ -44,6 +52,10 @@
         params.append("grupo", grupo)
         params.append("data", data)
 
+        const vagasParams = new URLSearchParams()
+        vagasParams.append("data", data)
+        vagasParams.append("grupo", grupo)
+
         try {
             const res = await getApi(`especialidades/listar/pacientes/por/grupo?${params.toString()}`)
             if(!res.ok){
@@ -52,6 +64,14 @@
             const json: Page<PainelEspecialidadeProjection> = await res.json()
             pageData = json
             pacientes = json.content ?? []
+
+            const vagasRes = await getApi(`agendamentos/contagem-por-data?${vagasParams.toString()}`)
+            if (!vagasRes.ok) {
+                vagasInfo = null
+            } else {
+                const vagasJson: VagasPorGrupo[] = await vagasRes.json()
+                vagasInfo = vagasJson.length > 0 ? vagasJson[0] : null
+            }
         } catch (error) {
             throw new Error("Erro ao fazer conexão com o servidor !");
         }
@@ -176,7 +196,19 @@
     <main class="flex-1 p-6 overflow-auto">
             {#if carregando}
                 <p class="text-center text-gray-500 animate-pulse">Carregando painel...</p>
-            {:else if pacientes.length === 0}
+            {:else}
+                <div class="mb-4 p-4 rounded-lg bg-emerald-50 border border-emerald-200">
+                    <h3 class="font-semibold text-emerald-700 text-lg">Resumo de Vagas - {grupo()}</h3>
+                    {#if vagasInfo}
+                        <p>Capacidade total: {vagasInfo.capacidade}</p>
+                        <p>Agendados: {vagasInfo.count}</p>
+                        <p>Restante: {vagasInfo.restante}</p>
+                    {:else}
+                        <p class="text-sm text-gray-500">Não foi possível carregar as vagas para este grupo.</p>
+                    {/if}
+                </div>
+
+                {#if pacientes.length === 0}
                 <div class="text-center p-10 bg-white rounded-lg shadow-sm">
                     <h2 class="text-xl font-semibold text-gray-700">Nenhum paciente para hoje.</h2>
                     <p class="text-gray-500 mt-2">Não há agendamentos para as especialidades selecionadas na data de hoje.</p>
@@ -241,6 +273,7 @@
                     </div>
                 </div>
             {/if}
+        {/if}
         </main>
         
 </Content>

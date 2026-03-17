@@ -19,6 +19,7 @@
     categoria: string
     grupoRelatorio: GrupoRelatorioSimpleViewDTO
     ativo: boolean
+    vagas?: number
   }
 
   type Categoria = 'ESPECIALIDADE_MEDICA' | 'EXAME_OU_PROCEDIMENTO' 
@@ -29,6 +30,7 @@
   let codigo = $state('');
   let categoria= $state<Categoria>('ESPECIALIDADE_MEDICA');
   let grupoRelatorioId = $state<number | null> (null)
+  let vagas = $state<number>(0);
   let ativo = $state(true);
   let lista = $state<EspecialidadeViewDTO[]>([])
   let erro = $state<string | null>(null);
@@ -74,6 +76,7 @@
       nome: nome,
       categoria: categoria,
       grupoRelatorioId: grupoRelatorioId,
+      vagas: vagas,
       ativo: ativo
       
     }
@@ -87,8 +90,9 @@
       codigo = ''
       nome = ''
       categoria = 'ESPECIALIDADE_MEDICA'
-      grupoRelatorioId = 0
-      ativo = 
+      grupoRelatorioId = null
+      vagas = 0
+      ativo = true
       modoEdicao = false
       idEmEdicao = 0
       carregarLista()
@@ -113,13 +117,14 @@
     isLoading = true;
     erro = null;
     try {
-      const res = await criarEspecialidadeCatalogo({ codigo: codigo?.trim() || undefined, nome: nome?.trim(), categoria, grupoRelatorioId, ativo });
+      const res = await criarEspecialidadeCatalogo({ codigo: codigo?.trim() || undefined, nome: nome?.trim(), categoria, grupoRelatorioId, vagas, ativo });
       if (res.ok) {
         alert('Especialidade salva com sucesso');
         nome = '';
         codigo = '';
         categoria = 'ESPECIALIDADE_MEDICA';
-        grupoRelatorioId = 0
+        grupoRelatorioId = null;
+        vagas = 0;
         ativo = true;
         await carregarLista();
       } else {
@@ -158,6 +163,7 @@
     ativo = especialidade.ativo
     categoria = especialidade.categoria as Categoria
     grupoRelatorioId = especialidade.grupoRelatorio?.id ?? null
+    vagas = especialidade.vagas ?? 0
     console.log(`ID VINDO DO GRUPO RELATÓRIO: ${grupoRelatorioId}`)
   } 
 
@@ -218,6 +224,10 @@
                 <option value="EXAME_OU_PROCEDIMENTO">Exame ou Procedimento</option>
               </select>
             </div>
+            <div class="flex flex-col">
+              <label class="text-sm font-medium text-gray-700 mb-1">Vagas (0 = sem limite)</label>
+              <input type="number" min="0" class="border border-gray-300 rounded-lg p-2" bind:value={vagas} />
+            </div>
             <div class="flex items-center">
               <label class="inline-flex items-center space-x-2">
                 <input type="checkbox" bind:checked={ativo} />
@@ -262,6 +272,7 @@
                 <th class="py-2 px-2">Nome</th>
                 <th class="py-2 px-2">Categoria</th>
                 <th class="py-2 px-2">Grupo</th>
+                <th class="py-2 px-2">Vagas</th>
                 <th class="py-2 px-2">Ativo</th>
                 <th class="py-2 px-2 text-center">Ações</th>
               </tr>
@@ -272,6 +283,7 @@
                   <td class="py-2 px-2">{e.nome}</td>
                   <td class="py-2 px-2">{e.categoria}</td>
                   <td class="py-2 px-2">{e.grupoRelatorio?.nome ?? '-'}</td>
+                  <td class="py-2 px-2">{e.vagas ?? 0}</td>
                   <td class="py-2 px-2">{e.ativo ? 'Sim' : 'Não'}</td>
                   <td>
                     <div>

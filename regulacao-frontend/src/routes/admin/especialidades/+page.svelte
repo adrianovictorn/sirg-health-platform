@@ -3,10 +3,11 @@
   import { getApi, postApi, putApi } from '$lib/api.js';
 
   let lista = [];
+  let grupos = [];
   let loading = false;
   let erro = '';
 
-  let form = { codigo: '', nome: '', categoria: 'ESPECIALIDADE_MEDICA', ativo: true };
+  let form = { codigo: '', nome: '', categoria: 'ESPECIALIDADE_MEDICA', ativo: true, grupoRelatorioId: null, vagas: 0 };
   let salvando = false;
   let feedback = '';
 
@@ -23,12 +24,23 @@
     }
   }
 
+  async function carregarGrupos() {
+    try {
+      const res = await getApi('grupo-relatorio/listar');
+      if (!res.ok) throw new Error('Falha ao carregar grupos');
+      grupos = await res.json();
+    } catch (e) {
+      console.warn('Erro ao carregar grupos:', e);
+      grupos = [];
+    }
+  }
+
   async function salvarNova() {
     salvando = true; feedback = '';
     try {
       const res = await postApi('catalog/especialidades', form);
       if (!res.ok) throw new Error('Falha ao criar especialidade');
-      form = { codigo: '', nome: '', categoria: 'ESPECIALIDADE_MEDICA', ativo: true };
+      form = { codigo: '', nome: '', categoria: 'ESPECIALIDADE_MEDICA', ativo: true, grupoRelatorioId: null, vagas: 0 };
       await carregar();
       feedback = 'Especialidade criada com sucesso';
     } catch (e) {
@@ -49,7 +61,9 @@
     }
   }
 
-  onMount(carregar);
+  onMount(async () => {
+    await Promise.all([carregar(), carregarGrupos()]);
+  });
 </script>
 
 <svelte:head><title>Catálogo de Especialidades</title></svelte:head>
@@ -74,6 +88,21 @@
           <option value="ESPECIALIDADE_MEDICA">Especialidade Médica</option>
           <option value="EXAME_OU_PROCEDIMENTO">Exame ou Procedimento</option>
         </select>
+      </div>
+    </div>
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-3 mt-3">
+      <div>
+        <label class="text-sm text-gray-700">Grupo de Relatório</label>
+        <select class="w-full border rounded px-3 py-2" bind:value={form.grupoRelatorioId}>
+          <option value="" disabled selected>Selecione um grupo</option>
+          {#each grupos as g}
+            <option value={g.id}>{g.nome} ({g.codigo})</option>
+          {/each}
+        </select>
+      </div>
+      <div>
+        <label class="text-sm text-gray-700">Vagas</label>
+        <input type="number" class="w-full border rounded px-3 py-2" bind:value={form.vagas} min="0" />
       </div>
     </div>
     <div class="mt-3 flex items-center gap-3">
@@ -101,6 +130,8 @@
               <th class="px-3 py-2 text-left">Código</th>
               <th class="px-3 py-2 text-left">Nome</th>
               <th class="px-3 py-2 text-left">Categoria</th>
+              <th class="px-3 py-2 text-left">Grupo</th>
+              <th class="px-3 py-2 text-left">Vagas</th>
               <th class="px-3 py-2 text-left">Ativo</th>
             </tr>
           </thead>
@@ -111,6 +142,8 @@
                 <td class="px-3 py-2 font-mono text-xs">{e.codigo}</td>
                 <td class="px-3 py-2">{e.nome}</td>
                 <td class="px-3 py-2">{e.categoria}</td>
+                <td class="px-3 py-2">{e.grupoRelatorio?.nome ?? '—'}</td>
+                <td class="px-3 py-2">{e.vagas ?? 0}</td>
                 <td class="px-3 py-2">
                   <label class="inline-flex items-center gap-2">
                     <input type="checkbox" checked={e.ativo} on:change={() => alternarAtivo(e)} />

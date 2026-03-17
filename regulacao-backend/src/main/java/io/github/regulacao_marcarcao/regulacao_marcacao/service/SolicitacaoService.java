@@ -45,6 +45,7 @@ import io.github.regulacao_marcarcao.regulacao_marcacao.entity.SolicitacaoSpecif
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.solicitacoesDTO.SolicitacaoListFiltersDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.solicitacoesDTO.SolicitacaoPublicViewDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.solicitacoesDTO.SolicitacaoSimpleViewDTO;
+import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.PacientesGelProjection;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.PendenciasPacienteProjection;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.StatusCountProjection;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.UrgenciaEmergenciaPacienteProjection;
@@ -296,6 +297,7 @@ public class SolicitacaoService {
         long totalPendentes = extrairTotalStatus(porStatus, StatusDaMarcacao.AGUARDANDO);
         long totalAgendadas = extrairTotalStatus(porStatus, StatusDaMarcacao.AGENDADO);
         long totalConcluidas = extrairTotalStatus(porStatus, StatusDaMarcacao.REALIZADO);
+        long totalGel = extrairTotalStatus(porStatus, StatusDaMarcacao.GEL);
 
         long totalUrgentes = solicitacaoRepository.contarPorStatusPrioridades(
             StatusDaMarcacao.AGUARDANDO,
@@ -318,6 +320,7 @@ public class SolicitacaoService {
             totalAgendadas,
             totalConcluidas,
             totalUrgentes,
+            totalGel,
             pendentesPorUsf
         );
     }
@@ -473,6 +476,14 @@ public class SolicitacaoService {
 
     public long totalPacientesCadastrados(){
         return solicitacaoRepository.count();
+    }
+
+    public Page<PacientesGelProjection> listarPacientesGel(int page, int size, String termo){
+        int paginaAtual = Math.max(page, 0);
+        int tamanhoPagina = Math.min(Math.max(size, 1), 50);
+        Pageable pagina = PageRequest.of(paginaAtual, tamanhoPagina, Sort.by("nomePaciente").ascending());
+
+        return especialidadeRepository.listarPacientesGel(termo, pagina);
     }
 
 }

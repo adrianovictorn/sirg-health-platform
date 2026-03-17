@@ -46,6 +46,12 @@ public class EspecialidadeService {
         }
 
         novaEspecialidade.setAtivo(true);
+
+        if (dto.vagas() != null && dto.vagas() < 0) {
+            throw new IllegalArgumentException("A quantidade de vagas não pode ser negativa.");
+        }
+        novaEspecialidade.setVagas(dto.vagas() != null ? dto.vagas() : 0);
+
         GrupoRelatorio grupoRelatorio = grupoRelatorioRepository.findById(dto.grupoRelatorioId()).orElseThrow(() -> new EntityNotFoundException("Grupo de Relatório não encontrado !"));
         novaEspecialidade.setGrupoRelatorio(grupoRelatorio);
         System.out.println("OBJETO VINDO DO ENDPOINT" + dto);
@@ -82,6 +88,14 @@ public class EspecialidadeService {
         if (dto.ativo() == null) {
             throw new IllegalArgumentException("O campo Ativo precisar ser True or False");
         }
+
+        if (dto.vagas() != null && dto.vagas() < 0) {
+            throw new IllegalArgumentException("A quantidade de vagas não pode ser negativa.");
+        }
+        if (dto.vagas() != null) {
+            especialidadeExistente.setVagas(dto.vagas());
+        }
+
         mapper.updateFromDto(dto,especialidadeExistente);
         Especialidade especialidadeSalva = especialidadeRepository.save(especialidadeExistente);
         return mapper.toViewDTO(especialidadeSalva);

@@ -9,7 +9,8 @@ public record EspecialidadeViewDTO(
         String nome,
         ItemCategoria categoria,
         GrupoRelatorioSimpleViewDTO grupoRelatorio,
-        Boolean ativo
+        Boolean ativo,
+        Integer vagas
 ) {
     
 }

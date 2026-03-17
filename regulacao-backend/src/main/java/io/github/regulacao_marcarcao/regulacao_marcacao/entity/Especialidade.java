@@ -40,5 +40,8 @@ public class Especialidade {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "grupo_relatorio_id", nullable = true)
     private GrupoRelatorio grupoRelatorio;
+
+    @Column(name = "vagas", nullable = false)
+    private Integer vagas = 0;
 }
 

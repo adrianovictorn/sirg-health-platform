@@ -1,4 +1,4 @@
-﻿<script lang="ts">
+<script lang="ts">
   import { onDestroy, onMount } from "svelte";
   import { getApi } from "$lib/api";
   import RoleBasedMenu from "$lib/RoleBasedMenu.svelte";
@@ -61,7 +61,7 @@
     }
 
     try {
-      const response = await getApi(`solicitacoes/pacientes?${params.toString()}`);
+      const response = await getApi(`solicitacoes/pacientes/gel?${params.toString()}`);
 
       if (!response.ok) {
         throw new Error("Falha ao carregar a lista de pacientes.");

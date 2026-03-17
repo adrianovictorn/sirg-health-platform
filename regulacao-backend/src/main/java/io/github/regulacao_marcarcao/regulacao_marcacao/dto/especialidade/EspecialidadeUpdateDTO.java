@@ -5,7 +5,8 @@ public record EspecialidadeUpdateDTO(
     String nome, 
     String categoria, 
     Long grupoRelatorioId,
-    Boolean ativo
+    Boolean ativo,
+    Integer vagas
 ) {
     
 }

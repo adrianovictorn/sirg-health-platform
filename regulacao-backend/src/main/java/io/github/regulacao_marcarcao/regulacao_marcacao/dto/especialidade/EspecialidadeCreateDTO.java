@@ -6,7 +6,8 @@ public record EspecialidadeCreateDTO(
     String codigo, 
     String nome, 
     ItemCategoria categoria, 
-    Long grupoRelatorioId
+    Long grupoRelatorioId,
+    Integer vagas
 ) {
     
 }

@@ -28,6 +28,7 @@
     id: number;
     codigo: string;
     nome: string;
+    vagas?: number;
   }
 
   interface EspecialidadeAgendar {
@@ -72,6 +73,7 @@
   let especialidadeLabelMap = new Map<string, string>();
   let catalogoCarregado = false;
   let catalogoEspecialidades = $state<EspecialidadeCatalogo[]>([]);
+  let contagemPorEspecialidade = $state<Record<string, { agendados: number; capacidade: number; restante: number }>>({});
 
   const solicitacoesFiltradas = $derived(
     !valorBusca
@@ -100,6 +102,53 @@
 
   function getEspecialidadeLabel(valor: string): string {
     return especialidadeLabelMap.get(valor) || valor.replace(/_/g, ' ');
+  }
+
+  function getEspecialidadeVagas(codigo: string): number {
+    const especialidade = catalogoEspecialidades.find((e) => e.codigo?.toUpperCase() === codigo?.toUpperCase());
+    return especialidade?.vagas ?? 0;
+  }
+
+  async function carregarContagemPorEspecialidade(codigo: string) {
+    if (!dataAgendada || !codigo) {
+      return;
+    }
+
+    const chave = codigo.toUpperCase();
+
+    try {
+      const params = new URLSearchParams();
+      params.append('data', dataAgendada);
+      params.append('codigo', chave);
+
+      const res = await getApi(`agendamentos/contagem-por-data-especialidade?${params.toString()}`);
+      if (!res.ok) {
+        delete contagemPorEspecialidade[chave];
+        return;
+      }
+
+      const json = await res.json();
+      contagemPorEspecialidade = {
+        ...contagemPorEspecialidade,
+        [chave]: {
+          agendados: json.count ?? 0,
+          capacidade: json.capacidade ?? 0,
+          restante: json.restante ?? (json.capacidade ?? 0) - (json.count ?? 0)
+        }
+      };
+    } catch (error) {
+      console.warn('Falha ao carregar contagem por especialidade', error);
+    }
+  }
+
+  async function atualizarContagemPorEspecialidades() {
+    if (!dataAgendada) {
+      return;
+    }
+
+    for (const codigo of examesSelecionados) {
+      await carregarContagemPorEspecialidade(codigo);
+    }
   }
 
   function normalizarEspecialidadesParaAgendamento(especialidades: unknown): EspecialidadeAgendar[] {
@@ -239,6 +288,13 @@
       alert('Erro ao se conectar ao servidor!');
     }
   }
+
+  $effect(() => {
+    if (!dataAgendada || examesSelecionados.length === 0) {
+      return;
+    }
+    atualizarContagemPorEspecialidades();
+  });
 
   onMount(async () => {
     isLoading = true;
@@ -629,6 +685,31 @@
                     <p class="text-sm text-gray-500 italic mt-2">Nenhum exame pendente para esta solicitação.</p>
                   {/if}
                 </fieldset>
+
+                {#if examesSelecionados.length > 0}
+                  <div class="bg-emerald-50 border border-emerald-200 rounded-lg p-4 mt-4 space-y-2">
+                    <h4 class="font-semibold text-emerald-700">Contagem de vagas por especialidade selecionada</h4>
+                    {#each examesSelecionados as codigo}
+                      <div class="bg-white border border-gray-200 rounded p-2">
+                        <p class="text-sm font-medium">{getEspecialidadeLabel(codigo)} ({codigo})</p>
+                        <p class="text-xs text-gray-600">Vagas definidas: {getEspecialidadeVagas(codigo) === 0 ? 'Sem limite (0)' : getEspecialidadeVagas(codigo)}</p>
+                        {#if contagemPorEspecialidade[codigo.toUpperCase()]}
+                          <p class="text-xs text-gray-600">Agendados hoje: {contagemPorEspecialidade[codigo.toUpperCase()].agendados}</p>
+                          {#if getEspecialidadeVagas(codigo) === 0}
+                            <p class="text-xs text-indigo-700">Sem limite de vagas.</p>
+                          {:else}
+                            <p class="text-xs text-gray-600">Restante: {contagemPorEspecialidade[codigo.toUpperCase()].restante}</p>
+                            {#if contagemPorEspecialidade[codigo.toUpperCase()].restante <= 0}
+                              <p class="text-xs text-red-600">Limite atingido. Não é possível agendar mais para esta data.</p>
+                            {/if}
+                          {/if}
+                        {:else}
+                          <p class="text-xs text-gray-500">Carregando contagem...</p>
+                        {/if}
+                      </div>
+                    {/each}
+                  </div>
+                {/if}
 
                 {#if solicitacaoDetalhe.especialidades.length > 0}
                   <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mt-4">

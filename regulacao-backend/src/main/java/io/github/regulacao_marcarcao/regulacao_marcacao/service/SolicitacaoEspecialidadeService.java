@@ -132,6 +132,7 @@ public class SolicitacaoEspecialidadeService {
       especialidadeExistente.setStatus(StatusDaMarcacao.REALIZADO);
       especialidadeRepository.save(especialidadeExistente);
     }
+    
 
 
     @Transactional

@@ -6,11 +6,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
-import io.github.regulacao_marcarcao.regulacao_marcacao.entity.AgendamentoTransportePaciente;
-import io.github.regulacao_marcarcao.regulacao_marcacao.entity.Cidade;
-import io.github.regulacao_marcarcao.regulacao_marcacao.entity.LocalAgendamento;
-import io.github.regulacao_marcarcao.regulacao_marcacao.entity.Motorista;
-import io.github.regulacao_marcarcao.regulacao_marcacao.entity.Transporte;
+
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.enums.StatusAgendamento;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;

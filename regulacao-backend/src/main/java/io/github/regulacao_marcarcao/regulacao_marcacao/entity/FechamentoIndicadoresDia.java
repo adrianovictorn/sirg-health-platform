@@ -3,7 +3,6 @@ package io.github.regulacao_marcarcao.regulacao_marcacao.entity;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 
-import org.hibernate.annotations.CreationTimestamp;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
