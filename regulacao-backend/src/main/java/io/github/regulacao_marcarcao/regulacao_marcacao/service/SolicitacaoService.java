@@ -469,7 +469,7 @@ public class SolicitacaoService {
 
     public Page<PacienteProjection> buscarPorStatusConcluido(int page, int size, String termo){
         Pageable pagina = PageRequest.of(page, size);
-        return solicitacaoRepository.buscarPorStatus(pagina, termo, StatusDaMarcacao.REALIZADO.name());
+        return solicitacaoRepository.buscarConcluidosAgrupados(termo, pagina);
     }
 
     public Page<PendenciasPacienteProjection> buscarPorStatusAguardandoeUsf(int page, int size, String usfEnum, String termo,String status){

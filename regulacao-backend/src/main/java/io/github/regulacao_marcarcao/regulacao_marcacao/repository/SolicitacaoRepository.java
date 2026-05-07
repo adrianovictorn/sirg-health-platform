@@ -101,6 +101,45 @@ public interface SolicitacaoRepository extends JpaRepository<Solicitacao, Long>,
         """,nativeQuery = true)
     Page<PacienteProjection> buscarPorStatus(Pageable pageable, String termo, String status);
 
+    @Query(value = """
+      SELECT
+          MIN(s.id)                                              AS id,
+          MIN(s.nome_paciente)                                   AS nomePaciente,
+          s.cpf_paciente                                         AS cpfPaciente,
+          MIN(s.cns)                                             AS cns,
+          MIN(s.usf_origem)                                      AS usfOrigem,
+          MIN(s.datanascimento)                                  AS dataNascimento,
+          MIN(se.id)                                             AS solicitacaoEspecialidadeId,
+          STRING_AGG(DISTINCT e.nome, ', ' ORDER BY e.nome)      AS especialidade,
+          ''                                                     AS prioridade
+      FROM solicitacao s
+      JOIN solicitacao_especialidade se ON s.id = se.solicitacao_id
+      JOIN especialidade e              ON e.id = se.especialidade_id
+      WHERE se.status = 'REALIZADO'
+        AND (
+            :termo IS NULL OR :termo = ''
+            OR s.nome_paciente ILIKE '%' || :termo || '%'
+            OR s.cpf_paciente  ILIKE '%' || :termo || '%'
+            OR e.nome          ILIKE '%' || :termo || '%'
+        )
+      GROUP BY s.cpf_paciente
+      ORDER BY MIN(s.nome_paciente)
+      """,
+      countQuery = """
+      SELECT COUNT(DISTINCT s.cpf_paciente)
+      FROM solicitacao s
+      JOIN solicitacao_especialidade se ON s.id = se.solicitacao_id
+      JOIN especialidade e              ON e.id = se.especialidade_id
+      WHERE se.status = 'REALIZADO'
+        AND (
+            :termo IS NULL OR :termo = ''
+            OR s.nome_paciente ILIKE '%' || :termo || '%'
+            OR s.cpf_paciente  ILIKE '%' || :termo || '%'
+            OR e.nome          ILIKE '%' || :termo || '%'
+        )
+      """, nativeQuery = true)
+    Page<PacienteProjection> buscarConcluidosAgrupados(@Param("termo") String termo, Pageable pageable);
+
     Page<PendenciasPacienteProjection> findByUsfOrigem(Pageable pageable, UsfEnum usfEnum);
     Page<Solicitacao> findAll(Pageable pageable);
     Page<Solicitacao> findByNomePacienteContainingIgnoreCaseOrCpfPacienteContainingIgnoreCase(Pageable pageable, String nomePaciente, String cpfPaciente);
