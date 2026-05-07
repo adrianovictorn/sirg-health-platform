@@ -230,15 +230,18 @@ public interface SolicitacaoEspecialidadeRepository extends JpaRepository<Solici
 
             @Query(
                     value = """
-                    SELECT 
+                    SELECT
+                        s.id AS solicitacaoId,
+                        se.id AS solicitacaoEspecialidadeId,
                         s.nome_paciente AS nomePaciente,
                         s.cpf_paciente AS cpfPaciente,
                         s.cns AS cns,
                         s.usf_origem AS usfOrigem,
                         s.datanascimento AS dataNascimento,
                         e.nome AS especialidade,
-                        se.prioridade AS prioridade
-                    FROM solicitacao s 
+                        se.prioridade AS prioridade,
+                        s.data_malote AS dataMalote
+                    FROM solicitacao s
                     JOIN solicitacao_especialidade se ON se.solicitacao_id = s.id
                     JOIN especialidade e ON e.id = se.especialidade_id
                     WHERE se.status = 'GEL'
@@ -256,7 +259,7 @@ public interface SolicitacaoEspecialidadeRepository extends JpaRepository<Solici
                     """,
                     countQuery = """
                     SELECT COUNT(*)
-                    FROM solicitacao s 
+                    FROM solicitacao s
                     JOIN solicitacao_especialidade se ON se.solicitacao_id = s.id
                     JOIN especialidade e ON e.id = se.especialidade_id
                     WHERE se.status = 'GEL'
@@ -273,5 +276,31 @@ public interface SolicitacaoEspecialidadeRepository extends JpaRepository<Solici
                     """,
                     nativeQuery = true)
             Page<PacientesGelProjection> listarPacientesGel(@Param("termo") String termo, Pageable page);
+
+            @Query(value = """
+                    SELECT
+                        s.id AS solicitacaoId,
+                        se.id AS solicitacaoEspecialidadeId,
+                        s.nome_paciente AS nomePaciente,
+                        s.cpf_paciente AS cpfPaciente,
+                        s.cns AS cns,
+                        s.usf_origem AS usfOrigem,
+                        s.datanascimento AS dataNascimento,
+                        e.nome AS especialidade,
+                        se.prioridade AS prioridade,
+                        s.data_malote AS dataMalote
+                    FROM solicitacao s
+                    JOIN solicitacao_especialidade se ON se.solicitacao_id = s.id
+                    JOIN especialidade e ON e.id = se.especialidade_id
+                    WHERE se.status = 'GEL'
+                    ORDER BY
+                        CASE se.prioridade
+                            WHEN 'EMERGENCIA' THEN 1
+                            WHEN 'URGENTE'    THEN 2
+                            ELSE 3
+                        END,
+                        s.nome_paciente ASC
+                    """, nativeQuery = true)
+            List<PacientesGelProjection> listarTodosPacientesGel();
 
 }

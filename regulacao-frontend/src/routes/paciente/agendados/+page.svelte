@@ -1,79 +1,70 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { getApi, putApi } from "$lib/api";
-  import { opcoesEspecialidades } from "$lib/Especialidades.js";
-    import Menu from "$lib/Menu.svelte";
-    import { toast } from 'svelte-sonner';
-    import UserMenu from "$lib/UserMenu.svelte";
+  import { getApi, patchApi, putApi } from "$lib/api";
+  import Menu from "$lib/Menu.svelte";
+  import { toast, Toaster } from 'svelte-sonner';
+  import UserMenu from "$lib/UserMenu.svelte";
+    import type { PacienteProjection } from "$lib/models/PacienteProjection";
+
 
   // --- Estado do Componente (Svelte 5 Runes) ---
   let isLoading = $state(true);
   let error = $state<string | null>(null);
   let solicitacoesPendentes = $state<any[]>([]);
-  
-  let buscar = $state('');
+  let size = $state(10)
+  let page = $state(0)  
+  let termo = $state('');
   let currentPage = $state(1);
+  let totalPages = $state(0)
+  let pacientes = $state<PacienteProjection[]> ([])
   const itemsPerPage = 10;
 
   function formatarData(dataString: string | null): string {
     if (!dataString) return 'N/A';
-    // Cria a data em UTC para evitar problemas de fuso horário
     const data = new Date(dataString);
-    // Adiciona 1 dia para compensar o fuso-horário (a data vem como YYYY-MM-DD e o JS pode interpretar como dia anterior)
     data.setDate(data.getDate() + 1);
     return data.toLocaleDateString('pt-BR');
   }
 
-  function getNomeEspecialidade(valorEnum: string): string {
-    const todasAsOpcoes = [
-      ...opcoesEspecialidades.especialidadesMedicas,
-      ...opcoesEspecialidades.examesEProcedimentos
-    ];
-    // Encontra o objeto correspondente ao valor do enum
-    const opcao = todasAsOpcoes.find(opt => opt.value === valorEnum);
-    // Retorna o label se encontrou, ou o próprio valor do enum como fallback
-    return opcao ? opcao.label : valorEnum;
-  }
+  
 
-  // --- Carregamento e Processamento de Dados (Client-Side) ---
-  onMount(async () => {
+  async function carregarSolicitacoes() {
+    const params = new URLSearchParams()
+    params.append("size", String(size))
+    params.append("page", String(page))
+    params.append("termo", termo)
+
     try {
-      // 1. Busca os dados da API de forma autenticada
-      const response = await getApi('solicitacoes'); 
-      if (!response.ok) {
-        throw new Error('Falha ao carregar as solicitações do servidor.');
+        const response = await getApi(`solicitacoes/buscar/por/agendados?${params.toString()}`); 
+        if (!response.ok) {
+          throw new Error('Falha ao carregar as solicitações do servidor.');
+        }
+
+        let data =  await response.json()
+        pacientes = data.content
+      } catch (e: any) {
+        error = e.message;
+      } finally {
+        isLoading = false;
       }
-      const todasSolicitacoes = await response.json();
-
-      // 2. Filtra apenas as solicitações que têm itens pendentes
-      solicitacoesPendentes = todasSolicitacoes.filter((s: any) => 
-        s.especialidades.some((e: any) => e.status === 'AGENDADO')
-      );
-
-    } catch (e: any) {
-      error = e.message;
-    } finally {
-      isLoading = false;
-    }
-  });
+  }
+    
+    onMount(carregarSolicitacoes);
 
   async function confirmarPresenca(idEspecialidade: number) {
     try {
-      // CORREÇÃO: A URL correta, conforme seu Controller
-      const res = await putApi(`especialidades/${idEspecialidade}/realizado`);
+      const res = await patchApi(`especialidades/${idEspecialidade}/realizado`);
 
       if (!res.ok) {
         throw new Error('Falha ao confirmar a presença.');
       }
-      
-      // Atualiza a UI para remover o item da lista
       solicitacoesPendentes = solicitacoesPendentes.map(s => ({
           ...s,
           especialidades: s.especialidades.filter(e => e.id !== idEspecialidade)
       })).filter(s => s.especialidades.some(e => e.status === 'AGENDADO'));
 
       toast.success('Presença confirmada!'); // (Opcional)
-
+      carregarSolicitacoes()
     } catch (err: any) {
         error = err.message;
         toast.error(err.message); // (Opcional)
@@ -83,7 +74,7 @@
   async function faltouPresenca(idEspecialidade: number) {
     try {
       // CORREÇÃO: A URL correta, conforme seu Controller
-      const res = await putApi(`especialidades/${idEspecialidade}/faltou`);
+      const res = await patchApi(`especialidades/${idEspecialidade}/faltou`);
 
       if (!res.ok) {
         throw new Error('Falha ao registrar a falta.');
@@ -95,33 +86,16 @@
           especialidades: s.especialidades.filter(e => e.id !== idEspecialidade)
       })).filter(s => s.especialidades.some(e => e.status === 'AGENDADO'));
       
-      toast.success('Falta registrada com sucesso!'); // (Opcional)
+      toast.success('Falta registrada com sucesso!'); 
 
+
+      carregarSolicitacoes()
     } catch (err: any) {
         error = err.message;
         toast.error(err.message); // (Opcional)
     }
   }
 
-  // --- Lógica Reativa com Runes ---
-  // 3. Converte a sintaxe de reatividade de `$` para `$derived`
-  let filtradas = $derived(
-    buscar.trim()
-      ? solicitacoesPendentes.filter(s => {
-          const termo = buscar.toLowerCase();
-          const nomeMatch = s.nomePaciente.toLowerCase().includes(termo);
-          const cpfMatch = s.cpfPaciente.includes(termo);
-          const usfMatch = s.usfOrigem.toLowerCase().includes(termo);
-          const espMatch = s.especialidades.some((e: any) => e.especialidadeSolicitada.toLowerCase().includes(termo));
-          const prioMatch = s.especialidades.some((e: any) => e.prioridade.toLowerCase().includes(termo));
-          return nomeMatch || cpfMatch || usfMatch || espMatch || prioMatch;
-        })
-      : solicitacoesPendentes
-  );
-  
-  // CORREÇÃO: Trocado 'filtrados' por 'filtradas' para corresponder ao nome da variável.
-  let totalPages = $derived(Math.ceil(filtradas.length / itemsPerPage));
-  let paged = $derived(filtradas.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage));
 
   // Efeito para ajustar a página atual se a filtragem mudar
   $effect(() => {
@@ -160,7 +134,9 @@
             <input
               type="text"
               placeholder="Buscar por nome, CPF, especialidade..."
-              bind:value={buscar}
+              bind:value={termo} oninput={(e) => {
+                let termo = (e.currentTarget as HTMLInputElement).value
+                carregarSolicitacoes()}}
               class="flex-1 border border-gray-300 rounded-lg p-2 focus:ring-emerald-500 focus:border-emerald-500"
             />
           </div>
@@ -172,20 +148,20 @@
         {:else if error}
             <p class="text-center text-red-600 bg-red-100 p-4 rounded-lg">Erro ao carregar dados: {error}</p>
         {:else}
-            <p class="text-gray-600">Total: {filtradas.length}</p>
+            <p class="text-gray-600">Total: {pacientes.length}</p>
 
             <!-- List items -->
-            {#if filtradas.length === 0}
+            {#if pacientes.length === 0}
               <p class="text-center text-gray-500 py-10">
-                {#if buscar.trim()}
-                    Nenhuma solicitação encontrada para "{buscar}".
+                {#if termo.trim()}
+                    Nenhuma solicitação encontrada para "{termo}".
                 {:else}
                     Nenhuma solicitação pendente no momento.
                 {/if}
               </p>
             {:else}
               <ul class="space-y-4">
-                {#each paged as s, idx (s.id)}
+                {#each pacientes as s, idx (s.solicitacaoEspecialidadeId)}
                   <li class="bg-white border border-gray-200 rounded-lg p-4 hover:shadow transition flex">
                     <div class="text-emerald-700 font-bold text-xl mr-4">{(currentPage - 1) * itemsPerPage + idx + 1}.</div>
                     <div class="flex-1">
@@ -195,55 +171,43 @@
                       <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 text-sm">
                         <div><span class="font-semibold">CPF:</span> {s.cpfPaciente}</div>
                         <div><span class="font-semibold">USF:</span> {s.usfOrigem}</div>
-                        <div><span class="font-semibold">Data:</span> {formatarData(s.dataMalote)}</div>
+                        <div><span class="font-semibold">Data:</span> {formatarData(s.dataNascimento)}</div>
                        
                       <div class="col-span-full mt-2">
                      <span class="font-semibold text-gray-700">Procedimentos Agendados:</span>
   
                       <ul class="list-disc list-inside pl-4 mt-1 space-y-1">
-                        {#each s.especialidades.filter(e => e.status === 'AGENDADO') as esp}
                           <li class="text-gray-600 flex justify-between items-center">
                             
                             <div>
-                              {getNomeEspecialidade(esp.especialidadeSolicitada)} -
-
-                              {#if esp.agendamentoId}
-                                {@const agendamento = s.agendamentos.find(ag => ag.id === esp.agendamentoId)}
-                                {#if agendamento}
                                   <span class="text-xs py-0.5 bg-emerald-200 w-max rounded">
-                                    Agendado para: {formatarData(agendamento.dataAgendada)}
+                                  {s.especialidade}
                                   </span>
-                                {/if}
-                              {/if}
                             </div>
 
                             <div class="flex items-center space-x-2">
                               <button 
-                                onclick={() => confirmarPresenca(esp.id)}
                                 class="px-2 py-1 text-xs font-medium text-white bg-green-600 rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition-colors"
-                                title="Confirmar Presença"
+                                title="Confirmar Presença" onclick={() => confirmarPresenca(s.solicitacaoEspecialidadeId)}
                               >
                                 ✓ Realizado
                               </button>
                               <button 
-                                onclick={() => faltouPresenca(esp.id)}
                                 class="px-2 py-1 text-xs font-medium text-white bg-red-600 rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 transition-colors"
-                                title="Registrar Falta"
+                                title="Registrar Falta" onclick={() => faltouPresenca(s.solicitacaoEspecialidadeId)}
                               >
                                 ✗ Faltou
                               </button>
                             </div>
-
+                            
                           </li>
-                        {/each}
                       </ul>
                         </div>
-                        <div class="col-span-full"><span class="font-semibold">Observações:</span> {s.observacoes}</div>
                       </div>
                     </div>
                   </li>
-                {/each}
-              </ul>
+                  {/each}
+                </ul>
 
               <!-- Pagination controls -->
               {#if totalPages > 1}

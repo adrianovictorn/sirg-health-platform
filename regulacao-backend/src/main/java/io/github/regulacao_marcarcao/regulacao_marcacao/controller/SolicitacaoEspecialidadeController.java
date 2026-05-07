@@ -104,7 +104,7 @@ public class SolicitacaoEspecialidadeController {
         return ResponseEntity.noContent().build();
     }
 
-    @PutMapping("{id}/faltou")
+    @PatchMapping("{id}/faltou")
     public ResponseEntity<Void> faltouEspecialidade (@PathVariable Long id, @RequestBody(required = false) ObservacaoRequestDTO dto){
         service.faltouProcedimento(id, dto);
         return ResponseEntity.noContent().build();

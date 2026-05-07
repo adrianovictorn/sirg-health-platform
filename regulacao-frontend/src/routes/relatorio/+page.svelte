@@ -9,7 +9,10 @@
   type Grupo = {
     codigo: string
     nome: string
+    ativo: boolean
   }
+
+  let loadingGel = $state(false);
 
   type RelatorioCard = {
     label: string
@@ -218,6 +221,28 @@
   
   
 
+  async function gerarPlanilhaGel() {
+    loadingGel = true;
+    try {
+      const res = await getApi('exportar/planilha-gel');
+      if (!res.ok) throw new Error('Falha ao gerar planilha GEL.');
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `planilha_gel_${new Date().toISOString().split('T')[0]}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error(error);
+      alert('Erro ao gerar planilha GEL. Tente novamente.');
+    } finally {
+      setTimeout(() => { loadingGel = false; }, 700);
+    }
+  }
+
   onMount(() => {
     carregarSolicitacoes()
     carregarGrupoRelatorio()
@@ -343,6 +368,25 @@
           </div>
         </section>
         
+        <section>
+          <h2 class="text-xl font-bold text-gray-700 mb-3">Relatório GEL</h2>
+          <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-5">
+            <button
+              onclick={gerarPlanilhaGel}
+              disabled={loadingGel}
+              class="p-4 bg-teal-600 text-white rounded-lg shadow-lg hover:bg-teal-700 hover:scale-105 transform transition-all duration-200 flex flex-col items-center justify-center h-32 disabled:bg-gray-400 disabled:cursor-wait disabled:scale-100"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              <span class="text-lg font-bold text-center">Excel Procedimentos GEL</span>
+              {#if loadingGel}
+                <span class="text-xs mt-1 animate-pulse">Gerando...</span>
+              {/if}
+            </button>
+          </div>
+        </section>
+
         <section>
           <h2 class="text-xl font-bold text-gray-700 mb-3">Relatórios Gerais</h2>
           <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-5">

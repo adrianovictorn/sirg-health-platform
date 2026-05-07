@@ -3,6 +3,7 @@
     import UserMenu from '$lib/UserMenu.svelte';
     import { onMount } from 'svelte';
     import RoleBasedMenu from '$lib/RoleBasedMenu.svelte';
+    import { toast } from 'svelte-sonner';
 
     interface EspecialidadeDTO{
       id: number,
@@ -42,8 +43,10 @@
   let termoBusca = $state('');
   let examesDisponiveisParaCheckbox = $state<CheckboxItem[]>([])
   let listaDeSolicitacoesParaDropdown = $state<any[]>([]);
+  let examesPendentes = $state<any[]>([])
   let erroAoCarregar = $state<string | null>(null);
   let isUrgente = $state(false);
+  let directGel = $state(false)
 
   // Lógica do Combobox
   let valorBusca = $state('');
@@ -96,7 +99,8 @@
       listaDeSolicitacoesParaDropdown = data.content.map(s => ({
         value: s.id,
         label: `${s.nomePaciente} - (CPF: ${s.cpfPaciente || 'N/A'})`
-      }))
+      }
+    ))
 
       console.log(listaDeSolicitacoesParaDropdown)
     } catch (e: any) {
@@ -132,6 +136,8 @@
         label: labelMap.get(esp.especialidadeSolicitada) || (esp.especialidadeSolicitada || '').replaceAll('_',' ')
       })) || [];
 
+      examesPendentes = examesDaSolicitacaoAtual.filter(e => e.status === 'AGUARDANDO')
+      console.log(examesPendentes)
     } catch (e: any) {
       alert(`Erro ao carregar detalhes: ${e.message}`);
       limparFormularioCompleto();
@@ -143,6 +149,7 @@
 
     const examesSelecionados = examesDisponiveisParaCheckbox.filter(ex => ex.selecionado);
     const prioridadeDaSolicitacao = isUrgente ? 'URGENTE' : 'NORMAL';
+    const direcionarParaGel = directGel ? 'GEL' : 'AGUARDANDO'
 
 
     
@@ -151,7 +158,7 @@
         // A linha de filtro foi removida daqui
         .map(sel => ({
             especialidadeId: sel.id,
-            status: 'AGUARDANDO',
+            status: direcionarParaGel,
             prioridade: prioridadeDaSolicitacao
         }));
 
@@ -169,7 +176,7 @@
         if (algumaFalhou) {
             alert(`Erro ao adicionar um ou mais exames.`);
         } else {
-            alert('Exames adicionados com sucesso!');
+            toast.success("Exame(s) adicionado(s) com sucesso !")
             await carregarDadosSolicitacao(String(idSolicitacao));
         }
       });
@@ -362,11 +369,11 @@
           
           </fieldset>
           
-          {#if idSolicitacao && examesDaSolicitacaoAtual.length > 0}
+          {#if idSolicitacao && examesPendentes.length > 0}
             <fieldset class="border border-gray-300 p-4 rounded-lg">
                 <legend class="text-xl font-semibold text-gray-700 px-2">Exames Já Presentes na Solicitação (ID: {idSolicitacao})</legend>
                 <ul class="list-disc pl-5 mt-2 text-sm">
-                    {#each examesDaSolicitacaoAtual as exameExistente (exameExistente.especialidadeSolicitada + exameExistente.id)}
+                    {#each examesPendentes as exameExistente (exameExistente.especialidadeSolicitada + exameExistente.id)}
                         <li>
                             {exameExistente.label} 
                             (Status: {exameExistente.status}, Prioridade: {exameExistente.prioridade})
@@ -394,9 +401,9 @@
 
 
          
-          <fieldset>
-            <div class="flex items-center justify-center my-6">
-            <label for="urgency-checkbox" class="flex items-center space-x-2 p-2 border border-gray-200 rounded-md hover:bg-gray-50 transition cursor-pointer">
+          <fieldset class="flex justify-center gap-5">
+            <div class="flex  items-center justify-center my-6">
+            <label for="urgency-checkbox" class="flex items-center space-x-2 p-2 border border-gray-500 rounded-md hover:bg-gray-50 transition cursor-pointer">
               <input 
                 type="checkbox" 
                 id="urgency-checkbox" 
@@ -406,7 +413,20 @@
               <span class="text-base font-medium text-gray-700 select-none">Marcar como Urgente</span>
             </label>
           </div>
+          <div class="flex items-center justify-center my-6">
+          <label for="gel-checkbox" class="flex items-center space-x-2 p-2 border border-gray-500 rounded-md hover:bg-gray-50 transition cursor-pointer">
+            <input 
+              type="checkbox" 
+              id="gel-checkbox" 
+              bind:checked={directGel}
+              class="form-checkbox h-5 w-5 text-emerald-600 rounded focus:ring-emerald-500"
+            />
+            <span class="text-base font-medium text-gray-700 select-none">Direcionar para Gel</span>
+          </label>
+        </div>
           </fieldset>
+
+         
         
 
           <button type="submit" class="w-full bg-emerald-700 text-white py-3 rounded-lg hover:bg-emerald-800 transition text-lg font-semibold">

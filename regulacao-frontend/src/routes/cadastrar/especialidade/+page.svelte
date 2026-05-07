@@ -4,6 +4,7 @@
   import { onMount } from 'svelte';
   import { listarEspecialidadesCatalogo, criarEspecialidadeCatalogo, listarGrupoRelatorio } from '$lib/especialidadesApi.js';
     import { getApi, patchApi, putApi } from '$lib/api';
+    import { toast } from 'svelte-sonner';
 
   interface GrupoRelatorioSimpleViewDTO{
     id: number
@@ -119,7 +120,6 @@
     try {
       const res = await criarEspecialidadeCatalogo({ codigo: codigo?.trim() || undefined, nome: nome?.trim(), categoria, grupoRelatorioId, vagas, ativo });
       if (res.ok) {
-        alert('Especialidade salva com sucesso');
         nome = '';
         codigo = '';
         categoria = 'ESPECIALIDADE_MEDICA';
@@ -129,7 +129,7 @@
         await carregarLista();
       } else {
         const body = await res.json().catch(() => ({}));
-        alert(`Erro ao salvar: ${body.message || res.status}`);
+        throw new Error(body.message || `Erro ${res.status}`);
       }
     } finally {
       isLoading = false;
@@ -198,18 +198,25 @@
     <main class="flex-1 overflow-auto p-6">
       <div class="bg-white rounded-lg shadow-lg p-6">
         <h2 class="text-2xl font-bold text-emerald-800 mb-6">Nova Especialidade</h2>
-        <form onsubmit={salvar}  class="space-y-4">
+        <form onsubmit={(e) => toast.promise(salvar(e), {
+          loading: 'Adicionando nova especialidade...',
+          success: 'Especialidade adicionada com sucesso!',
+          error: (err) => err instanceof Error ? err.message : 'Erro ao adicionar especialidade.'
+        })} class="space-y-4">
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div class="flex flex-col">
-              <label class="text-sm font-medium text-gray-700 mb-1">Nome</label>
-              <input class="border border-gray-300 rounded-lg p-2" bind:value={nome} required />
+              <label class="text-sm font-medium text-gray-700 mb-1">Nome<span>*</span></label>
+              <input class="border border-gray-300 rounded-lg p-2"  placeholder="Digite o nome da nova especialidade" bind:value={nome} oninput={(e) => {
+                codigo = nome.toLocaleUpperCase()
+                
+              }} required />
             </div>
             <div class="flex flex-col">
-              <label class="text-sm font-medium text-gray-700 mb-1">Código (opcional)</label>
-              <input class="border border-gray-300 rounded-lg p-2" bind:value={codigo} placeholder="Se vazio, será gerado do nome" />
+              <label class="text-sm font-medium text-gray-700 mb-1">Código<span>*</span></label>
+              <input class="border border-gray-300 rounded-lg p-2" bind:value={codigo}  placeholder="Preencha o campo Código" />
             </div>
             <div class="flex flex-col">
-              <label class="text-sm font-medium text-gray-700 mb-1">Grupo</label>
+              <label class="text-sm font-medium text-gray-700 mb-1">Grupo<span>*</span></label>
               <select name="" id="" class="border border-gray-300 rounded-lg p-2" bind:value={grupoRelatorioId}>
                 <option value={null}>Selecione...</option>
                 {#each grupoRelatorio as gr}
@@ -218,7 +225,7 @@
               </select>
             </div>
             <div class="flex flex-col">
-              <label class="text-sm font-medium text-gray-700 mb-1">Categoria</label>
+              <label class="text-sm font-medium text-gray-700 mb-1">Categoria<span>*</span></label>
               <select class="border border-gray-300 rounded-lg p-2" bind:value={categoria}>
                 <option value="ESPECIALIDADE_MEDICA">Especialidade Médica</option>
                 <option value="EXAME_OU_PROCEDIMENTO">Exame ou Procedimento</option>

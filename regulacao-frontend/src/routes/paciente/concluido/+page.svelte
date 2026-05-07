@@ -1,30 +1,23 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { getApi } from "$lib/api";
-    import Menu from "$lib/Menu.svelte";
-    import { opcoesEspecialidades } from "$lib/Especialidades";
-    import UserMenu from "$lib/UserMenu.svelte";
-    import RoleBasedMenu from "$lib/RoleBasedMenu.svelte";
+
+  import UserMenu from "$lib/UserMenu.svelte";
+  import RoleBasedMenu from "$lib/RoleBasedMenu.svelte";
+    import type { PacienteProjection } from "$lib/models/PacienteProjection";
+    import { toast } from "svelte-sonner";
 
   // --- Estado do Componente (Svelte 5 Runes) ---
   let isLoading = $state(true);
   let error = $state<string | null>(null);
-  let solicitacoesPendentes = $state<any[]>([]);
+  let size = $state(10)
+  let page = $state(0)
+  let solicitacoes = $state<PacienteProjection[]>([]);
   
-  let buscar = $state('');
+  let buscar = $state("");
   let currentPage = $state(1);
-  const itemsPerPage = 10;
 
-  function getNomeEspecialidade(valorEnum: string): string {
-    const todasAsOpcoes = [
-      ...opcoesEspecialidades.especialidadesMedicas,
-      ...opcoesEspecialidades.examesEProcedimentos
-    ];
-    // Encontra o objeto correspondente ao valor do enum
-    const opcao = todasAsOpcoes.find(opt => opt.value === valorEnum);
-    // Retorna o label se encontrou, ou o próprio valor do enum como fallback
-    return opcao ? opcao.label : valorEnum;
-  }
+  
 
    function formatarData(dataString: string | null): string {
     if (!dataString) return 'N/A';
@@ -32,48 +25,43 @@
     data.setDate(data.getDate() + 1);
     return data.toLocaleDateString('pt-BR');
   }
+  
+  async function buscarConcluido() {
+    let params = new URLSearchParams()
+    params.append("size", String(size))
+    params.append("page", String(page))
+    params.append("termo", buscar)
 
-  // --- Carregamento e Processamento de Dados (Client-Side) ---
-  onMount(async () => {
     try {
-      // 1. Busca os dados da API de forma autenticada
-      const response = await getApi('solicitacoes'); 
-      if (!response.ok) {
-        throw new Error('Falha ao carregar as solicitações do servidor.');
+      const res = await getApi(`solicitacoes/buscar/por/concluido?${params.toString()}`)
+      if(res.ok){
+        const data = await res.json()
+        solicitacoes = data.content
+        console.log(solicitacoes)
+        isLoading = false
       }
-      const todasSolicitacoes = await response.json();
-
-      // 2. Filtra apenas as solicitações que têm itens pendentes
-      solicitacoesPendentes = todasSolicitacoes.filter((s: any) => 
-        s.especialidades.some((e: any) => e.status === 'REALIZADO')
-      );
-
-    } catch (e: any) {
-      error = e.message;
-    } finally {
-      isLoading = false;
+    } catch (error) {
+      alert("Erro ao buscar solicitações")
     }
-  });
 
-  // --- Lógica Reativa com Runes ---
-  // 3. Converte a sintaxe de reatividade de `$` para `$derived`
-  let filtradas = $derived(
-    buscar.trim()
-      ? solicitacoesPendentes.filter(s => {
-          const termo = buscar.toLowerCase();
-          const nomeMatch = s.nomePaciente.toLowerCase().includes(termo);
-          const cpfMatch = s.cpfPaciente.includes(termo);
-          const usfMatch = s.usfOrigem.toLowerCase().includes(termo);
-          const espMatch = s.especialidades.some((e: any) => e.especialidadeSolicitada.toLowerCase().includes(termo));
-          const prioMatch = s.especialidades.some((e: any) => e.prioridade.toLowerCase().includes(termo));
-          return nomeMatch || cpfMatch || usfMatch || espMatch || prioMatch;
-        })
-      : solicitacoesPendentes
+    
+  }
+
+  onMount(() => {
+    toast.promise(buscarConcluido(), {
+      loading: 'Carregando concluídos...',
+      success: 'Dados carregados !',
+      error: 'Erro ao carregar os dados'
+    })
+    buscarConcluido()
+  }
   );
+
+ 
   
   // CORREÇÃO: Trocado 'filtrados' por 'filtradas' para corresponder ao nome da variável.
-  let totalPages = $derived(Math.ceil(filtradas.length / itemsPerPage));
-  let paged = $derived(filtradas.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage));
+  let totalPages = $derived(Math.ceil(solicitacoes.length / size));
+  let paged = $derived(solicitacoes.slice((currentPage - 1) * size, currentPage * size));
 
   // Efeito para ajustar a página atual se a filtragem mudar
   $effect(() => {
@@ -99,7 +87,7 @@
   <div class="flex-1 flex flex-col">
     <!-- Header -->
     <header class="bg-emerald-700 text-white shadow p-4 flex items-center justify-between">
-      <h1 class="text-xl font-semibold">Pacientes Pendentes</h1>
+      <h1 class="text-xl font-semibold">Pacientes Concluídos</h1>
           <UserMenu/>
     </header>
 
@@ -108,12 +96,16 @@
       <div class="bg-white rounded-lg shadow-lg p-6 space-y-6">
         <!-- Title and search -->
         <div class="flex flex-col md:flex-row md:justify-between md:items-center">
-          <h2 class="text-2xl font-bold text-emerald-800 mb-4 md:mb-0">Lista de Pacientes Pendentes</h2>
+          <h2 class="text-2xl font-bold text-emerald-800 mb-4 md:mb-0">Lista de Pacientes Concluídos </h2>
           <div class="flex w-full md:w-1/2">
             <input
               type="text"
               placeholder="Buscar por nome, CPF, especialidade..."
               bind:value={buscar}
+               oninput={(e) => { 
+                const buscar = (e.currentTarget as HTMLInputElement).value
+                buscarConcluido()
+               }}
               class="flex-1 border border-gray-300 rounded-lg p-2 focus:ring-emerald-500 focus:border-emerald-500"
             />
           </div>
@@ -125,10 +117,10 @@
         {:else if error}
             <p class="text-center text-red-600 bg-red-100 p-4 rounded-lg">Erro ao carregar dados: {error}</p>
         {:else}
-            <p class="text-gray-600">Total: {filtradas.length}</p>
+            <p class="text-gray-600">Total: {solicitacoes.length}</p>
 
             <!-- List items -->
-            {#if filtradas.length === 0}
+            {#if solicitacoes.length === 0}
               <p class="text-center text-gray-500 py-10">
                 {#if buscar.trim()}
                     Nenhuma solicitação encontrada para "{buscar}".
@@ -138,9 +130,9 @@
               </p>
             {:else}
               <ul class="space-y-4">
-                {#each paged as s, idx (s.id)}
+                {#each paged as s, idx (s.solicitacaoEspecialidadeId)}
                   <li class="bg-white border border-gray-200 rounded-lg p-4 hover:shadow transition flex">
-                    <div class="text-emerald-700 font-bold text-xl mr-4">{(currentPage - 1) * itemsPerPage + idx + 1}.</div>
+                    <div class="text-emerald-700 font-bold text-xl mr-4">{(currentPage - 1) * size + idx + 1}.</div>
                     <div class="flex-1">
                       <a href={`/paciente/${s.id}`} class="block hover:underline">
                         <h3 class="text-lg font-bold mb-2">{s.nomePaciente}</h3>
@@ -148,22 +140,17 @@
                       <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 text-sm">
                         <div><span class="font-semibold">CPF:</span> {s.cpfPaciente}</div>
                         <div><span class="font-semibold">USF:</span> {s.usfOrigem}</div>
-                        <div><span class="font-semibold">Data:</span> {formatarData(s.dataMalote)}</div>
+                        <div><span class="font-semibold">Data:</span> {formatarData(s.dataNascimento)}</div>
                    
                         <div class="col-span-full"><span class="font-semibold">Especialidades Realizadas:
 
                         </span> 
                         <div class="grid grid-cols-1 gap-2">
                           <div class="bg-emerald-600 text-white rounded w-full p-2">
-                            {s.especialidades
-                              .filter(e => e.status === 'REALIZADO')
-                              .map(e => getNomeEspecialidade(e.especialidadeSolicitada))
-                              .join(', ')
-                            }
+                            {s.especialidade}
                           </div>
                         </div>
                         </div>
-                        <div class="col-span-full"><span class="font-semibold">Observações:</span> {s.observacoes}</div>
                       </div>
                     </div>
                   </li>

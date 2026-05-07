@@ -4,11 +4,11 @@
     import RoleBasedMenu from "$lib/RoleBasedMenu.svelte";
     import type { PacientePendentes } from "$lib/type/PendenciasPaciente";
     import { getApi } from "$lib/api";
+    import { toast } from "svelte-sonner";
 
     let isLoading = $state(true);
     let error = $state<string | null>(null);
 
-    let usfOrigem = $state("USF06")
     let page = $state(0)
     let size = $state(10)
     let totalPages = $state(0)
@@ -22,14 +22,13 @@
       const params = new URLSearchParams()
       params.append("page", String(page))
       params.append("size", String(size))
-      params.append("usfOrigem", usfOrigem)
       params.append("termo", termo)
 
       try {
         const res = await getApi(`solicitacoes/buscar/por/status/usf?${params.toString()}`)
 
         if(!res.ok){
-          alert("Erro ao receber dados do servidor !")
+          toast.error("Erro ao receber dados do servidor !")
         }
         
         const data = await res.json()
@@ -57,7 +56,7 @@
   </script>
 
   <svelte:head>
-      <title>{usfOrigem.toUpperCase()}</title>
+      <title>{"Aguardando Agendamento"}</title>
   </svelte:head>
 
 <div class="flex min-h-screen bg-gray-100">
@@ -69,7 +68,7 @@
   <div class="flex-1 flex flex-col">
     <!-- Header -->
     <header class="bg-emerald-700 text-white shadow p-4 flex items-center justify-between">
-      <h1 class="text-xl font-semibold">Pacientes Pendentes - {usfOrigem}</h1>
+      <h1 class="text-xl font-semibold">Pacientes Pendentes Geral</h1>
       <UserMenu />
     </header>
 
@@ -81,7 +80,7 @@
       <!-- Title and search -->
       <div class="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
         <h2 class="text-2xl font-bold text-emerald-800">
-          Lista de Pacientes Pendentes ({usfOrigem})
+          Lista de Pacientes Pendentes Geral
         </h2>
 
         <div class="flex w-full md:w-1/2">
@@ -109,12 +108,12 @@
 
       {:else}
         <p class="text-gray-600">
-          Total: {solicitacoes.length}
+          Total de Pacientes: {solicitacoes.length}
         </p>
 
         {#if solicitacoes.length === 0}
           <p class="text-center text-gray-500 py-10">
-            Nenhuma solicitação pendente para a {usfOrigem} no momento.
+            Nenhuma solicitação pendente para a essa lista no momento.
           </p>
         {:else}
           <!-- List items -->

@@ -1,9 +1,7 @@
 ﻿import { token } from '$lib/stores/auth.js';
 import { get } from 'svelte/store';
 
-// SeleÃ§Ã£o dinÃ¢mica do backend (dev helper):
-// - Define ?api=8080|8081|8083 na URL para trocar o alvo
-// - Ou defina window.localStorage.API_PREFIX = '/api-8083'
+
 function resolveApiPrefix() {
   if (typeof window === 'undefined') return '/api';
   try {

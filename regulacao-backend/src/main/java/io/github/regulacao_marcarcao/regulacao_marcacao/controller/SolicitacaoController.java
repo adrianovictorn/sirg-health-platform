@@ -28,6 +28,7 @@ import io.github.regulacao_marcarcao.regulacao_marcacao.dto.solicitacoesDTO.Soli
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.dashboard.DashboardResumoDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.User;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.enums.Roles;
+import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.PacienteProjection;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.PacientesGelProjection;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.PendenciasPacienteProjection;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.UrgenciaEmergenciaPacienteProjection;
@@ -152,7 +153,7 @@ public class SolicitacaoController {
         @RequestParam(defaultValue = "0", name = "page") int page,
         @RequestParam(defaultValue = "10", name = "size") int size,
         @RequestParam(required = false, name = "termo") String termo,
-        @RequestParam(required = true, name = "usfOrigem") String usfEnum
+        @RequestParam(required = false, name = "usfOrigem") String usfEnum
     ){
         return ResponseEntity.ok(service.buscarPorStatusAguardandoeUsf(page, size, usfEnum, termo,"AGUARDANDO" ));
     }
@@ -166,6 +167,23 @@ public class SolicitacaoController {
         return ResponseEntity.ok(service.buscarPorUrgenteeEmergencia(page, size, termo));
     }
 
+    @GetMapping("/buscar/por/agendados")
+    public ResponseEntity<Page<PacienteProjection>> buscarPorAgendados(
+        @RequestParam(defaultValue = "0", name = "page") int page,
+        @RequestParam(defaultValue = "10", name = "size") int size,
+        @RequestParam(required = false, name = "termo") String termo
+    ){
+        return ResponseEntity.ok(service.buscarPorStatusAguardando(page, size, termo));
+    }
+
+    @GetMapping("/buscar/por/concluido")
+    public ResponseEntity<Page<PacienteProjection>> buscarPorConcluido(
+        @RequestParam(defaultValue = "0", name = "page") int page,
+        @RequestParam(defaultValue = "10", name = "size") int size,
+        @RequestParam(required = false, name = "termo") String termo
+    ){
+        return ResponseEntity.ok(service.buscarPorStatusConcluido(page, size, termo));
+    }
 
 }
     

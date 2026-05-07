@@ -45,6 +45,7 @@ import io.github.regulacao_marcarcao.regulacao_marcacao.entity.SolicitacaoSpecif
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.solicitacoesDTO.SolicitacaoListFiltersDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.solicitacoesDTO.SolicitacaoPublicViewDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.solicitacoesDTO.SolicitacaoSimpleViewDTO;
+import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.PacienteProjection;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.PacientesGelProjection;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.PendenciasPacienteProjection;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.StatusCountProjection;
@@ -459,6 +460,16 @@ public class SolicitacaoService {
     public Page<PendenciasPacienteProjection> buscarPorUsf(int page, int size, UsfEnum usfEnum){
         Pageable pageable = PageRequest.of(page, size, Sort.by("nomePaciente").ascending());
         return solicitacaoRepository.findByUsfOrigem(pageable, usfEnum);
+    }
+
+    public Page<PacienteProjection> buscarPorStatusAguardando(int page, int size, String termo){
+        Pageable pagina = PageRequest.of(page, size);
+        return solicitacaoRepository.buscarPorStatus(pagina, termo, StatusDaMarcacao.AGENDADO.name());
+    }
+
+    public Page<PacienteProjection> buscarPorStatusConcluido(int page, int size, String termo){
+        Pageable pagina = PageRequest.of(page, size);
+        return solicitacaoRepository.buscarPorStatus(pagina, termo, StatusDaMarcacao.REALIZADO.name());
     }
 
     public Page<PendenciasPacienteProjection> buscarPorStatusAguardandoeUsf(int page, int size, String usfEnum, String termo,String status){

@@ -15,6 +15,7 @@ import io.github.regulacao_marcarcao.regulacao_marcacao.entity.Solicitacao;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.enums.PrioridadeDaMarcacaoEnum;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.enums.StatusDaMarcacao;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.enums.UsfEnum;
+import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.PacienteProjection;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.PendenciasPacienteProjection;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.StatusCountProjection;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.UrgenciaEmergenciaPacienteProjection;
@@ -64,6 +65,42 @@ public interface SolicitacaoRepository extends JpaRepository<Solicitacao, Long>,
         Pageable pageable
     );
 
+    @Query(value = """
+     SELECT 
+        s.id AS id,
+        s.nome_paciente AS nomePaciente,
+        s.cpf_paciente AS cpfPaciente,
+        s.cns AS cns,
+        s.usf_origem AS usfOrigem,
+        s.datanascimento AS dataNascimento,
+        se.id AS solicitacaoEspecialidadeId,
+        STRING_AGG(DISTINCT e.nome, ', ' ORDER BY e.nome) AS especialidade,
+        STRING_AGG(DISTINCT se.prioridade, ', ' ORDER BY se.prioridade DESC) AS prioridade
+      FROM solicitacao s
+      JOIN solicitacao_especialidade se
+          ON s.id = se.solicitacao_id
+      JOIN especialidade e 
+          ON e.id = se.especialidade_id
+      WHERE 
+          se.status = :status
+          AND (
+              :termo IS NULL OR :termo = ''
+              OR s.nome_paciente ILIKE '%' || :termo || '%'
+              OR s.cpf_paciente ILIKE '%' || :termo || '%'
+              OR e.nome ILIKE '%' || :termo || '%'
+              OR e.categoria ILIKE '%' || :termo || '%'
+          )
+      GROUP BY
+          s.id,
+          s.nome_paciente,
+          s.cpf_paciente,
+          s.cns,
+          s.usf_origem,
+          s.datanascimento,
+          se.id 
+        """,nativeQuery = true)
+    Page<PacienteProjection> buscarPorStatus(Pageable pageable, String termo, String status);
+
     Page<PendenciasPacienteProjection> findByUsfOrigem(Pageable pageable, UsfEnum usfEnum);
     Page<Solicitacao> findAll(Pageable pageable);
     Page<Solicitacao> findByNomePacienteContainingIgnoreCaseOrCpfPacienteContainingIgnoreCase(Pageable pageable, String nomePaciente, String cpfPaciente);
@@ -80,7 +117,10 @@ public interface SolicitacaoRepository extends JpaRepository<Solicitacao, Long>,
         JOIN solicitacao_especialidade se ON s.id = se.solicitacao_id
         JOIN especialidade e ON e.id = se.especialidade_id
         WHERE se.status = :status
-          AND s.usf_origem = :usfOrigem
+           AND(
+              :usfOrigem IS NULL OR :usfOrigem = '' 
+              OR s.usf_origem = :usfOrigem
+            )
           AND (
                 :termo IS NULL OR :termo = ''
                 OR lower(s.nome_paciente) LIKE concat('%', lower(:termo), '%')
@@ -108,7 +148,10 @@ public interface SolicitacaoRepository extends JpaRepository<Solicitacao, Long>,
             JOIN solicitacao_especialidade se ON s.id = se.solicitacao_id
             JOIN especialidade e ON e.id = se.especialidade_id
             WHERE se.status = :status
-              AND s.usf_origem = :usfOrigem
+              AND (
+                  :usfOrigem IS NULL OR :usfOrigem = ''  
+                  OR s.usf_origem = :usfOrigem
+                )
               AND (
                 :termo IS NULL OR :termo = ''
                 OR lower(s.nome_paciente) LIKE concat('%', lower(:termo), '%')
@@ -127,23 +170,32 @@ public interface SolicitacaoRepository extends JpaRepository<Solicitacao, Long>,
 
         @Query(
             value = """
-              SELECT 
+              SELECT
                 s.id AS id,
                 s.nome_paciente AS nomePaciente,
                 s.cpf_paciente AS cpfPaciente,
                 s.datanascimento AS dataNascimento,
                 s.cns AS cns,
                 s.usf_origem AS usfOrigem,
-                STRING_AGG(DISTINCT (e.nome || ' - ' || se.prioridade), ', ' ORDER BY e.nome || ' - ' || se.prioridade) AS itens
+                STRING_AGG(sub.itens, ', ' ORDER BY sub.itens) AS itens
               FROM solicitacao s
-              JOIN solicitacao_especialidade se ON s.id = se.solicitacao_id
-              JOIN especialidade e ON se.especialidade_id = e.id
-              WHERE se.status IN ('AGUARDANDO', 'RETORNO', 'RETORNO_POLICLINICA')
-                AND se.prioridade IN ('URGENTE', 'EMERGENCIA') AND
-                (:termo IS NULL OR :termo = ''
+              JOIN (
+                SELECT DISTINCT
+                  se.solicitacao_id,
+                  (e.nome || ' - ' || se.prioridade) AS itens,
+                  e.nome AS especialidade_nome,
+                  e.categoria AS especialidade_categoria
+                FROM solicitacao_especialidade se
+                JOIN especialidade e ON se.especialidade_id = e.id
+                WHERE se.status IN ('AGUARDANDO', 'RETORNO', 'RETORNO_POLICLINICA', 'GEL')
+                  AND se.prioridade IN ('URGENTE', 'EMERGENCIA')
+              ) sub ON sub.solicitacao_id = s.id
+              WHERE
+                :termo IS NULL OR :termo = ''
                 OR s.nome_paciente ILIKE '%' || :termo || '%'
                 OR s.cpf_paciente ILIKE '%' || :termo || '%'
-                )
+                OR sub.especialidade_nome ILIKE '%' || :termo || '%'
+                OR sub.especialidade_categoria ILIKE '%' || :termo || '%'
               GROUP BY
                 s.id, s.nome_paciente, s.cpf_paciente, s.datanascimento, s.cns, s.usf_origem
               ORDER BY s.nome_paciente ASC
@@ -151,13 +203,22 @@ public interface SolicitacaoRepository extends JpaRepository<Solicitacao, Long>,
             countQuery = """
               SELECT COUNT(DISTINCT s.id)
               FROM solicitacao s
-              JOIN solicitacao_especialidade se ON s.id = se.solicitacao_id
-              WHERE se.status IN ('AGUARDANDO', 'RETORNO', 'RETORNO_POLICLINICA')
-                AND se.prioridade IN ('URGENTE', 'EMERGENCIA') AND 
-                (:termo IS NULL OR :termo = ''
-                  OR s.nome_paciente ILIKE '%' || :termo || '%'
-                  OR s.cpf_paciente ILIKE '%' || :termo || '%'
-                )
+              JOIN (
+                SELECT DISTINCT
+                  se.solicitacao_id,
+                  e.nome AS especialidade_nome,
+                  e.categoria AS especialidade_categoria
+                FROM solicitacao_especialidade se
+                JOIN especialidade e ON se.especialidade_id = e.id
+                WHERE se.status IN ('AGUARDANDO', 'RETORNO', 'RETORNO_POLICLINICA', 'GEL')
+                  AND se.prioridade IN ('URGENTE', 'EMERGENCIA')
+              ) sub ON sub.solicitacao_id = s.id
+              WHERE
+                :termo IS NULL OR :termo = ''
+                OR s.nome_paciente ILIKE '%' || :termo || '%'
+                OR s.cpf_paciente ILIKE '%' || :termo || '%'
+                OR sub.especialidade_nome ILIKE '%' || :termo || '%'
+                OR sub.especialidade_categoria ILIKE '%' || :termo || '%'
             """,
             nativeQuery = true
           )

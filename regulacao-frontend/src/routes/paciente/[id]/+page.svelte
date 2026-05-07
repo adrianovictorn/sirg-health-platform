@@ -623,9 +623,13 @@
                                                 {#if e.status === 'AGUARDANDO'}
                                                     <span class=" py-1 text-xs font-semibold  rounded-full bg-yellow-100 text-yellow-800">{e.status}</span>
                                                 {/if}
-                                                                                           {#if e.status === 'RETORNO' || e.status === 'RETORNO_POLICLINICA'}
-                                                 <span class="px-3 py-1 text-xs font-semibold rounded-full bg-blue-200 text-blue-800">{e.status}</span>
-                                                                                           {/if}
+                                                {#if e.status === 'RETORNO' || e.status === 'RETORNO_POLICLINICA'}
+                                                    <span class="px-3 py-1 text-xs font-semibold rounded-full bg-blue-200 text-blue-800">{e.status}</span>
+                                                {/if}
+                                                {#if e.status === 'GEL'}
+                                                    <span class="px-3 py-1 text-xs font-semibold rounded-full text-center bg-blue-200 text-blue-800">{e.status}</span>
+
+                                                {/if}
                                             </div>
                                             <select bind:value={e.prioridade} 
                                                     onchange={(event) => handlePrioridadeChange(e.id, event)}
@@ -811,6 +815,7 @@
                                 <option value="AGUARDANDO" disabled>Selecione...</option>
                                 <option value="RETORNO">Retorno</option>
                                 <option value="RETORNO_POLICLINICA">Retorno Policlínica</option>
+                                <option value="GEL">Gel</option>
                             </select>
                         </div>
                     </div>

@@ -1,14 +1,18 @@
-<script lang="ts">
+﻿<script lang="ts">
   import { onDestroy, onMount } from "svelte";
   import { getApi } from "$lib/api";
   import RoleBasedMenu from "$lib/RoleBasedMenu.svelte";
   import UserMenu from "$lib/UserMenu.svelte";
+  import { toast } from "svelte-sonner";
 
   type PacienteResumo = {
     solicitacaoId: number;
+    solicitacaoEspecialidadeId: number;
     nomePaciente: string;
     cpfPaciente: string;
     usfOrigem: string;
+    especialidade: string;
+    prioridade: string;
   };
 
   type PacientePage = {
@@ -20,6 +24,7 @@
   };
 
   let isLoading = $state(true);
+  let isInitialLoad = $state(true);
   let error = $state<string | null>(null);
   let usingServerPagination = $state(true);
   let allPacientes = $state<PacienteResumo[]>([]);
@@ -103,6 +108,7 @@
     } finally {
       if (lastFetchToken === token) {
         isLoading = false;
+        isInitialLoad = false;
       }
     }
   }
@@ -145,7 +151,11 @@
   }
 
   onMount(() => {
-    triggerFetch(1);
+    toast.promise(carregarPacientes(1), {
+      loading: 'Carregando pacientes...',
+      success: 'Pacientes carregados!',
+      error: 'Erro ao carregar pacientes.'
+    });
   });
 
   onDestroy(() => {
@@ -184,7 +194,7 @@
           </div>
         </div>
 
-        {#if isLoading}
+        {#if isInitialLoad && isLoading}
           <div class="text-center text-gray-500 py-10">
             <p>Carregando pacientes...</p>
           </div>
@@ -193,7 +203,10 @@
             <p><strong>Erro ao carregar dados:</strong> {error}</p>
           </div>
         {:else}
-          <p class="text-gray-600">Total de pacientes encontrados: {totalPacientes}</p>
+          <p class="text-gray-600">
+            Total de pacientes encontrados: {totalPacientes}
+            {#if isLoading}<span class="text-sm text-emerald-600 ml-2">Atualizando...</span>{/if}
+          </p>
 
           {#if totalPacientes === 0}
             {#if buscar.trim()}
@@ -203,7 +216,7 @@
             {/if}
           {:else}
             <ul class="space-y-4">
-              {#each pacientes as p, idx (p.cpfPaciente)}
+              {#each pacientes as p, idx (p.solicitacaoEspecialidadeId)}
                 <li class="bg-white border border-gray-200 rounded-lg p-4 hover:shadow-md transition flex items-center">
                   <div class="text-emerald-700 font-bold text-xl mr-4">
                     {(currentPage - 1) * itemsPerPage + idx + 1}.
@@ -212,13 +225,17 @@
                     <a
                       href={`/paciente/${p.solicitacaoId}`}
                       class="block hover:underline"
-                      title="Ver detalhes e histórico do paciente"
+                      title="Ver detalhes e histÃ³rico do paciente"
                     >
                       <h3 class="text-lg font-bold text-gray-800 mb-2">{p.nomePaciente}</h3>
                     </a>
                     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 text-sm">
                       <div><span class="font-semibold text-gray-600">CPF:</span> {p.cpfPaciente}</div>
                       <div><span class="font-semibold text-gray-600">USF:</span> {p.usfOrigem}</div>
+                      <div>
+                        <span class="text-xs px-2 py-0.5 rounded bg-blue-100 text-blue-800 font-medium">{p.especialidade}</span>
+                        <span class="ml-1 text-xs px-2 py-0.5 rounded {p.prioridade === 'URGENTE' ? 'bg-orange-100 text-orange-800' : p.prioridade === 'EMERGENCIA' ? 'bg-red-100 text-red-800' : 'bg-gray-100 text-gray-600'} font-medium">{p.prioridade}</span>
+                      </div>
                     </div>
                   </div>
                 </li>
@@ -235,14 +252,14 @@
                   &laquo; Anterior
                 </button>
                 <span class="text-gray-700">
-                  Página {currentPage} de {totalPages}
+                  PÃ¡gina {currentPage} de {totalPages}
                 </span>
                 <button
                   onclick={nextPage}
                   class="px-3 py-1 bg-emerald-600 hover:bg-emerald-800 cursor-pointer text-white rounded disabled:opacity-50 disabled:cursor-not-allowed transition"
                   disabled={currentPage === totalPages || isLoading}
                 >
-                  Próximo &raquo;
+                  PrÃ³ximo &raquo;
                 </button>
               </div>
             {/if}

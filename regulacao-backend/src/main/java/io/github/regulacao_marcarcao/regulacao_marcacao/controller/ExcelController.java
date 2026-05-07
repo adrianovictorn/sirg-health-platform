@@ -66,6 +66,21 @@ public class ExcelController {
                 .body(new InputStreamResource(bais));
     }
 
+    @GetMapping("/planilha-gel")
+    public ResponseEntity<InputStreamResource> exportarPlanilhaGel() throws IOException {
+        ByteArrayInputStream bais = excelService.gerarPlanilhaGel();
+
+        HttpHeaders headers = new HttpHeaders();
+        String filename = "planilha_gel_" + LocalDate.now().toString() + ".xlsx";
+        headers.add(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"");
+
+        return ResponseEntity
+                .ok()
+                .headers(headers)
+                .contentType(MediaType.APPLICATION_OCTET_STREAM)
+                .body(new InputStreamResource(bais));
+    }
+
     @GetMapping("/verificar-dados")
     public ResponseEntity<Map<String, Boolean>> verificarDados(
             @RequestParam(required = true, name = "grupo") String grupo,
