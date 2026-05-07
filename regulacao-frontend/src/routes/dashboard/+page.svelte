@@ -78,7 +78,7 @@
   </div>
 {:else}
   <!-- O seu layout original é renderizado aqui somente após os dados serem carregados -->
-  <div class="flex min-h-screen bg-gray-100">
+  <div class="flex min-h-screen bg-gray-200">
     <!-- Sidebar -->
 
   <Menu activePage="/dashboard" />    <!-- Main Content -->
@@ -97,60 +97,57 @@
 
       <!-- Dashboard Cards -->
       <main class="flex-1 p-6 overflow-auto">
-        <div class="space-y-6">
-          <!-- Sede Section -->
-          <section class="bg-emerald-300 rounded-lg shadow p-6">
-            <h2 class="text-lg font-bold text-emerald-800 mb-4">📍 Sede</h2>
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-6">
-              <Card2 header="USF 01" title="Pendentes" value={filtarPendentesPorUnidade('USF01')} href="/usf/usf1" color="emerald"/>
-              <Card2 header="USF 02" title="Pendentes" value={filtarPendentesPorUnidade('USF02')} href="/usf/usf2" color="emerald"/>
+        <div class="max-w-7xl mx-auto space-y-6">
+
+          <!-- Visão Geral -->
+          <section>
+            <h2 class="text-xs font-semibold text-gray-700 uppercase tracking-widest mb-3">Visão Geral</h2>
+            <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 rounded-lg">
+              <Card title="Total de Solicitações" value={totalDeSolicitacoes} color="emerald-dark"/>
+              <Card2 header="Solicitações" title="Pendentes" value={pendentes} href="/usf" color="emerald-dark"/>
+              <Card2 header="Solicitações" title="Agendadas" value={agendado} href="/paciente/agendados" color="emerald-dark"/>
+              <Card2 header="Solicitações" title="Concluídas" value={concluida} href="/paciente/concluido" color="emerald-dark"/>
             </div>
           </section>
 
-          <!-- Zona Rural Section -->
-          <section class="bg-emerald-200 rounded-lg shadow p-6">
-            <h2 class="text-lg font-bold text-emerald-600 mb-4">🌳 Zona Rural</h2>
-            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-              <Card2 header="USF 03" title="Pendentes" value={filtarPendentesPorUnidade('USF03')} href="/usf/usf3" color="emerald"/>
-              <Card2 header="USF 04" title="Pendentes" value={filtarPendentesPorUnidade('USF04')} href="/usf/usf4" color="emerald"/>
-              <Card2 header="USF 05" title="Pendentes" value={filtarPendentesPorUnidade('USF05')} href="/usf/usf5" color="emerald"/>
-              <Card2 header="USF 06" title="Pendentes" value={filtarPendentesPorUnidade('USF06')} href="/usf/usf6" color="emerald"/>
+          <!-- Atenção Imediata -->
+          <section>
+            <h2 class="text-xs font-semibold text-gray-700 uppercase tracking-widest mb-3">Atenção Imediata</h2>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4  ">
+              <Card3 header="Alertas" title="Urgência / Emergência" value={urgencia} href="/paciente/urgentes" color="danger"/>
+              <Card3  header="Procedimentos Externos" title="GEL" value={gel} href="/paciente/gel" color="warning"/>
             </div>
           </section>
 
-         
+          <!-- Pendentes por USF -->
+          <section class="bg-emerald-700/30 rounded-xl shadow-sm border border-gray-100 p-6">
+            <h2 class="text-xs font-semibold text-gray-900 uppercase tracking-widest mb-5">Pendentes por USF</h2>
 
-          <!-- Totals Section -->
-          <section class="bg-emerald-300 rounded-lg shadow p-6">
-            <h2 class="text-lg font-bold text-emerald-900 mb-4">📊 Totais</h2>
-            <div class="grid grid-cols-1 sm:grid-cols-4 gap-6">
-              <Card2 header="Resumo" title="Pendentes" value={pendentes} href="/usf" color="emerald-dark"/>
-              <Card2 header="Resumo" title="Agendados" value={agendado} href="/paciente/agendados" color="emerald-dark"/>
-              <Card2 header="Resumo" title="Concluídas" value={concluida} href="/paciente/concluido" color="emerald-dark"/>
-              <Card title="Total" value={totalDeSolicitacoes} color="emerald-dark"/>
+            <div class="mb-5">
+              <h3 class="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-1.5">
+                <span class="inline-block w-2 h-2 rounded-full bg-emerald-500"></span>
+                Sede
+              </h3>
+              <div class="grid grid-cols-2 gap-4">
+                <Card2 header="USF 01" title="Pendentes" value={filtarPendentesPorUnidade('USF01')} href="/usf/usf1" color="emerald"/>
+                <Card2 header="USF 02" title="Pendentes" value={filtarPendentesPorUnidade('USF02')} href="/usf/usf2" color="emerald"/>
+              </div>
+            </div>
+
+            <div>
+              <h3 class="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-1.5">
+                <span class="inline-block w-2 h-2 rounded-full bg-emerald-400"></span>
+                Zona Rural
+              </h3>
+              <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                <Card2 header="USF 03" title="Pendentes" value={filtarPendentesPorUnidade('USF03')} href="/usf/usf3" color="emerald"/>
+                <Card2 header="USF 04" title="Pendentes" value={filtarPendentesPorUnidade('USF04')} href="/usf/usf4" color="emerald"/>
+                <Card2 header="USF 05" title="Pendentes" value={filtarPendentesPorUnidade('USF05')} href="/usf/usf5" color="emerald"/>
+                <Card2 header="USF 06" title="Pendentes" value={filtarPendentesPorUnidade('USF06')} href="/usf/usf6" color="emerald"/>
+              </div>
             </div>
           </section>
 
-           <section class="bg-emerald-200 rounded-lg shadow p-6">
-            <h2 class="text-lg font-bold text-red-900 mb-4">📊 Alertas</h2>
-            <div class="grid grid-cols-1 sm:grid-cols-1 gap-6">
-              <Card3 header="Alertas" title="Urgência" value={urgencia} href="/paciente/urgentes" color="danger"/>
-
-            </div>
-          </section>
-
-          <div class="text-xl font-bold">
-            <h2>Outros Procedimentos</h2>
-          </div>
-
-          <section class="bg-emerald-700/30 rounded-lg shadow p-6">
-            <h2 class="text-lg font-medium p-2 text-color">Procedimentos Externos</h2>
-            <div class="grid grid-cols-1 sm:grid-cols-1 gap-6">
-              <Card3 header="Procedimentos" title="Gel" value={gel} href="/paciente/gel" color="danger"></Card3>
-            </div>
-
-          </section>
-          
         </div>
       </main>
     </div>
