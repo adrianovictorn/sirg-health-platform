@@ -1,4 +1,4 @@
-<script lang="ts">
+﻿<script lang="ts">
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { user, token } from '$lib/stores/auth.js';

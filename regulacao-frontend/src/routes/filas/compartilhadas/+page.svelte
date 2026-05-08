@@ -1,4 +1,4 @@
-<script>
+﻿<script>
     import { onMount } from 'svelte';
     import { listarPactos, listarFeed, listarFeedEnviadas, claimEvento } from '$lib/pactosApi.js';
 

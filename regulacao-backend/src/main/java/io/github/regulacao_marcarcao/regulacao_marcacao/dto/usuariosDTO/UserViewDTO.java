@@ -5,17 +5,21 @@ import io.github.regulacao_marcarcao.regulacao_marcacao.entity.enums.Roles;
 
 public record UserViewDTO(
     Long id,
-    String cpf, // autenticado via cpf
-    String nome, // identifica o usuário
-    Roles role // função dentro do sistema
+    String cpf,
+    String nome,
+    Roles role,
+    String fotoUrl,
+    boolean ativo
 ) {
 
-
-    public static UserViewDTO from (User user){
+    public static UserViewDTO from(User user) {
         return new UserViewDTO(
-        user.getId(),
-        user.getUsername(),
-        user.getNome(), 
-        user.getRole());
+            user.getId(),
+            user.getUsername(),
+            user.getNome(),
+            user.getRole(),
+            user.getFotoPerfil(),
+            user.isAtivo()
+        );
     }
 }

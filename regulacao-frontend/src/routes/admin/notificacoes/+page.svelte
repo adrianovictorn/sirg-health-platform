@@ -1,4 +1,4 @@
-<script>
+﻿<script>
   import { onMount } from 'svelte';
   import { user } from '$lib/stores/auth.js';
   import UserMenu from '$lib/UserMenu.svelte';

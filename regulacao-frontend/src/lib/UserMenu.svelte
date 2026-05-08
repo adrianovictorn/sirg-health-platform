@@ -1,7 +1,7 @@
 <script>
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
-  import { user, token } from '$lib/stores/auth.js';
+  import { user, token, profilePicture, refreshProfilePicture } from '$lib/stores/auth.js';
   import { fadeScale } from '$lib/transitions.js'; // 1. Importe a nova transição
 
   let isOpen = false;
@@ -30,6 +30,7 @@
     document.addEventListener('click', handleClickOutside, true);
     // carrega notificações na montagem
     carregarNotificacoes();
+    refreshProfilePicture();
     // polling leve a cada 15s para atualizar badge
     intervalId = setInterval(async () => {
       try {
@@ -105,9 +106,13 @@
       aria-haspopup="true"
       aria-expanded={isOpen}
     >
-      <div class="w-9 h-9 rounded-full bg-emerald-50 flex items-center justify-center text-emerald-800 font-semibold ring-1 ring-white/30">
-        {($user.nome || 'U').charAt(0).toUpperCase()}
-      </div>
+      {#if $profilePicture}
+        <img src={$profilePicture} alt="Foto de perfil" class="w-9 h-9 rounded-full object-cover ring-1 ring-white/30" />
+      {:else}
+        <div class="w-9 h-9 rounded-full bg-emerald-50 flex items-center justify-center text-emerald-800 font-semibold ring-1 ring-white/30">
+          {($user.nome || 'U').charAt(0).toUpperCase()}
+        </div>
+      {/if}
       <span class="hidden md:block font-medium text-white pr-1">{$user.nome}</span>
       <svg class="w-5 h-5 text-white/90 transform transition-transform duration-200" class:rotate-180={isOpen} xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />

@@ -8,6 +8,7 @@
   let cpf = ''; // Trocamos 'email' por 'cpf'
   let password = '';
   let error = '';
+  let errorType = ''; // 'disabled' | 'credentials' | 'generic'
   let loading = false;
   let showPassword = false;
 
@@ -15,26 +16,24 @@
 async function handleLogin() {
   loading = true;
   error = '';
+  errorType = '';
 
   try {
-    // CORREÇÃO: Usar as variáveis 'cpf' e 'password' diretamente.
-    const response = await postApi('auth/login', {
-      cpf: cpf,
-      password: password
-    });
+    const response = await postApi('auth/login', { cpf, password });
 
     if (!response.ok) {
-      // O próprio api.js já trata o erro 403, mas podemos manter
-      // uma mensagem genérica para outros erros (ex: 400, 401).
-      const errorData = await response.json().catch(() => ({ message: 'CPF ou senha inválidos.' }));
+      const errorData = await response.json().catch(() => ({}));
+      if (response.status === 403) {
+        errorType = 'disabled';
+        throw new Error(errorData.message || 'Conta desativada. Entre em contato com o administrador.');
+      }
+      errorType = 'credentials';
       throw new Error(errorData.message || 'CPF ou senha inválidos.');
     }
 
     const data = await response.json();
-    
-    token.set(data.token); 
-
-    goto('/home'); // O SvelteKit 2 recomenda /dashboard, mas use o seu
+    token.set(data.token);
+    goto('/home');
   } catch (e: any) {
     error = e.message;
   } finally {
@@ -95,7 +94,16 @@ async function handleLogin() {
       </div>
 
       {#if error}
-        <p class="text-sm text-red-600 text-center animate-pulse">{error}</p>
+        {#if errorType === 'disabled'}
+          <div class="flex items-start gap-2 p-3 rounded-lg bg-amber-50 border border-amber-200">
+            <svg class="w-5 h-5 text-amber-500 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+            <p class="text-sm text-amber-800">{error}</p>
+          </div>
+        {:else}
+          <p class="text-sm text-red-600 text-center">{error}</p>
+        {/if}
       {/if}
 
       <div class="pt-2">

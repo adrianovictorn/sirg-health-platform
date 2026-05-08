@@ -9,7 +9,6 @@ import org.springframework.security.core.userdetails.UserDetails;
 
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.enums.Roles;
 import jakarta.persistence.Column;
-
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
@@ -28,8 +27,8 @@ import lombok.Setter;
 @NoArgsConstructor
 @AllArgsConstructor
 @Table(name = "usuarios")
-public class User implements UserDetails{
-    
+public class User implements UserDetails {
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -47,10 +46,15 @@ public class User implements UserDetails{
     @Enumerated(EnumType.STRING)
     private Roles role;
 
+    @Column(name = "foto_perfil")
+    private String fotoPerfil;
+
+    @Column(name = "ativo", nullable = false)
+    private boolean ativo = true;
+
     @Override
     public Collection<? extends GrantedAuthority> getAuthorities() {
-    // AQUI A MUDANÇA: Adicionamos "ROLE_" antes do nome do perfil.
-    return List.of(new SimpleGrantedAuthority("ROLE_" + role.name()));
+        return List.of(new SimpleGrantedAuthority("ROLE_" + role.name()));
     }
 
     @Override
@@ -60,6 +64,26 @@ public class User implements UserDetails{
 
     @Override
     public String getUsername() {
-       return cpf;
+        return cpf;
+    }
+
+    @Override
+    public boolean isEnabled() {
+        return ativo;
+    }
+
+    @Override
+    public boolean isAccountNonExpired() {
+        return true;
+    }
+
+    @Override
+    public boolean isAccountNonLocked() {
+        return ativo;
+    }
+
+    @Override
+    public boolean isCredentialsNonExpired() {
+        return true;
     }
 }

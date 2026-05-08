@@ -1,4 +1,4 @@
-<script>
+﻿<script>
   import { onMount } from 'svelte';
   import RoleBasedMenu from '$lib/RoleBasedMenu.svelte';
   import UserMenu from '$lib/UserMenu.svelte';

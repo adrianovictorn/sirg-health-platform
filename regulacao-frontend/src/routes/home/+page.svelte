@@ -1,4 +1,4 @@
-<script>
+﻿<script>
   import { user } from '$lib/stores/auth.js';
   import UserMenu from '$lib/UserMenu.svelte';
   import AdminHome from '$lib/AdminHome.svelte';

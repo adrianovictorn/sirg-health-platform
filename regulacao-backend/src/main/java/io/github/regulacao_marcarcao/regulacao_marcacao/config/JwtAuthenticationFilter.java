@@ -39,12 +39,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             // 4. Se o token for válido, busca o usuário no banco de dados
             UserDetails user = userRepository.findByCpf(subject).orElse(null);
 
-            if (user != null) {
-                // 5. Cria um objeto de autenticação para o Spring Security
+            // Only authenticate users whose account is active (enabled)
+            if (user != null && user.isEnabled()) {
                 var authentication = new UsernamePasswordAuthenticationToken(user, null, user.getAuthorities());
-                
-                // 6. Salva o objeto de autenticação no contexto de segurança do Spring,
-                //    informando que o usuário está autenticado para esta requisição.
                 SecurityContextHolder.getContext().setAuthentication(authentication);
             }
         }

@@ -1,4 +1,4 @@
-<script lang="ts">
+﻿<script lang="ts">
     import { getApi, postApi, putApi } from "$lib/api";
     import Menu2 from "$lib/Menu2.svelte";
     import UserMenu from "$lib/UserMenu.svelte";

@@ -1,4 +1,4 @@
-<script lang="ts">
+﻿<script lang="ts">
   import { onDestroy, onMount } from "svelte";
   import { getApi } from "$lib/api";
   import type { PacienteProjection } from "$lib/models/PacienteProjection";

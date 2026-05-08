@@ -1,4 +1,4 @@
-<script lang="ts">
+﻿<script lang="ts">
   import { goto } from '$app/navigation';
   import { postApi } from '$lib/api.js';
     import RoleBasedMenu from '$lib/RoleBasedMenu.svelte';

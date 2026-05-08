@@ -1,4 +1,4 @@
-<script lang='ts'>
+﻿<script lang='ts'>
     import { getApi, postApi } from '$lib/api';
     import UserMenu from '$lib/UserMenu.svelte';
     import { onMount } from 'svelte';

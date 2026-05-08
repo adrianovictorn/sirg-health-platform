@@ -1,4 +1,4 @@
-<script lang="ts">
+﻿<script lang="ts">
 	import { getApi, putApi } from '$lib/api';
 	import RoleBasedMenu from '$lib/RoleBasedMenu.svelte';
     import { user } from '$lib/stores/auth';

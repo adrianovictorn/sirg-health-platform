@@ -89,3 +89,20 @@ export function deleteByIdApi(path) {
   return send({ method: 'DELETE', path});
 }
 
+export async function postApiFile(path, formData) {
+  const currentToken = get(token);
+  const base = API_PREFIX.replace(/\/$/, '');
+  const url = `${base}/${path}`;
+  const opts = {
+    method: 'POST',
+    headers: {},
+    body: formData
+  };
+  if (currentToken) {
+    opts.headers['Authorization'] = `Bearer ${currentToken}`;
+  }
+  const response = await fetch(url, opts);
+  if (response.status === 401) token.set(null);
+  return response;
+}
+

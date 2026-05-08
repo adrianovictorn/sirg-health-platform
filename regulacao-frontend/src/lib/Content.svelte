@@ -1,4 +1,4 @@
-<script>
+﻿<script>
     import RoleBasedMenu from "./RoleBasedMenu.svelte";
     import UserMenu from "./UserMenu.svelte";
     export let titleH1 
