@@ -11,6 +11,7 @@ import jakarta.validation.constraints.NotBlank;
 
 public record SolicitacaoCreateDTO(
     UsfEnum usfOrigem,
+    Long unidadeId,
     String nomePaciente,
     @NotBlank
     @CPF

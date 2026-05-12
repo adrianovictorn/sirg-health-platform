@@ -9,7 +9,9 @@ public record UserViewDTO(
     String nome,
     Roles role,
     String fotoUrl,
-    boolean ativo
+    boolean ativo,
+    Long unidadeId,
+    String unidadeNome
 ) {
 
     public static UserViewDTO from(User user) {
@@ -19,7 +21,9 @@ public record UserViewDTO(
             user.getNome(),
             user.getRole(),
             user.getFotoPerfil(),
-            user.isAtivo()
+            user.isAtivo(),
+            user.getUnidade() != null ? user.getUnidade().getId() : null,
+            user.getUnidade() != null ? user.getUnidade().getNome() : null
         );
     }
 }

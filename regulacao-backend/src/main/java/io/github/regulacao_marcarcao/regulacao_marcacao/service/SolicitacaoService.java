@@ -41,6 +41,8 @@ import io.github.regulacao_marcarcao.regulacao_marcacao.repository.CidRepository
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.EspecialidadeRepository;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.SolicitacaoEspecialidadeRepository;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.SolicitacaoRepository;
+import io.github.regulacao_marcarcao.regulacao_marcacao.repository.UserRepository;
+import io.github.regulacao_marcarcao.regulacao_marcacao.repository.UnidadeRepository;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.SolicitacaoSpecification;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.solicitacoesDTO.SolicitacaoListFiltersDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.solicitacoesDTO.SolicitacaoPublicViewDTO;
@@ -51,6 +53,7 @@ import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.Pe
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.StatusCountProjection;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.UrgenciaEmergenciaPacienteProjection;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.UsfPendentesProjection;
+import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.UnidadePendentesProjection;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 
@@ -63,13 +66,44 @@ public class SolicitacaoService {
     private final SolicitacaoEspecialidadeRepository especialidadeRepository;
     private final CidRepository cidRepository;
     private final EspecialidadeRepository especialidadeRepo;
+    private final UserRepository userRepository;
+    private final UnidadeRepository unidadeRepository;
+
+    private record UnidadeContexto(Long id, String codigo) {
+        static final UnidadeContexto GLOBAL = new UnidadeContexto(null, null);
+        boolean isGlobal() { return id == null; }
+    }
+
+    private UnidadeContexto getContextoUnidade(String cpf) {
+        if (cpf == null) return UnidadeContexto.GLOBAL;
+        return userRepository.findByCpf(cpf).map(u -> {
+            if (u.getRole() != null && u.getRole().name().equals("ADMIN")) return UnidadeContexto.GLOBAL;
+            if (u.getUnidade() == null) return UnidadeContexto.GLOBAL;
+            return new UnidadeContexto(u.getUnidade().getId(), u.getUnidade().getCodigo());
+        }).orElse(UnidadeContexto.GLOBAL);
+    }
+
+    private UsfEnum tryParseUsfEnum(String codigo) {
+        if (codigo == null) return null;
+        try { return UsfEnum.valueOf(codigo.trim().toUpperCase()); }
+        catch (IllegalArgumentException e) { return null; }
+    }
 
 
     @Transactional
-    public SolicitacaoViewDTO createSolicitacao(SolicitacaoCreateDTO dto) {
+    public SolicitacaoViewDTO createSolicitacao(SolicitacaoCreateDTO dto, String callerCpf) {
         Solicitacao solicitacao = new Solicitacao();
         solicitacao.setUsfOrigem(dto.usfOrigem());
-        
+
+        // Vincula a Unidade: usa a do caller (operador) ou a explicitamente escolhida no DTO
+        if (dto.unidadeId() != null) {
+            unidadeRepository.findById(dto.unidadeId()).ifPresent(solicitacao::setUnidade);
+        } else if (callerCpf != null) {
+            userRepository.findByCpf(callerCpf).ifPresent(u -> {
+                if (u.getUnidade() != null) solicitacao.setUnidade(u.getUnidade());
+            });
+        }
+
         solicitacao.setNomePaciente(dto.nomePaciente());
         solicitacao.setCpfPaciente(dto.cpfPaciente());
         solicitacao.setCns(dto.cns());
@@ -148,14 +182,18 @@ public class SolicitacaoService {
     }
 
     @Transactional(readOnly = true)
-    public Page<SolicitacaoViewDTO> listSolicitacoes(SolicitacaoListFiltersDTO filters, Pageable pageable) {
+    public Page<SolicitacaoViewDTO> listSolicitacoes(SolicitacaoListFiltersDTO filters, Pageable pageable, String cpf) {
         Specification<Solicitacao> spec = SolicitacaoSpecification.aplicarFiltros(filters);
+        UnidadeContexto ctx = getContextoUnidade(cpf);
+        if (!ctx.isGlobal()) {
+            spec = spec.and(SolicitacaoSpecification.filtrarPorUnidade(ctx.id(), tryParseUsfEnum(ctx.codigo())));
+        }
         return solicitacaoRepository.findAll(spec, pageable)
                 .map(SolicitacaoViewDTO::fromSolicitacao);
     }
 
     @Transactional(readOnly = true)
-    public Page<PacienteResumoDTO> buscarPacientes(String termo, int page, int size) {
+    public Page<PacienteResumoDTO> buscarPacientes(String termo, int page, int size, String cpf) {
         int pagina = Math.max(page, 0);
         int limite = Math.min(Math.max(size, 1), 50);
         Pageable pageable = PageRequest.of(pagina, limite);
@@ -171,7 +209,14 @@ public class SolicitacaoService {
 
         Map<String, Solicitacao> solicitacoesPorCpf = new LinkedHashMap<>();
 
+        UnidadeContexto ctx = getContextoUnidade(cpf);
+        UsfEnum usfFallback = tryParseUsfEnum(ctx.codigo());
         solicitacaoRepository.findAll().stream()
+            .filter(s -> {
+                if (ctx.isGlobal()) return true;
+                if (s.getUnidade() != null) return ctx.id().equals(s.getUnidade().getId());
+                return usfFallback != null && usfFallback.equals(s.getUsfOrigem());
+            })
             .sorted(ordenacaoPorNome)
             .filter(s -> !possuiFiltro || correspondeAoFiltro(s, filtroNormalizado, filtroNumerico))
             .forEach(s -> {
@@ -285,34 +330,67 @@ public class SolicitacaoService {
     }
 
     @Transactional(readOnly = true)
-    public Page<SolicitacaoViewDTO> todasSolicitacoes(int page, int size){
+    public Page<SolicitacaoViewDTO> todasSolicitacoes(int page, int size, String cpf) {
         Pageable pagina = PageRequest.of(page, size, Sort.by("nomePaciente").ascending());
+        UnidadeContexto ctx = getContextoUnidade(cpf);
+        if (!ctx.isGlobal()) {
+            Specification<Solicitacao> spec = SolicitacaoSpecification.filtrarPorUnidade(ctx.id(), tryParseUsfEnum(ctx.codigo()));
+            return solicitacaoRepository.findAll(spec, pagina).map(SolicitacaoViewDTO::fromSolicitacao);
+        }
         return solicitacaoRepository.findAll(pagina).map(SolicitacaoViewDTO::fromSolicitacao);
     }
 
     @Transactional(readOnly = true)
-    public DashboardResumoDTO obterResumoDashboard() {
-        long totalSolicitacoes = solicitacaoRepository.count();
+    public DashboardResumoDTO obterResumoDashboard(String cpf) {
+        UnidadeContexto ctx = getContextoUnidade(cpf);
+        UsfEnum usfCtx = tryParseUsfEnum(ctx.codigo());
 
-        List<StatusCountProjection> porStatus = solicitacaoRepository.contarPorStatus();
+        long totalSolicitacoes;
+        List<StatusCountProjection> porStatus;
+        long totalUrgentes;
+
+        if (!ctx.isGlobal()) {
+            totalSolicitacoes = usfCtx != null
+                ? solicitacaoRepository.contarSolicitacoesParaUnidade(ctx.id(), usfCtx)
+                : solicitacaoRepository.contarSolicitacoesParaUnidadeSemUsf(ctx.id());
+
+            porStatus = usfCtx != null
+                ? solicitacaoRepository.contarPorStatusParaUnidade(ctx.id(), usfCtx)
+                : solicitacaoRepository.contarPorStatusParaUnidadeSemUsf(ctx.id());
+
+            totalUrgentes = usfCtx != null
+                ? solicitacaoRepository.contarPorStatusPrioridadesParaUnidade(
+                    StatusDaMarcacao.AGUARDANDO,
+                    Arrays.asList(PrioridadeDaMarcacaoEnum.URGENTE, PrioridadeDaMarcacaoEnum.EMERGENCIA),
+                    ctx.id(), usfCtx)
+                : solicitacaoRepository.contarPorStatusPrioridadesParaUnidadeSemUsf(
+                    StatusDaMarcacao.AGUARDANDO,
+                    Arrays.asList(PrioridadeDaMarcacaoEnum.URGENTE, PrioridadeDaMarcacaoEnum.EMERGENCIA),
+                    ctx.id());
+        } else {
+            totalSolicitacoes = solicitacaoRepository.count();
+            porStatus = solicitacaoRepository.contarPorStatus();
+            totalUrgentes = solicitacaoRepository.contarPorStatusPrioridades(
+                StatusDaMarcacao.AGUARDANDO,
+                Arrays.asList(PrioridadeDaMarcacaoEnum.URGENTE, PrioridadeDaMarcacaoEnum.EMERGENCIA));
+        }
+
         long totalPendentes = extrairTotalStatus(porStatus, StatusDaMarcacao.AGUARDANDO);
         long totalAgendadas = extrairTotalStatus(porStatus, StatusDaMarcacao.AGENDADO);
         long totalConcluidas = extrairTotalStatus(porStatus, StatusDaMarcacao.REALIZADO);
         long totalGel = extrairTotalStatus(porStatus, StatusDaMarcacao.GEL);
 
-        long totalUrgentes = solicitacaoRepository.contarPorStatusPrioridades(
-            StatusDaMarcacao.AGUARDANDO,
-            Arrays.asList(PrioridadeDaMarcacaoEnum.URGENTE, PrioridadeDaMarcacaoEnum.EMERGENCIA)
-        );
-
         Map<UsfEnum, Long> pendentesPorUsf = new EnumMap<>(UsfEnum.class);
         for (UsfEnum usf : UsfEnum.values()) {
             pendentesPorUsf.put(usf, 0L);
         }
-
-        List<UsfPendentesProjection> pendentes = solicitacaoRepository.contarPorUsfEStatus(StatusDaMarcacao.AGUARDANDO);
-        for (UsfPendentesProjection proj : pendentes) {
+        for (UsfPendentesProjection proj : solicitacaoRepository.contarPorUsfEStatus(StatusDaMarcacao.AGUARDANDO)) {
             pendentesPorUsf.put(proj.getUsf(), proj.getTotal());
+        }
+
+        Map<Long, Long> pendentesPorUnidade = new HashMap<>();
+        for (UnidadePendentesProjection proj : solicitacaoRepository.contarPorUnidadeEStatus(StatusDaMarcacao.AGUARDANDO)) {
+            pendentesPorUnidade.put(proj.getUnidadeId(), proj.getTotal());
         }
 
         return new DashboardResumoDTO(
@@ -322,7 +400,8 @@ public class SolicitacaoService {
             totalConcluidas,
             totalUrgentes,
             totalGel,
-            pendentesPorUsf
+            pendentesPorUsf,
+            pendentesPorUnidade
         );
     }
 

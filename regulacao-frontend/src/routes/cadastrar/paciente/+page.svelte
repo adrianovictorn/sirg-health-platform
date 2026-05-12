@@ -94,7 +94,7 @@
 			cns,
 			telefone,
 			datanascimento,
-			usfOrigem,
+			usfOrigem: usfOrigem || null,
 			dataMalote,
 			observacoes,
 			especialidades: especialidades

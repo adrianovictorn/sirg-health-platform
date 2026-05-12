@@ -129,6 +129,9 @@ onMount( () => {
                 </div>
                 <p class="text-gray-600 text-sm"><strong>CPF:</strong> {users.cpf}</p>
                 <p class="text-gray-600 text-sm"><strong>Cargo:</strong> {users.role}</p>
+                {#if users.unidadeNome}
+                  <p class="text-gray-600 text-sm"><strong>Unidade:</strong> {users.unidadeNome}</p>
+                {/if}
               </div>
               <div class="flex-shrink-0 flex gap-2">
                 <button

@@ -1,4 +1,7 @@
 <script>
+  import { getApi } from '$lib/api';
+  import { onMount } from 'svelte';
+
   export let usuario;
   export let aberto = false;
   export let onClose = () => {};
@@ -8,12 +11,20 @@
   let cpf = '';
   let password = '';
   let role = '';
+  let unidadeId = null;
+  let unidades = [];
+
+  onMount(async () => {
+    const res = await getApi('unidades/ativas');
+    if (res.ok) unidades = await res.json();
+  });
 
   $: if (aberto) {
     nome = usuario?.nome ?? '';
     cpf = usuario?.cpf ?? '';
     password = '';
     role = usuario?.role ?? '';
+    unidadeId = usuario?.unidadeId ?? null;
   }
 </script>
 
@@ -67,6 +78,15 @@
             <option value="COORD_TRANSPORTE">Coordenador(a) de Transporte</option>
           </select>
         </div>
+        <div>
+          <label for="edit-unidade" class="block text-xs font-medium text-gray-600 mb-1">Unidade de Saúde</label>
+          <select id="edit-unidade" bind:value={unidadeId} class="border border-gray-300 rounded-md p-2 w-full focus:ring-emerald-500 focus:border-emerald-500">
+            <option value={null}>— Sem unidade (ADMIN) —</option>
+            {#each unidades as u}
+              <option value={u.id}>{u.nome}</option>
+            {/each}
+          </select>
+        </div>
       </div>
 
       <div class="mt-5 flex justify-end gap-2">
@@ -80,7 +100,7 @@
         <button
           type="button"
           class="px-4 py-2 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium transition-colors"
-          on:click={() => onSave({ id: usuario.id, nome, cpf, password, role })}
+          on:click={() => onSave({ id: usuario.id, nome, cpf, password, role, unidadeId })}
         >
           Salvar
         </button>

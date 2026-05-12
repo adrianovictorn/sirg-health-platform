@@ -33,7 +33,7 @@
       open = 'solicitacao';
     } else if (['/cadastrar/cid', '/listar/cid', '/cadastrar/especialidade', '/cadastrar/grupo-relatorio', '/cadastrar/cidade', '/cadastrar/cidade/local-agendamento'].includes(activePage)) {
       open = 'gestao';
-    } else if (['/admin/cadastrar-usuario', '/admin/listar-usuarios', '/admin/pactos', '/admin/municipios', '/admin/notificacoes', '/'].includes(activePage)) {
+    } else if (['/admin/cadastrar-usuario', '/admin/listar-usuarios', '/admin/pactos', '/admin/municipios', '/admin/notificacoes', '/admin/unidades', '/admin/profissionais', '/admin/cotas', '/'].includes(activePage)) {
       open = 'admin';
     } else if (['/filas/minhas', '/filas/compartilhadas'].includes(activePage)) {
       open = 'filas';
@@ -197,6 +197,18 @@
           <a href="/admin/notificacoes" class={sublink('/admin/notificacoes')}>
             <span class="w-1 h-1 rounded-full bg-slate-500 shrink-0"></span>
             Notificações
+          </a>
+          <a href="/admin/unidades" class={sublink('/admin/unidades')}>
+            <span class="w-1 h-1 rounded-full bg-slate-500 shrink-0"></span>
+            Unidades
+          </a>
+          <a href="/admin/profissionais" class={sublink('/admin/profissionais')}>
+            <span class="w-1 h-1 rounded-full bg-slate-500 shrink-0"></span>
+            Profissionais
+          </a>
+          <a href="/admin/cotas" class={sublink('/admin/cotas')}>
+            <span class="w-1 h-1 rounded-full bg-slate-500 shrink-0"></span>
+            Cotas por Unidade
           </a>
         </div>
       {/if}

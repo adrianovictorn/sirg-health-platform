@@ -20,6 +20,7 @@ import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.Pe
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.StatusCountProjection;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.UrgenciaEmergenciaPacienteProjection;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.UsfPendentesProjection;
+import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.UnidadePendentesProjection;
 
 
 public interface SolicitacaoRepository extends JpaRepository<Solicitacao, Long>, JpaSpecificationExecutor<Solicitacao> {
@@ -39,6 +40,51 @@ public interface SolicitacaoRepository extends JpaRepository<Solicitacao, Long>,
     @Query("SELECT s.usfOrigem AS usf, COUNT(se) AS total FROM SolicitacaoEspecialidade se JOIN se.solicitacao s "
          + "WHERE se.status = :status GROUP BY s.usfOrigem")
     List<UsfPendentesProjection> contarPorUsfEStatus(@Param("status") StatusDaMarcacao status);
+
+    @Query("SELECT s.unidade.id AS unidadeId, s.unidade.nome AS unidadeNome, COUNT(se) AS total "
+         + "FROM SolicitacaoEspecialidade se JOIN se.solicitacao s "
+         + "WHERE se.status = :status AND s.unidade IS NOT NULL GROUP BY s.unidade.id, s.unidade.nome")
+    List<UnidadePendentesProjection> contarPorUnidadeEStatus(@Param("status") StatusDaMarcacao status);
+
+    // --- Queries unit-aware para dashboard de operadores ---
+
+    @Query("SELECT se.status AS status, COUNT(se) AS total "
+         + "FROM SolicitacaoEspecialidade se JOIN se.solicitacao s "
+         + "WHERE (s.unidade.id = :unidadeId OR (s.unidade IS NULL AND s.usfOrigem = :usfOrigem)) "
+         + "GROUP BY se.status")
+    List<StatusCountProjection> contarPorStatusParaUnidade(
+        @Param("unidadeId") Long unidadeId,
+        @Param("usfOrigem") UsfEnum usfOrigem);
+
+    @Query("SELECT se.status AS status, COUNT(se) AS total "
+         + "FROM SolicitacaoEspecialidade se JOIN se.solicitacao s "
+         + "WHERE s.unidade.id = :unidadeId GROUP BY se.status")
+    List<StatusCountProjection> contarPorStatusParaUnidadeSemUsf(@Param("unidadeId") Long unidadeId);
+
+    @Query("SELECT COUNT(se) FROM SolicitacaoEspecialidade se JOIN se.solicitacao s "
+         + "WHERE se.status = :status AND se.prioridade IN :prioridades "
+         + "AND (s.unidade.id = :unidadeId OR (s.unidade IS NULL AND s.usfOrigem = :usfOrigem))")
+    long contarPorStatusPrioridadesParaUnidade(
+        @Param("status") StatusDaMarcacao status,
+        @Param("prioridades") List<PrioridadeDaMarcacaoEnum> prioridades,
+        @Param("unidadeId") Long unidadeId,
+        @Param("usfOrigem") UsfEnum usfOrigem);
+
+    @Query("SELECT COUNT(se) FROM SolicitacaoEspecialidade se JOIN se.solicitacao s "
+         + "WHERE se.status = :status AND se.prioridade IN :prioridades AND s.unidade.id = :unidadeId")
+    long contarPorStatusPrioridadesParaUnidadeSemUsf(
+        @Param("status") StatusDaMarcacao status,
+        @Param("prioridades") List<PrioridadeDaMarcacaoEnum> prioridades,
+        @Param("unidadeId") Long unidadeId);
+
+    @Query("SELECT COUNT(DISTINCT s) FROM Solicitacao s JOIN s.especialidades se "
+         + "WHERE s.unidade.id = :unidadeId OR (s.unidade IS NULL AND s.usfOrigem = :usfOrigem)")
+    long contarSolicitacoesParaUnidade(
+        @Param("unidadeId") Long unidadeId,
+        @Param("usfOrigem") UsfEnum usfOrigem);
+
+    @Query("SELECT COUNT(DISTINCT s) FROM Solicitacao s WHERE s.unidade.id = :unidadeId")
+    long contarSolicitacoesParaUnidadeSemUsf(@Param("unidadeId") Long unidadeId);
 
     @Query("""
     select distinct new io.github.regulacao_marcarcao.regulacao_marcacao.dto.solicitacoesDTO.SolicitacaoResumoDTO(

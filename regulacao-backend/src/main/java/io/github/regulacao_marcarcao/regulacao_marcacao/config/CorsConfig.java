@@ -1,6 +1,8 @@
-// Arquivo: regulacao-backend/src/main/java/io/github/regulacao_marcarcao/regulacao_marcacao/config/CorsConfig.java
 package io.github.regulacao_marcarcao.regulacao_marcacao.config;
 
+import java.util.List;
+
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.cors.CorsConfiguration;
@@ -10,25 +12,19 @@ import org.springframework.web.filter.CorsFilter;
 @Configuration
 public class CorsConfig {
 
+    @Value("${cors.allowed-origins}")
+    private List<String> allowedOrigins;
+
     @Bean
     public CorsFilter corsFilter() {
         CorsConfiguration config = new CorsConfiguration();
         config.setAllowCredentials(true);
-
-        config.addAllowedOrigin("http://localhost:5173");
-        config.addAllowedOrigin("https://sirg.com.br"); // Para produção
-        config.addAllowedOrigin("http://192.168.1.181:5173");
-        config.addAllowedOrigin("http://192.168.1.38:5173");
-        config.addAllowedOrigin("http://192.168.56.1:5173");
-        config.addAllowedOrigin("http://192.168.0.101:5173");
-                config.addAllowedOrigin("http://10.64.81.111:5173");
-
+        allowedOrigins.forEach(config::addAllowedOrigin);
         config.addAllowedHeader("*");
         config.addAllowedMethod("*");
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", config);
-
         return new CorsFilter(source);
     }
 }

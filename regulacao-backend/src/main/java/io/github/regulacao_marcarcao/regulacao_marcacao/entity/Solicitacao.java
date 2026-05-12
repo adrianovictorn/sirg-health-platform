@@ -9,12 +9,14 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.JoinTable;
 import jakarta.persistence.ManyToMany;
+import jakarta.persistence.ManyToOne;
 import jakarta.persistence.OneToMany;
 import jakarta.persistence.Table;
 import lombok.AllArgsConstructor;
@@ -35,13 +37,13 @@ public class Solicitacao {
     private Long id;
     
     @Enumerated(EnumType.STRING)
-    @Column(name = "usf_origem", nullable = false)
+    @Column(name = "usf_origem", nullable = true)
     private UsfEnum usfOrigem;
     
     @Column(name = "nome_paciente", nullable = false, length = 150)
     private String nomePaciente;
 
-    @Column(name = "cpfPaciente", nullable = false, unique = true,length = 15)
+    @Column(name = "cpf_paciente", nullable = false, unique = true, length = 15)
     private String cpfPaciente;
 
     @ManyToMany
@@ -78,4 +80,8 @@ public class Solicitacao {
 
     @Column(name = "origem_municipio_nome")
     private String origemMunicipioNome;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "unidade_id", nullable = true)
+    private Unidade unidade;
 }

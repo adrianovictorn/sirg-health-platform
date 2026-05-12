@@ -44,19 +44,22 @@ public class SolicitacaoController {
     private final SolicitacaoService service; 
 
     @PostMapping
-    @PreAuthorize("hasAnyRole('ADMIN','USER', 'RECEPCAO', 'ENFERMEIRO', 'MEDICO', 'COORD_TRANSPORTE')") 
-    public ResponseEntity<SolicitacaoViewDTO> criarSolicitacao(@Valid @RequestBody SolicitacaoCreateDTO dto){
-        SolicitacaoViewDTO viewDTO = service.createSolicitacao(dto);
+    @PreAuthorize("hasAnyRole('ADMIN','USER', 'RECEPCAO', 'ENFERMEIRO', 'MEDICO', 'COORD_TRANSPORTE')")
+    public ResponseEntity<SolicitacaoViewDTO> criarSolicitacao(
+            @Valid @RequestBody SolicitacaoCreateDTO dto,
+            Authentication authentication) {
+        SolicitacaoViewDTO viewDTO = service.createSolicitacao(dto, authentication != null ? authentication.getName() : null);
         return ResponseEntity.ok(viewDTO);
     }
 
     @GetMapping
-    @PreAuthorize("hasAnyRole('ADMIN', 'USER', 'RECEPCAO', 'ENFERMEIRO', 'MEDICO', 'COORD_TRANSPORTE')") 
+    @PreAuthorize("hasAnyRole('ADMIN', 'USER', 'RECEPCAO', 'ENFERMEIRO', 'MEDICO', 'COORD_TRANSPORTE')")
     public ResponseEntity<Page<SolicitacaoViewDTO>> listarSolicitacoes(
         @RequestParam(defaultValue = "0", name = "page") int page,
-        @RequestParam(defaultValue = "10", name = "size") int size
+        @RequestParam(defaultValue = "10", name = "size") int size,
+        Authentication authentication
     ){
-       return ResponseEntity.ok(service.todasSolicitacoes(page, size));
+       return ResponseEntity.ok(service.todasSolicitacoes(page, size, authentication != null ? authentication.getName() : null));
     }
 
     @GetMapping("/pacientes")
@@ -76,14 +79,14 @@ public class SolicitacaoController {
             return ResponseEntity.ok(pacientes);
         }
 
-        Page<PacienteResumoDTO> pacientes = service.buscarPacientes(search, page, size);
+        Page<PacienteResumoDTO> pacientes = service.buscarPacientes(search, page, size, authentication != null ? authentication.getName() : null);
         return ResponseEntity.ok(pacientes);
     }
 
     @GetMapping("/resumo-dashboard")
     @PreAuthorize("hasAnyRole('ADMIN', 'USER', 'RECEPCAO', 'ENFERMEIRO', 'MEDICO', 'COORD_TRANSPORTE')")
-    public ResponseEntity<DashboardResumoDTO> obterResumoDashboard() {
-        return ResponseEntity.ok(service.obterResumoDashboard());
+    public ResponseEntity<DashboardResumoDTO> obterResumoDashboard(Authentication authentication) {
+        return ResponseEntity.ok(service.obterResumoDashboard(authentication != null ? authentication.getName() : null));
     }
 
     @GetMapping("/{id}")

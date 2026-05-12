@@ -6,7 +6,7 @@ public record UserUpdateDTO(
     String nome,
     String cpf,
     String password,
-    Roles role
-){
-
+    Roles role,
+    Long unidadeId
+) {
 }

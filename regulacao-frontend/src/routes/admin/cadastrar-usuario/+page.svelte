@@ -1,18 +1,26 @@
 ﻿<script lang="ts">
   import { goto } from '$app/navigation';
-  import { postApi } from '$lib/api.js';
-    import RoleBasedMenu from '$lib/RoleBasedMenu.svelte';
-    import UserMenu from '$lib/UserMenu.svelte';
+  import { postApi, getApi } from '$lib/api.js';
+  import RoleBasedMenu from '$lib/RoleBasedMenu.svelte';
+  import UserMenu from '$lib/UserMenu.svelte';
+  import { onMount } from 'svelte';
 
   // --- ESTADO DO FORMULÁRIO ---
   let nome = '';
   let cpf = '';
   let password = '';
   let passwordConfirm = '';
-  let cargo = 'USER'; // Valor padrão para o perfil
+  let cargo = 'USER';
+  let unidadeId: number | null = null;
+  let unidades: { id: number; nome: string }[] = [];
 
   let isLoading = false;
   let errors: { [key: string]: string } = {};
+
+  onMount(async () => {
+    const res = await getApi('unidades/ativas');
+    if (res.ok) unidades = await res.json();
+  });
 
   // --- FUNÇÕES ---
 
@@ -32,7 +40,8 @@
       nome,
       cpf: cpf.replace(/\D/g, ''),
       password,
-      cargo
+      cargo,
+      unidadeId
     };
 
     try {
@@ -64,6 +73,7 @@
     password = '';
     passwordConfirm = '';
     cargo = 'USER';
+    unidadeId = null;
   }
 
   function formatarCPF(e: Event) {
@@ -133,6 +143,16 @@
               <option value="MEDICO">Medico</option>
               <option value="PACIENTE">Paciente</option>
               <option value="COORD_TRANSPORTE">Coordenador(a) de Transporte</option>
+            </select>
+          </div>
+
+          <div>
+            <label for="unidade" class="block text-sm font-medium text-gray-700 mb-1">Unidade de Saúde</label>
+            <select id="unidade" bind:value={unidadeId} class="w-full border border-gray-300 rounded-lg p-2">
+              <option value={null}>— Sem unidade (ADMIN) —</option>
+              {#each unidades as u}
+                <option value={u.id}>{u.nome}</option>
+              {/each}
             </select>
           </div>
 

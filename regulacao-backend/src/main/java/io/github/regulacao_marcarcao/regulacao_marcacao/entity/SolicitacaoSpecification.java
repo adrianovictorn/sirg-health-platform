@@ -6,6 +6,7 @@ import io.github.regulacao_marcarcao.regulacao_marcacao.dto.solicitacoesDTO.Soli
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.enums.*;
 
 import jakarta.persistence.criteria.Join;
+import jakarta.persistence.criteria.Predicate;
 import java.time.LocalDate;
 import java.util.List;
 
@@ -60,6 +61,29 @@ public class SolicitacaoSpecification {
                 return criteriaBuilder.greaterThanOrEqualTo(root.get("dataMalote"), dataInicio);
             }
             return criteriaBuilder.lessThanOrEqualTo(root.get("dataMalote"), dataFim);
+        };
+    }
+
+    public static Specification<Solicitacao> filtrarPorUnidade(Long unidadeId) {
+        return filtrarPorUnidade(unidadeId, null);
+    }
+
+    /**
+     * Filtra por unidade com fallback para registros legados vinculados pelo UsfEnum.
+     * Inclui solicitações onde unidade_id = unidadeId OU (unidade IS NULL AND usfOrigem = usfEnum).
+     */
+    public static Specification<Solicitacao> filtrarPorUnidade(Long unidadeId, UsfEnum usfEnum) {
+        return (root, query, cb) -> {
+            if (unidadeId == null) return null;
+            Predicate porUnidade = cb.equal(root.get("unidade").get("id"), unidadeId);
+            if (usfEnum != null) {
+                Predicate legado = cb.and(
+                    cb.isNull(root.get("unidade")),
+                    cb.equal(root.get("usfOrigem"), usfEnum)
+                );
+                return cb.or(porUnidade, legado);
+            }
+            return porUnidade;
         };
     }
 

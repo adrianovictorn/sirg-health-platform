@@ -23,5 +23,7 @@ public class UserCreateDTO {
     private String password;
 
     @NotNull(message = "O perfil (role) é obrigatório")
-    private Roles cargo; // O nome 'role' (singular) está correto para o que o frontend envia
+    private Roles cargo;
+
+    private Long unidadeId;
 }

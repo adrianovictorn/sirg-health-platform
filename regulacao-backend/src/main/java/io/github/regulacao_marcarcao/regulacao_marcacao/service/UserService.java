@@ -10,9 +10,12 @@ import org.springframework.web.multipart.MultipartFile;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.usuariosDTO.UserCreateDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.usuariosDTO.UserUpdateDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.usuariosDTO.UserViewDTO;
+import io.github.regulacao_marcarcao.regulacao_marcacao.entity.Unidade;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.User;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.enums.Roles;
+import io.github.regulacao_marcarcao.regulacao_marcacao.repository.UnidadeRepository;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.UserRepository;
+import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 
 @Service
@@ -22,6 +25,7 @@ public class UserService {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final FileStorageService fileStorageService;
+    private final UnidadeRepository unidadeRepository;
 
     public UserViewDTO criarUsuario(UserCreateDTO dto) {
         userRepository.findByCpf(dto.getCpf()).ifPresent(user -> {
@@ -34,6 +38,12 @@ public class UserService {
         novoUsuario.setPassword(passwordEncoder.encode(dto.getPassword()));
         novoUsuario.setRole(dto.getCargo());
         novoUsuario.setAtivo(true);
+
+        if (dto.getUnidadeId() != null) {
+            Unidade unidade = unidadeRepository.findById(dto.getUnidadeId())
+                    .orElseThrow(() -> new EntityNotFoundException("Unidade não encontrada."));
+            novoUsuario.setUnidade(unidade);
+        }
 
         User usuarioSalvo = userRepository.save(novoUsuario);
         return UserViewDTO.from(usuarioSalvo);
@@ -93,6 +103,14 @@ public class UserService {
             usuarioExistente.setPassword(passwordEncoder.encode(user.password()));
         }
         usuarioExistente.setRole(user.role());
+
+        if (user.unidadeId() != null) {
+            Unidade unidade = unidadeRepository.findById(user.unidadeId())
+                    .orElseThrow(() -> new EntityNotFoundException("Unidade não encontrada."));
+            usuarioExistente.setUnidade(unidade);
+        } else {
+            usuarioExistente.setUnidade(null);
+        }
 
         User usuarioAtualizado = userRepository.save(usuarioExistente);
         return UserViewDTO.from(usuarioAtualizado);

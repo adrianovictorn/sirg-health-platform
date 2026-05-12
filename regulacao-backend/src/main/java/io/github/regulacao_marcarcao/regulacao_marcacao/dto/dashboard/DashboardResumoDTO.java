@@ -11,5 +11,6 @@ public record DashboardResumoDTO(
     long totalConcluidas,
     long totalUrgentes,
     long totalGel,
-    Map<UsfEnum, Long> pendentesPorUsf
+    Map<UsfEnum, Long> pendentesPorUsf,
+    Map<Long, Long> pendentesPorUnidade
 ) {}
