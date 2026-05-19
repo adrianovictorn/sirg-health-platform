@@ -4,14 +4,13 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Set;
 
-import io.github.regulacao_marcarcao.regulacao_marcacao.entity.enums.UsfEnum;
-
 public record SolicitacaoResumoDTO(
     Long id,
     String nomePaciente,
     String cpfPaciente,
     String cns,
-    UsfEnum usfOrigem,
+    Long unidadeId,
+    String unidadeNome,
     List<String> especialidadesPendentes
 ) {
     public SolicitacaoResumoDTO(
@@ -19,7 +18,8 @@ public record SolicitacaoResumoDTO(
         String nomePaciente,
         String cpfPaciente,
         String cns,
-        UsfEnum usfOrigem,
+        Long unidadeId,
+        String unidadeNome,
         Collection<String> especialidadesPendentes
     ) {
         this(
@@ -27,7 +27,8 @@ public record SolicitacaoResumoDTO(
             nomePaciente,
             cpfPaciente,
             cns,
-            usfOrigem,
+            unidadeId,
+            unidadeNome,
             especialidadesPendentes == null ? List.of() : List.copyOf(especialidadesPendentes)
         );
     }
@@ -37,10 +38,11 @@ public record SolicitacaoResumoDTO(
         String nomePaciente,
         String cpfPaciente,
         String cns,
-        UsfEnum usfOrigem,
+        Long unidadeId,
+        String unidadeNome,
         Set<String> especialidadesPendentes
     ) {
-        this(id, nomePaciente, cpfPaciente, cns, usfOrigem, (Collection<String>) especialidadesPendentes);
+        this(id, nomePaciente, cpfPaciente, cns, unidadeId, unidadeNome, (Collection<String>) especialidadesPendentes);
     }
 
     public SolicitacaoResumoDTO(
@@ -48,10 +50,11 @@ public record SolicitacaoResumoDTO(
         String nomePaciente,
         String cpfPaciente,
         String cns,
-        UsfEnum usfOrigem,
+        Long unidadeId,
+        String unidadeNome,
         Object especialidadesPendentes
     ) {
-        this(id, nomePaciente, cpfPaciente, cns, usfOrigem, toList(especialidadesPendentes));
+        this(id, nomePaciente, cpfPaciente, cns, unidadeId, unidadeNome, toList(especialidadesPendentes));
     }
 
     private static List<String> toList(Object value) {

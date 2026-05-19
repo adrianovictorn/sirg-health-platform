@@ -152,13 +152,13 @@ public class SolicitacaoController {
 
 
     @GetMapping("/buscar/por/status/usf")
-    public ResponseEntity<Page<PendenciasPacienteProjection>> buscarPorUsfeStatus(
+    public ResponseEntity<Page<PendenciasPacienteProjection>> buscarPendentes(
         @RequestParam(defaultValue = "0", name = "page") int page,
         @RequestParam(defaultValue = "10", name = "size") int size,
         @RequestParam(required = false, name = "termo") String termo,
-        @RequestParam(required = false, name = "usfOrigem") String usfEnum
+        @RequestParam(required = false, name = "unidadeId") Long unidadeId
     ){
-        return ResponseEntity.ok(service.buscarPorStatusAguardandoeUsf(page, size, usfEnum, termo,"AGUARDANDO" ));
+        return ResponseEntity.ok(service.buscarPendentesPorUnidade(page, size, unidadeId, termo));
     }
 
     @GetMapping("/buscar/por/urgentes")

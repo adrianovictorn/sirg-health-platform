@@ -9,6 +9,7 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [tailwindcss(), sveltekit()],
     server: {
+      allowedHosts: true,
       proxy: {
         '/api': {
           target: BACKEND_URL,

@@ -35,15 +35,22 @@
 	let observacoes = '';
 
 	let especialidadesCatalogo: { id: number; codigo: string; nome: string }[] = [];
-	let especialidades = [{ especialidadeId: null as number | null, status: 'AGUARDANDO', prioridade: 'NORMAL', termo: '', aberto: false }];
+	let profissionais: { id: number; nome: string; conselho: string; numeroRegistro: string }[] = [];
+	let especialidades = [{ especialidadeId: null as number | null, profissionalId: null as number | null, status: 'AGUARDANDO', prioridade: 'NORMAL', termo: '', aberto: false, termoProfissional: '', abertoProfissional: false }];
 
 	// --- FUNÇÕES DO FORMULÁRIO ---
 
 	function addEspecialidade() {
 		especialidades = [
 			...especialidades,
-			{ especialidadeId: null, status: 'AGUARDANDO', prioridade: 'NORMAL', termo: '', aberto: false }
+			{ especialidadeId: null, profissionalId: null, status: 'AGUARDANDO', prioridade: 'NORMAL', termo: '', aberto: false, termoProfissional: '', abertoProfissional: false }
 		];
+	}
+
+	function filtrarProfissionais(t: string) {
+		const q = (t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+		const base = q ? profissionais.filter(p => p.nome.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().includes(q)) : profissionais;
+		return base.slice(0, 40);
 	}
 
 	function addCid() {
@@ -101,6 +108,7 @@
 				.filter((e) => e.especialidadeId)
 				.map((e) => ({
 					especialidadeId: Number(e.especialidadeId),
+					profissionalId: e.profissionalId || null,
 					status: e.status,
 					prioridade: e.prioridade
 				})),
@@ -136,7 +144,7 @@
 			usfOrigem = '';
 			dataMalote = '';
 			observacoes = '';
-			especialidades = [{ especialidadeId: null, status: 'AGUARDANDO', prioridade: 'NORMAL', termo: '', aberto: false }];
+			especialidades = [{ especialidadeId: null, profissionalId: null, status: 'AGUARDANDO', prioridade: 'NORMAL', termo: '', aberto: false, termoProfissional: '', abertoProfissional: false }];
 			cidsSelecionados = [null];
 			termosCid = [''];
 			comboCidAberto = [false];
@@ -154,7 +162,10 @@
 			carregarCIDs(),
 			listarEspecialidadesMedicas()
 				.then((lista) => (especialidadesCatalogo = lista))
-				.catch((e) => console.warn('Falha ao listar especialidades (catálogo):', e))
+				.catch((e) => console.warn('Falha ao listar especialidades (catálogo):', e)),
+			getApi('profissionais/buscar?size=200')
+				.then(async (res) => { if (res.ok) { const d = await res.json(); profissionais = d.content || []; } })
+				.catch((e) => console.warn('Falha ao carregar profissionais:', e))
 		]);
 	});
 
@@ -279,12 +290,15 @@
 						<h3 class="text-lg font-semibold text-gray-800 mb-4">Especialidades</h3>
 								<div class="space-y-4">
 									{#each especialidades as esp, i}
-										<div class="grid grid-cols-1 md:grid-cols-4 gap-4 items-center p-4 border border-gray-200 rounded-lg">
+										<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3 items-start p-4 border border-gray-200 rounded-lg">
+											<!-- Especialidade -->
 											<div class="relative">
+												<label for="esp-{i}" class="block text-xs text-gray-500 mb-1">Especialidade</label>
 												<input
+													id="esp-{i}"
 													type="text"
-													class="border-gray-300 rounded-lg p-2 w-full"
-													placeholder="Digite para buscar a especialidade..."
+													class="border border-gray-300 rounded-lg p-2 w-full text-sm"
+													placeholder="Digite para buscar..."
 													bind:value={esp.termo}
 													on:focus={() => esp.aberto = true}
 													on:input={() => esp.aberto = true}
@@ -293,27 +307,76 @@
 												{#if esp.aberto && filtrarEspecialidadesTermo(esp.termo).length > 0}
 													<ul class="absolute z-50 w-full bg-white border border-gray-300 rounded-md mt-1 max-h-60 overflow-y-auto shadow-lg">
 														{#each filtrarEspecialidadesTermo(esp.termo) as e (e.id)}
-															<li class="p-2 hover:bg-emerald-100 cursor-pointer text-sm" on:mousedown={() => { esp.especialidadeId = e.id; esp.termo = e.nome; esp.aberto = false; }}>
-																{e.nome}
+															<li class="p-2 hover:bg-emerald-100 cursor-pointer text-sm">
+																<button type="button" class="w-full text-left" on:mousedown={() => { esp.especialidadeId = e.id; esp.termo = e.nome; esp.aberto = false; }}>{e.nome}</button>
 															</li>
 														{/each}
 													</ul>
 												{/if}
 											</div>
-											<select bind:value={esp.status} class="border-gray-300 rounded-lg p-2">
-												<option value="AGUARDANDO">Aguardando</option>
-												<option value="RETORNO">Retorno</option>
-												<option value="RETORNO_POLICLINICA">Retorno Policlinica</option>
-												<option value="AGENDADO">Agendado</option>
-												<option value="REALIZADO">Realizado</option>
-												<option value="CANCELADO">Cancelado</option>
-											</select>
-											<select bind:value={esp.prioridade} class="border-gray-300 rounded-lg p-2">
-												<option value="NORMAL">Normal</option>
-												<option value="URGENTE">Urgente</option>
-												<option value="EMERGENCIA">Emergência</option>
-											</select>
-											<button type="button" on:click={() => removerEspecialidade(i)} class="text-red-500 hover:text-red-700 font-medium">✕ Remover</button>
+											<!-- Profissional -->
+											<div class="relative">
+												<label for="prof-{i}" class="block text-xs text-gray-500 mb-1">Profissional <span class="text-gray-400">(opcional)</span></label>
+												<input
+													id="prof-{i}"
+													type="text"
+													class="border border-gray-300 rounded-lg p-2 w-full text-sm"
+													placeholder="Digite para buscar..."
+													bind:value={esp.termoProfissional}
+													on:focus={() => esp.abertoProfissional = true}
+													on:input={() => esp.abertoProfissional = true}
+													on:blur={() => setTimeout(() => esp.abertoProfissional = false, 150)}
+												/>
+												{#if esp.abertoProfissional}
+													{@const sugestoes = filtrarProfissionais(esp.termoProfissional)}
+													<ul class="absolute z-50 w-full bg-white border border-gray-300 rounded-md mt-1 max-h-60 overflow-y-auto shadow-lg">
+														{#if sugestoes.length === 0}
+															<li class="p-2 text-sm text-gray-500">Nenhum profissional encontrado</li>
+														{:else}
+															{#each sugestoes as p (p.id)}
+																<li class="hover:bg-emerald-100 text-sm">
+																	<button type="button" class="w-full text-left p-2" on:mousedown={() => { esp.profissionalId = p.id; esp.termoProfissional = p.nome; esp.abertoProfissional = false; }}>
+																		<div class="font-medium">{p.nome}</div>
+																		{#if p.conselho && p.numeroRegistro}
+																			<div class="text-xs text-gray-500">{p.conselho} {p.numeroRegistro}</div>
+																		{/if}
+																	</button>
+																</li>
+															{/each}
+														{/if}
+													</ul>
+												{/if}
+												{#if esp.profissionalId}
+													<button type="button" aria-label="Limpar profissional" class="absolute right-2 top-8 text-gray-400 hover:text-red-500" on:click={() => { esp.profissionalId = null; esp.termoProfissional = ''; }}>
+														<svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+													</button>
+												{/if}
+											</div>
+											<!-- Status -->
+											<div>
+												<label for="status-{i}" class="block text-xs text-gray-500 mb-1">Status</label>
+												<select id="status-{i}" bind:value={esp.status} class="border border-gray-300 rounded-lg p-2 w-full text-sm">
+													<option value="AGUARDANDO">Aguardando</option>
+													<option value="RETORNO">Retorno</option>
+													<option value="RETORNO_POLICLINICA">Retorno Policlínica</option>
+													<option value="AGENDADO">Agendado</option>
+													<option value="REALIZADO">Realizado</option>
+													<option value="CANCELADO">Cancelado</option>
+												</select>
+											</div>
+											<!-- Prioridade -->
+											<div>
+												<label for="prio-{i}" class="block text-xs text-gray-500 mb-1">Prioridade</label>
+												<select id="prio-{i}" bind:value={esp.prioridade} class="border border-gray-300 rounded-lg p-2 w-full text-sm">
+													<option value="NORMAL">Normal</option>
+													<option value="URGENTE">Urgente</option>
+													<option value="EMERGENCIA">Emergência</option>
+												</select>
+											</div>
+											<!-- Remover -->
+											<div class="flex items-end pb-1">
+												<button type="button" on:click={() => removerEspecialidade(i)} class="text-red-500 hover:text-red-700 font-medium text-sm">✕ Remover</button>
+											</div>
 										</div>
 									{/each}
 								</div>

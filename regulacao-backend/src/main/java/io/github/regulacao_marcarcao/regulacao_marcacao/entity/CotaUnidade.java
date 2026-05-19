@@ -1,11 +1,15 @@
 package io.github.regulacao_marcarcao.regulacao_marcacao.entity;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 import org.hibernate.annotations.CreationTimestamp;
 
+import io.github.regulacao_marcarcao.regulacao_marcacao.entity.enums.TipoPeriodoCota;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
@@ -39,8 +43,17 @@ public class CotaUnidade {
     @JoinColumn(name = "especialidade_id", nullable = true)
     private Especialidade especialidade;
 
-    @Column(name = "periodo", nullable = false, length = 7)
+    @Enumerated(EnumType.STRING)
+    @Column(name = "tipo_periodo", nullable = false, length = 10)
+    private TipoPeriodoCota tipoPeriodo = TipoPeriodoCota.MENSAL;
+
+    // Usado quando tipoPeriodo = MENSAL (formato YYYY-MM)
+    @Column(name = "periodo", length = 7)
     private String periodo;
+
+    // Usado quando tipoPeriodo = DATA
+    @Column(name = "data_especifica")
+    private LocalDate dataEspecifica;
 
     @Column(name = "quantidade_total", nullable = false)
     private Integer quantidadeTotal = 0;

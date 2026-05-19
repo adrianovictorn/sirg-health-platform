@@ -117,7 +117,7 @@
                     header={u.nome}
                     title="Pendentes"
                     value={pendentesDaUnidade(u.id)}
-                    href="/usf"
+                    href={`/unidade/${u.id}`}
                     color="emerald"
                   />
                 {/each}

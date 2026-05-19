@@ -10,6 +10,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.agendamentoDTO.AgendamentoSendDTO;
@@ -63,9 +64,10 @@ public class AgendamentoController {
     @PostMapping("/{solicitacaoId}")
     public ResponseEntity<AgendamentoSolicitacaoSimpleViewDTO> criarAgendamento(
             @PathVariable Long solicitacaoId,
-            @RequestBody MultiAgendamentoCreateDTO dto) { // Usa o novo DTO
-        // Chama o novo método criado no AgendamentoService
-        AgendamentoSolicitacaoSimpleViewDTO agendamentoCriado = agendamentoService.criarAgendamentoParaMultiplosExames(solicitacaoId, dto);
+            @RequestBody MultiAgendamentoCreateDTO dto,
+            Authentication authentication) {
+        String callerCpf = authentication != null ? authentication.getName() : null;
+        AgendamentoSolicitacaoSimpleViewDTO agendamentoCriado = agendamentoService.criarAgendamentoParaMultiplosExames(solicitacaoId, dto, callerCpf);
         return new ResponseEntity<>(agendamentoCriado, HttpStatus.CREATED);
     }
 

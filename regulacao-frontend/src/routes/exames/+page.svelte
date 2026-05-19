@@ -74,7 +74,6 @@
   let cpfPaciente = $state('');
   let cns = $state('');
   let datanascimento = $state('');
-  let usfOrigem = $state('');
   let dataMalote = $state('');
   let observacoes = $state('');
   let inputsReadonly = $state(false);
@@ -125,7 +124,6 @@
       cpfPaciente = s.cpfPaciente || '';
       cns = s.cns || '';
       datanascimento = s.datanascimento ? s.datanascimento.split('T')[0] : '';
-      usfOrigem = s.usfOrigem || '';
       dataMalote = s.dataMalote ? s.dataMalote.split('T')[0] : '';
       telefone = s.telefone || '';
       inputsReadonly = true;
@@ -190,13 +188,12 @@
 
       const prioridadeDaSolicitacao = isUrgente ? 'URGENTE' : 'NORMAL';
       const payloadNovaSolicitacao = {
-        usfOrigem, 
         nomePaciente,
         cpfPaciente,
-        cns, 
+        cns,
         telefone,
-        datanascimento, 
-        dataMalote, 
+        datanascimento,
+        dataMalote,
         observacoes,
         especialidades: examesSelecionados.map(sel => ({
             especialidadeId: sel.id,
@@ -226,7 +223,6 @@
     cpfPaciente = '';
     cns = '';
     datanascimento = '';
-    usfOrigem = '';
     dataMalote = '';
     observacoes = '';
     inputsReadonly = false;
@@ -351,22 +347,13 @@
 
           <fieldset class="border border-gray-300 p-4 rounded-lg">
             <legend class="text-xl font-semibold text-gray-700 px-2">Detalhes da Solicitação</legend>
-             <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-4">
+             <div class="grid grid-cols-1 gap-6 mt-4">
                 <div class="flex flex-col">
                     <label for="dataMalote" class="text-sm font-medium text-gray-700 mb-1">Data Recebimento</label>
                     <input id="dataMalote" type="date" bind:value={dataMalote} readonly={inputsReadonly} class:bg-gray-100={inputsReadonly} class="border border-gray-300 rounded-lg p-2 focus:ring-emerald-500 focus:border-emerald-500" required />
                 </div>
-                <div class="flex flex-col">
-                    <label for="usfOrigem" class="text-sm font-medium text-gray-700 mb-1">USF Origem</label>
-                    <select id="usfOrigem" bind:value={usfOrigem} disabled={inputsReadonly} class:bg-gray-100={inputsReadonly} class="border border-gray-300 rounded-lg p-2 focus:ring-emerald-500 focus:border-emerald-500" required>
-                        <option value="" disabled>Selecione...</option>
-                        {#each ['USF01','USF02','USF03','USF04','USF05','USF06'] as u}
-                            <option value={u}>{u}</option>
-                        {/each}
-                    </select>
-                </div>
             </div>
-          
+
           </fieldset>
           
           {#if idSolicitacao && examesPendentes.length > 0}

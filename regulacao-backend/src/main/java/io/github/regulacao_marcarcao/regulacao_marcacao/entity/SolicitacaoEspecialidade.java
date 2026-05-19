@@ -33,14 +33,18 @@ public class SolicitacaoEspecialidade {
     @JoinColumn(name = "agendamento_id")
     private AgendamentoSolicitacao agendamentoSolicitacao;
 
-    // Novo relacionamento para tabela de especialidades
-    @ManyToOne
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "especialidade_id")
     private Especialidade especialidadeSolicitada;
 
     // Campo legado (enum como string). Mantido temporariamente para migração e compatibilidade
     @Column(name = "especialidade_solicitada")
     private String especialidadeCodigoLegacy;
+
+    // Profissional que originou a solicitação (opcional)
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "profissional_id", nullable = true)
+    private Profissional profissionalSolicitante;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "status", length = 50)

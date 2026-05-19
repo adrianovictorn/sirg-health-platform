@@ -1,5 +1,6 @@
-﻿<script lang="ts">
+<script lang="ts">
   import { onDestroy, onMount } from "svelte";
+  import { page } from "$app/stores";
   import UserMenu from "$lib/UserMenu.svelte";
   import RoleBasedMenu from "$lib/RoleBasedMenu.svelte";
   import type { PacientePendentes } from "$lib/type/PendenciasPaciente";
@@ -14,7 +15,8 @@
     size: number;
   };
 
-  const usfOrigem = "USF01";
+  let unidadeId = $derived(Number($page.params.id));
+  let unidadeNome = $state<string>("");
 
   let isLoading = $state(true);
   let isInitialLoad = $state(true);
@@ -58,7 +60,7 @@
     const params = new URLSearchParams({
       page: String(Math.max(pageToLoad - 1, 0)),
       size: String(itemsPerPage),
-      usfOrigem,
+      unidadeId: String(unidadeId),
       termo: termo.trim()
     });
 
@@ -101,6 +103,18 @@
     }
   }
 
+  async function carregarUnidade() {
+    try {
+      const res = await getApi(`unidades/${unidadeId}`);
+      if (res.ok) {
+        const u = await res.json();
+        unidadeNome = u.nome ?? "";
+      }
+    } catch {
+      // nome fica vazio, não bloqueia
+    }
+  }
+
   function handleSearch(event: Event) {
     termo = (event.target as HTMLInputElement).value;
     if (searchTimeout) clearTimeout(searchTimeout);
@@ -117,9 +131,10 @@
     usingServerPagination ? triggerFetch(currentPage + 1) : (currentPage += 1);
   }
 
-  onMount(() => {
+  onMount(async () => {
+    await carregarUnidade();
     toast.promise(listarSolicitacoes(1), {
-      loading: `Carregando ${usfOrigem}...`,
+      loading: `Carregando pendentes${unidadeNome ? ` — ${unidadeNome}` : ""}...`,
       success: "Dados carregados!",
       error: "Erro ao carregar os dados."
     });
@@ -132,15 +147,17 @@
 </script>
 
 <svelte:head>
-  <title>Pendentes — {usfOrigem}</title>
+  <title>Pendentes — {unidadeNome || `Unidade ${unidadeId}`}</title>
 </svelte:head>
 
 <div class="flex min-h-screen bg-gray-100">
-  <RoleBasedMenu activePage="/usf/usf1" />
+  <RoleBasedMenu activePage="/usf" />
 
   <div class="flex-1 flex flex-col">
     <header class="bg-emerald-700 text-white shadow p-4 flex items-center justify-between">
-      <h1 class="text-xl font-semibold">Pacientes Pendentes — {usfOrigem}</h1>
+      <h1 class="text-xl font-semibold">
+        Pacientes Pendentes — {unidadeNome || `Unidade ${unidadeId}`}
+      </h1>
       <UserMenu />
     </header>
 
@@ -148,7 +165,9 @@
       <div class="bg-white rounded-lg shadow-lg p-6 space-y-6">
 
         <div class="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
-          <h2 class="text-2xl font-bold text-emerald-800">Lista de Pacientes Pendentes ({usfOrigem})</h2>
+          <h2 class="text-2xl font-bold text-emerald-800">
+            Lista de Pacientes Pendentes ({unidadeNome || `Unidade ${unidadeId}`})
+          </h2>
           <div class="flex w-full md:w-1/2">
             <input
               type="text"
@@ -179,7 +198,7 @@
               {#if termo.trim()}
                 Nenhuma solicitação encontrada para "{termo}".
               {:else}
-                Nenhuma solicitação pendente para {usfOrigem} no momento.
+                Nenhuma solicitação pendente para {unidadeNome || `Unidade ${unidadeId}`} no momento.
               {/if}
             </p>
           {:else}

@@ -3,10 +3,10 @@
   import { user } from '$lib/stores/auth.js';
   import Card from '$lib/Card.svelte';
   import Card2 from '$lib/Card2.svelte';
-  import { getApi } from '$lib/api.js';
   import Card3 from '$lib/Card3.svelte';
-  import UserMenu from '$lib/UserMenu.svelte';
+  import { getApi } from '$lib/api.js';
   import Menu3 from '$lib/Menu3.svelte';
+  import UserMenu from '$lib/UserMenu.svelte';
 
   let resumo: {
     totalSolicitacoes: number;
@@ -14,27 +14,29 @@
     totalAgendadas: number;
     totalConcluidas: number;
     totalUrgentes: number;
+    totalGel: number;
     pendentesPorUnidade: Record<string, number>;
   } | null = null;
 
-  let unidades: { id: number; nome: string }[] = [];
+  let unidadeId: number | null = null;
+  let unidadeNome = '';
   let isLoading = true;
   let error = '';
 
   onMount(async () => {
     try {
-      const [resResumo, resUnidades] = await Promise.all([
+      const [resResumo, resMe] = await Promise.all([
         getApi('solicitacoes/resumo-dashboard'),
-        getApi('unidades/ativas')
+        getApi('users/me')
       ]);
 
-      if (!resResumo.ok) {
-        const errorData = await resResumo.text();
-        throw new Error(`Falha ao carregar os dados: ${resResumo.status} ${errorData}`);
-      }
+      if (!resResumo.ok) throw new Error(`Falha ao carregar dados: ${resResumo.status}`);
+      if (!resMe.ok) throw new Error(`Falha ao carregar usuário: ${resMe.status}`);
 
       resumo = await resResumo.json();
-      if (resUnidades.ok) unidades = await resUnidades.json();
+      const me = await resMe.json();
+      unidadeId = me.unidadeId ?? null;
+      unidadeNome = me.unidadeNome ?? 'Minha Unidade';
     } catch (e: unknown) {
       error = e instanceof Error ? e.message : String(e);
     } finally {
@@ -47,15 +49,14 @@
   $: agendado = resumo?.totalAgendadas ?? 0;
   $: concluida = resumo?.totalConcluidas ?? 0;
   $: urgencia = resumo?.totalUrgentes ?? 0;
-
-  const pendentesDaUnidade = (id: number): number => {
-    if (!resumo?.pendentesPorUnidade) return 0;
-    return resumo.pendentesPorUnidade[String(id)] ?? 0;
-  };
+  $: gel = resumo?.totalGel ?? 0;
+  $: pendentesDaMinhaUnidade = (unidadeId && resumo?.pendentesPorUnidade)
+    ? (resumo.pendentesPorUnidade[String(unidadeId)] ?? pendentes)
+    : pendentes;
 </script>
 
 <svelte:head>
-  <title>Dashboard</title>
+  <title>Dashboard — {unidadeNome}</title>
 </svelte:head>
 
 {#if isLoading}
@@ -67,11 +68,11 @@
     <p class="text-xl text-red-500">Erro ao carregar os dados: {error}</p>
   </div>
 {:else}
-  <div class="flex min-h-screen bg-gray-100">
-    <Menu3 activePage="/dashboard" />
+  <div class="flex min-h-screen bg-gray-200">
+    <Menu3 activePage="/dashboard/unidade" />
     <div class="flex-1 flex flex-col">
       <header class="bg-emerald-700 text-white shadow p-4 flex items-center justify-between">
-        <h1 class="text-xl font-semibold">Painel de Controle</h1>
+        <h1 class="text-xl font-semibold">Painel de Controle — {unidadeNome}</h1>
         {#if $user}
           <UserMenu />
         {:else}
@@ -80,46 +81,43 @@
       </header>
 
       <main class="flex-1 p-6 overflow-auto">
-        <div class="space-y-6">
+        <div class="max-w-7xl mx-auto space-y-6">
 
-          <!-- Pendentes por Unidade -->
-          <section class="bg-emerald-300 rounded-lg shadow p-6">
-            <h2 class="text-lg font-bold text-emerald-800 mb-4">Pendentes por Unidade</h2>
-            {#if unidades.length === 0}
-              <p class="text-sm text-emerald-700">Nenhuma unidade cadastrada.</p>
-            {:else}
-              <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-                {#each unidades as u}
-                  <Card2
-                    header={u.nome}
-                    title="Pendentes"
-                    value={pendentesDaUnidade(u.id)}
-                    href="/usf"
-                    color="emerald"
-                  />
-                {/each}
+          <!-- Visão Geral -->
+          <section>
+            <h2 class="text-xs font-semibold text-gray-700 uppercase tracking-widest mb-3">Visão Geral</h2>
+            <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 rounded-lg">
+              <Card title="Total de Solicitações" value={totalDeSolicitacoes} color="emerald-dark"/>
+              <Card2 header="Solicitações" title="Pendentes" value={pendentes} href="/usf" color="emerald-dark"/>
+              <Card2 header="Solicitações" title="Agendadas" value={agendado} href="/paciente/agendados" color="emerald-dark"/>
+              <Card2 header="Solicitações" title="Concluídas" value={concluida} href="/paciente/concluido" color="emerald-dark"/>
+            </div>
+          </section>
+
+          <!-- Atenção Imediata -->
+          <section>
+            <h2 class="text-xs font-semibold text-gray-700 uppercase tracking-widest mb-3">Atenção Imediata</h2>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <Card3 header="Alertas" title="Urgência / Emergência" value={urgencia} href="/paciente/urgentes" color="danger"/>
+              <Card3 header="Procedimentos Externos" title="GEL" value={gel} href="/paciente/gel" color="warning"/>
+            </div>
+          </section>
+
+          <!-- Minha Unidade -->
+          {#if unidadeId}
+            <section class="bg-emerald-700/30 rounded-xl shadow-sm border border-gray-100 p-6">
+              <h2 class="text-xs font-semibold text-gray-900 uppercase tracking-widest mb-5">Minha Unidade</h2>
+              <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <Card2
+                  header={unidadeNome}
+                  title="Pendentes"
+                  value={pendentesDaMinhaUnidade}
+                  href={`/unidade/${unidadeId}`}
+                  color="emerald"
+                />
               </div>
-            {/if}
-          </section>
-
-          <!-- Totais -->
-          <section class="bg-emerald-300 rounded-lg shadow p-6">
-            <h2 class="text-lg font-bold text-emerald-900 mb-4">Totais</h2>
-            <div class="grid grid-cols-1 sm:grid-cols-4 gap-6">
-              <Card2 header="Resumo" title="Pendentes" value={pendentes} href="/usf" color="emerald-dark"/>
-              <Card2 header="Resumo" title="Agendados" value={agendado} href="/paciente/agendados" color="emerald-dark"/>
-              <Card2 header="Resumo" title="Concluídas" value={concluida} href="/paciente/concluido" color="emerald-dark"/>
-              <Card title="Total" value={totalDeSolicitacoes} color="emerald-dark"/>
-            </div>
-          </section>
-
-          <!-- Alertas -->
-          <section class="bg-emerald-200 rounded-lg shadow p-6">
-            <h2 class="text-lg font-bold text-red-900 mb-4">Alertas</h2>
-            <div class="grid grid-cols-1 gap-6">
-              <Card3 header="Alertas" title="Urgência" value={urgencia} href="/paciente/urgentes" color="danger"/>
-            </div>
-          </section>
+            </section>
+          {/if}
 
         </div>
       </main>

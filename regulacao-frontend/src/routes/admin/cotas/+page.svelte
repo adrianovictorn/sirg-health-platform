@@ -14,8 +14,16 @@
 
   let filtroUnidade = '';
   let periodoAtual = new Date().toISOString().slice(0, 7);
+  let hojeISO = new Date().toISOString().slice(0, 10);
 
-  let form = { unidadeId: null, especialidadeId: null, periodo: periodoAtual, quantidadeTotal: 0 };
+  let form = {
+    unidadeId: null,
+    especialidadeId: null,
+    tipoPeriodo: 'MENSAL',
+    periodo: periodoAtual,
+    dataEspecifica: hojeISO,
+    quantidadeTotal: 0
+  };
   let formEditar = { quantidadeTotal: 0, ativo: true };
 
   onMount(async () => {
@@ -53,9 +61,21 @@
     ? cotas.filter(c => c.unidadeId === Number(filtroUnidade))
     : cotas;
 
+  function formatarPeriodo(c) {
+    if (c.tipoPeriodo === 'DATA') return c.dataEspecifica ?? '-';
+    return c.periodo ?? '-';
+  }
+
   function abrirModalNova() {
     editando = null;
-    form = { unidadeId: null, especialidadeId: null, periodo: periodoAtual, quantidadeTotal: 0 };
+    form = {
+      unidadeId: null,
+      especialidadeId: null,
+      tipoPeriodo: 'MENSAL',
+      periodo: periodoAtual,
+      dataEspecifica: hojeISO,
+      quantidadeTotal: 0
+    };
     showModal = true;
   }
 
@@ -75,7 +95,9 @@
         const payload = {
           unidadeId: Number(form.unidadeId),
           especialidadeId: form.especialidadeId ? Number(form.especialidadeId) : null,
-          periodo: form.periodo,
+          tipoPeriodo: form.tipoPeriodo,
+          periodo: form.tipoPeriodo === 'MENSAL' ? form.periodo : null,
+          dataEspecifica: form.tipoPeriodo === 'DATA' ? form.dataEspecifica : null,
           quantidadeTotal: Number(form.quantidadeTotal)
         };
         await postApi('cotas', payload);
@@ -124,7 +146,8 @@
               <tr>
                 <th class="px-4 py-3 text-left">Unidade</th>
                 <th class="px-4 py-3 text-left">Especialidade</th>
-                <th class="px-4 py-3 text-left">Período</th>
+                <th class="px-4 py-3 text-left">Tipo</th>
+                <th class="px-4 py-3 text-left">Período / Data</th>
                 <th class="px-4 py-3 text-right">Total</th>
                 <th class="px-4 py-3 text-right">Utilizado</th>
                 <th class="px-4 py-3 text-right">Saldo</th>
@@ -137,7 +160,12 @@
                 <tr class="hover:bg-slate-800/40 transition-colors">
                   <td class="px-4 py-3 font-medium text-white">{c.unidadeNome}</td>
                   <td class="px-4 py-3">{c.especialidadeNome ?? 'Geral'}</td>
-                  <td class="px-4 py-3">{c.periodo}</td>
+                  <td class="px-4 py-3">
+                    <span class="px-2 py-0.5 rounded text-xs font-medium {c.tipoPeriodo === 'DATA' ? 'bg-blue-500/20 text-blue-300' : 'bg-slate-600/40 text-slate-300'}">
+                      {c.tipoPeriodo === 'DATA' ? 'Por Data' : 'Mensal'}
+                    </span>
+                  </td>
+                  <td class="px-4 py-3">{formatarPeriodo(c)}</td>
                   <td class="px-4 py-3 text-right">{c.quantidadeTotal}</td>
                   <td class="px-4 py-3 text-right">{c.quantidadeUtilizada}</td>
                   <td class="px-4 py-3 text-right font-semibold {c.saldoDisponivel <= 0 ? 'text-red-400' : 'text-emerald-400'}">
@@ -174,7 +202,7 @@
           <p class="text-slate-400 text-sm">
             <span class="text-white font-medium">{editando.unidadeNome}</span>
             {editando.especialidadeNome ? ` · ${editando.especialidadeNome}` : ' · Geral'}
-            · <span class="text-slate-300">{editando.periodo}</span>
+            · <span class="text-slate-300">{formatarPeriodo(editando)}</span>
           </p>
           <div>
             <label class="block text-xs text-slate-400 mb-1">Quantidade Total</label>
@@ -209,10 +237,31 @@
             </select>
           </div>
           <div>
-            <label class="block text-xs text-slate-400 mb-1">Período (YYYY-MM) *</label>
-            <input type="month" bind:value={form.periodo}
-              class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+            <label class="block text-xs text-slate-400 mb-1">Tipo de Controle *</label>
+            <div class="flex gap-4">
+              <label class="flex items-center gap-2 text-sm text-slate-300 cursor-pointer">
+                <input type="radio" bind:group={form.tipoPeriodo} value="MENSAL" class="accent-emerald-500" />
+                Mensal
+              </label>
+              <label class="flex items-center gap-2 text-sm text-slate-300 cursor-pointer">
+                <input type="radio" bind:group={form.tipoPeriodo} value="DATA" class="accent-emerald-500" />
+                Por Data Específica
+              </label>
+            </div>
           </div>
+          {#if form.tipoPeriodo === 'MENSAL'}
+            <div>
+              <label class="block text-xs text-slate-400 mb-1">Período (YYYY-MM) *</label>
+              <input type="month" bind:value={form.periodo}
+                class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+            </div>
+          {:else}
+            <div>
+              <label class="block text-xs text-slate-400 mb-1">Data Específica *</label>
+              <input type="date" bind:value={form.dataEspecifica}
+                class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+            </div>
+          {/if}
           <div>
             <label class="block text-xs text-slate-400 mb-1">Quantidade Total *</label>
             <input type="number" min="0" bind:value={form.quantidadeTotal}

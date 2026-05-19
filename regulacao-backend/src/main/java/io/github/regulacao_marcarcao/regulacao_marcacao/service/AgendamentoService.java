@@ -26,6 +26,7 @@ import io.github.regulacao_marcarcao.regulacao_marcacao.repository.Especialidade
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.LocalAgendamentoRepository;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.SolicitacaoEspecialidadeRepository;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.SolicitacaoRepository;
+import io.github.regulacao_marcarcao.regulacao_marcacao.repository.UserRepository;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 
@@ -38,6 +39,8 @@ public class AgendamentoService {
     private final LocalAgendamentoRepository localAgendamentoRepository;
     private final SolicitacaoEspecialidadeRepository solicitacaoEspecialidadeRepository;
     private final EspecialidadeRepository especialidadeRepository;
+    private final UserRepository userRepository;
+    private final CotaUnidadeService cotaUnidadeService;
     private final io.github.regulacao_marcarcao.regulacao_marcacao.config.InstanceContext instanceContext;
     private final org.springframework.amqp.rabbit.core.RabbitTemplate rabbitTemplate;
 
@@ -121,8 +124,15 @@ public class AgendamentoService {
         return AgendamentoSolicitacaoSimpleViewDTO.fromAgendamentoSolicitacao(ag);
     }
 
+    private boolean isAdminGlobal(String callerCpf) {
+        if (callerCpf == null) return true;
+        return userRepository.findByCpf(callerCpf)
+                .map(u -> u.getRole() != null && u.getRole().name().equals("ADMIN"))
+                .orElse(true);
+    }
+
     @Transactional
-    public AgendamentoSolicitacaoSimpleViewDTO criarAgendamentoParaMultiplosExames(Long solicitacaoId, MultiAgendamentoCreateDTO dto) {
+    public AgendamentoSolicitacaoSimpleViewDTO criarAgendamentoParaMultiplosExames(Long solicitacaoId, MultiAgendamentoCreateDTO dto, String callerCpf) {
         Solicitacao solicitacao = solicitacaoRepository.findById(solicitacaoId)
                 .orElseThrow(() -> new EntityNotFoundException("Solicitação não encontrada com o ID: " + solicitacaoId));
 
@@ -180,6 +190,9 @@ public class AgendamentoService {
         AgendamentoSolicitacao agendamentoSalvo = agendamentoRepository.save(novoAgendamento);
 
         // 2. Itera sobre os exames selecionados.
+        boolean adminGlobal = isAdminGlobal(callerCpf);
+        Long unidadeId = solicitacao.getUnidade() != null ? solicitacao.getUnidade().getId() : null;
+
         for (String nomeExame : dto.examesSelecionados()) {
             SolicitacaoEspecialidade especialidadeParaAgendar = solicitacao.getEspecialidades().stream()
                     .filter(e -> {
@@ -188,11 +201,19 @@ public class AgendamentoService {
                         return atual != null && atual.equalsIgnoreCase(nomeExame)
                                 && (
                                     e.getStatus() == StatusDaMarcacao.AGUARDANDO
-                                    || e.getStatus() == StatusDaMarcacao.RETORNO 
+                                    || e.getStatus() == StatusDaMarcacao.RETORNO
                                     || e.getStatus() == StatusDaMarcacao.RETORNO_POLICLINICA);
                     })
                     .findFirst()
                     .orElseThrow(() -> new EntityNotFoundException("Exame pendente '" + nomeExame + "' não encontrado na solicitação."));
+
+            // Valida cota da unidade (admin global não está sujeito a cotas)
+            if (!adminGlobal && unidadeId != null) {
+                Long especialidadeId = especialidadeParaAgendar.getEspecialidadeSolicitada() != null
+                        ? especialidadeParaAgendar.getEspecialidadeSolicitada().getId()
+                        : null;
+                cotaUnidadeService.incrementarUtilizacao(unidadeId, especialidadeId, dto.dataAgendada());
+            }
 
             // 3. Atualiza o status e associa o agendamento.
             especialidadeParaAgendar.setStatus(StatusDaMarcacao.AGENDADO);

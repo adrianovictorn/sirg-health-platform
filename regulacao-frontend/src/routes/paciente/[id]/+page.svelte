@@ -17,6 +17,8 @@
     type EspecialidadeItem = {
         id: number;
         especialidadeSolicitada: string;
+        profissionalId?: number | null;
+        profissionalNome?: string | null;
         status: string;
         prioridade: string;
         dataDeCadastro: DataArray;
@@ -103,16 +105,27 @@
     let cpfPaciente = $state('');
     let cns = $state('');
     let datanascimento = $state('');
-    let usfOrigem = $state('');
+    let unidadeId = $state<number | null>(null);
+    let unidades = $state<{ id: number; nome: string }[]>([]);
     let dataMalote = $state('');
     let observacoes = $state('');
     let telefone = $state('');
     let status = $state('');
 
     // Objeto reativo para a nova especialidade a ser adicionada
-    let novaEspecialidadeObj = $state({ especialidadeId: null as number | null, status: 'AGUARDANDO', prioridade: 'NORMAL' });
+    let novaEspecialidadeObj = $state({ especialidadeId: null as number | null, profissionalId: null as number | null, status: 'AGUARDANDO', prioridade: 'NORMAL' });
     let termoBuscaNovaEsp = $state('');
     let comboboxEspAberto = $state(false);
+
+    let profissionais = $state<any[]>([]);
+    let termoBuscaProfissional = $state('');
+    let comboboxProfAberto = $state(false);
+
+    function filtrarProfissionais(t: string) {
+        const q = (t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+        const base = q ? profissionais.filter((p: any) => p.nome.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().includes(q)) : profissionais;
+        return base.slice(0, 40);
+    }
     function normalizeEsp(s: string) {
         return (s || '').toString().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
     }
@@ -133,12 +146,19 @@
         const id = $page.params.id;
       try {
         // Carrega dados da solicitação, agendamentos, CIDs e catálogo de especialidades em paralelo
-        const [resSolicitacao, resAgendamentos, resTodosOsCids, listaCatalogo] = await Promise.all([
+        const [resSolicitacao, resAgendamentos, resTodosOsCids, listaCatalogo, resUnidades, resProfissionais] = await Promise.all([
             getApi(`solicitacoes/${id}`),
             getApi(`agendamentos/solicitacao/${id}`),
-            getApi('cid'), // Busca todos os CIDs para o dropdown
-            listarEspecialidadesCatalogo().catch(() => [])
+            getApi('cid'),
+            listarEspecialidadesCatalogo().catch(() => []),
+            getApi('unidades/ativas'),
+            getApi('profissionais/buscar?size=200')
         ]);
+        if (resUnidades.ok) unidades = await resUnidades.json();
+        if (resProfissionais.ok) {
+            const dataProfissionais = await resProfissionais.json();
+            profissionais = dataProfissionais.content || [];
+        }
 
         if (!resSolicitacao.ok) {
             throw new Error(`Falha ao buscar os dados do paciente: ${await resSolicitacao.text()}`);
@@ -173,7 +193,7 @@
         cpfPaciente = solicitacao.cpfPaciente;
         cns = solicitacao.cns;
         datanascimento = solicitacao.datanascimento;
-        usfOrigem = solicitacao.usfOrigem;
+        unidadeId = solicitacao.unidadeId ?? null;
         dataMalote = solicitacao.dataMalote;
         observacoes = solicitacao.observacoes;
         telefone = solicitacao.telefone || '';
@@ -193,16 +213,16 @@
     // Mapeia os CIDs associados para enviar apenas a lista de IDs
     const idsDosCids = solicitacao.cids?.map((c: CID) => c.id) || [];
 
-    const payload = { 
-        nomePaciente, 
-        cpfPaciente, 
-        cns, 
-        telefone, 
-        datanascimento, 
-        usfOrigem, 
-        dataMalote, 
+    const payload = {
+        nomePaciente,
+        cpfPaciente,
+        cns,
+        telefone,
+        datanascimento,
+        unidadeId,
+        dataMalote,
         observacoes,
-        cids: idsDosCids // Envia a lista de IDs de CIDs para o backend
+        cids: idsDosCids
     };
     
     const res = await putApi(`solicitacoes/${solicitacao.id}`, payload);
@@ -222,6 +242,7 @@
 
         const payload = {
             especialidadeId: Number(novaEspecialidadeObj.especialidadeId),
+            profissionalId: novaEspecialidadeObj.profissionalId || null,
             status: novaEspecialidadeObj.status,
             prioridade: novaEspecialidadeObj.prioridade
         };
@@ -302,10 +323,10 @@
 
     // O payload precisa de todos os campos que o DTO espera,
     // então usamos os valores já existentes no estado.
-    const payload = { 
-        nomePaciente, cpfPaciente, cns, telefone, 
-        datanascimento, usfOrigem, dataMalote, observacoes,
-        cids: idsDosCids // A lista atualizada de IDs
+    const payload = {
+        nomePaciente, cpfPaciente, cns, telefone,
+        datanascimento, unidadeId, dataMalote, observacoes,
+        cids: idsDosCids
     };
     
     try {
@@ -427,8 +448,13 @@
                     <input type="date" bind:value={dataMalote} class="w-full border-gray-300 rounded-md shadow-sm focus:border-emerald-500 focus:ring-emerald-500" />
                 </div>
                 <div class="lg:col-span-2">
-                    <label class="block text-sm font-medium text-gray-700 mb-1">USF Origem</label>
-                    <input type="text" bind:value={usfOrigem} class="w-full border-gray-300 rounded-md shadow-sm focus:border-emerald-500 focus:ring-emerald-500" />
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Unidade de Saúde</label>
+                    <select bind:value={unidadeId} class="w-full border-gray-300 rounded-md shadow-sm focus:border-emerald-500 focus:ring-emerald-500">
+                        <option value={null}>— Sem unidade —</option>
+                        {#each unidades as u (u.id)}
+                            <option value={u.id}>{u.nome}</option>
+                        {/each}
+                    </select>
                 </div>
             </div>
                        <div class="mt-6 pt-4 border-t">
@@ -484,7 +510,7 @@
                         Salvar Alterações
                     </button>
                 </div>
-
+                </div><!-- fecha mt-6 pt-4 border-t -->
                 </section>
 
            
@@ -613,7 +639,12 @@
                             <ul class="divide-y divide-gray-200">
                                 {#each especPendentes as e (e.id)}
                                     <li class="p-3 md:grid grid-cols-3 justify-between gap-5 items-center hover:bg-gray-50">
-                                        <span class="text-gray-800 font-medium ">{getNomeEspecialidade(e.especialidadeSolicitada)}</span>
+                                        <div class="flex flex-col gap-0.5">
+                                            <span class="text-gray-800 font-medium">{getNomeEspecialidade(e.especialidadeSolicitada)}</span>
+                                            {#if e.profissionalNome}
+                                                <span class="text-xs text-gray-500">Solicitante: {e.profissionalNome}</span>
+                                            {/if}
+                                        </div>
                                         <div class="grid grid-cols-1 m-auto justify-center">
                                             <p class="text-[14px] text-center m-auto ">Data de Cadastro: <span class="text-[14px]">{dataHorarioMinutoLocal(e.dataDeCadastro)}</span></p>
                                         </div>
@@ -799,6 +830,45 @@
                                   </ul>
                                 {/if}
                               </div>
+                        </div>
+                        <div>
+                            <label for="profissional-input" class="block text-sm font-medium text-gray-700 mb-1">Profissional Solicitante <span class="text-gray-400 font-normal">(opcional)</span></label>
+                            <div class="relative">
+                                <input
+                                    type="text"
+                                    id="profissional-input"
+                                    class="w-full border border-gray-300 rounded-md p-2 focus:ring-emerald-500 focus:border-emerald-500"
+                                    placeholder="Digite para buscar..."
+                                    bind:value={termoBuscaProfissional}
+                                    onfocus={() => comboboxProfAberto = true}
+                                    oninput={() => comboboxProfAberto = true}
+                                    onblur={() => setTimeout(() => comboboxProfAberto = false, 150)}
+                                />
+                                {#if comboboxProfAberto}
+                                    {@const sugestoesPof = filtrarProfissionais(termoBuscaProfissional)}
+                                    <ul class="absolute z-50 w-full bg-white border border-gray-300 rounded-md mt-1 max-h-60 overflow-y-auto shadow-lg">
+                                        {#if sugestoesPof.length === 0}
+                                            <li class="p-2 text-sm text-gray-500 select-none">Nenhum profissional encontrado</li>
+                                        {:else}
+                                            {#each sugestoesPof as p (p.id)}
+                                                <li class="px-2 py-1">
+                                                    <button type="button" class="w-full text-left px-2 py-2 hover:bg-emerald-50 cursor-pointer text-sm" onclick={() => { novaEspecialidadeObj.profissionalId = p.id; termoBuscaProfissional = p.nome; comboboxProfAberto = false; }}>
+                                                        <div class="font-medium text-gray-900">{p.nome}</div>
+                                                        {#if p.conselho && p.numeroRegistro}
+                                                            <div class="text-[11px] text-gray-500">{p.conselho} {p.numeroRegistro}</div>
+                                                        {/if}
+                                                    </button>
+                                                </li>
+                                            {/each}
+                                        {/if}
+                                    </ul>
+                                {/if}
+                                {#if novaEspecialidadeObj.profissionalId}
+                                    <button type="button" class="absolute right-2 top-2.5 text-gray-400 hover:text-red-500" title="Limpar profissional" onclick={() => { novaEspecialidadeObj.profissionalId = null; termoBuscaProfissional = ''; }}>
+                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+                                    </button>
+                                {/if}
+                            </div>
                         </div>
                         <div>
                             <label for="prioridade-select" class="block text-sm font-medium text-gray-700 mb-1">Prioridade</label>

@@ -15,7 +15,8 @@ public record SolicitacaoViewDTO(
     String telefone,
     String datanascimento,
     String observacoes,
-    String usfOrigem,
+    Long unidadeId,
+    String unidadeNome,
     String dataMalote,
 
     List<CIDViewDTO> cids,
@@ -29,17 +30,16 @@ public record SolicitacaoViewDTO(
                   .collect(Collectors.toList())
             : List.of();
 
-        
-
         List<AgendamentoSolicitacaoSimpleViewDTO> ags = s.getAgendamentos() != null
             ? s.getAgendamentos().stream()
                   .map(AgendamentoSolicitacaoSimpleViewDTO::fromAgendamentoSolicitacao)
                   .collect(Collectors.toList())
             : List.of();
 
-            List<CIDViewDTO> cids = s.getCids() != null
-             ? s.getCids().stream()
-             .map(CIDViewDTO::fromDTO).collect(Collectors.toList()): List.of();
+        List<CIDViewDTO> cids = s.getCids() != null
+            ? s.getCids().stream()
+                  .map(CIDViewDTO::fromDTO).collect(Collectors.toList())
+            : List.of();
 
         return new SolicitacaoViewDTO(
             s.getId(),
@@ -49,7 +49,8 @@ public record SolicitacaoViewDTO(
             s.getTelefone(),
             s.getDataNascimento() != null ? s.getDataNascimento().toString() : null,
             s.getObservacoes(),
-            s.getUsfOrigem() != null ? s.getUsfOrigem().name() : null,
+            s.getUnidade() != null ? s.getUnidade().getId() : null,
+            s.getUnidade() != null ? s.getUnidade().getNome() : null,
             s.getDataMalote() != null ? s.getDataMalote().toString() : null,
             cids,
             especs,

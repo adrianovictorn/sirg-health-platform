@@ -8,7 +8,8 @@
     solicitacaoId: number;
     nomePaciente: string;
     cpfPaciente: string;
-    usfOrigem: string;
+    unidadeId: number | null;
+    unidadeNome: string | null;
   };
 
   type PacientePage = {
@@ -176,7 +177,7 @@
           <div class="flex w-full md:w-1/2">
             <input
               type="text"
-              placeholder="Buscar por nome, CPF, USF..."
+              placeholder="Buscar por nome, CPF, unidade..."
               bind:value={buscar}
               oninput={handleSearch}
               class="flex-1 border border-gray-300 rounded-lg p-2 focus:ring-emerald-500 focus:border-emerald-500"
@@ -218,7 +219,7 @@
                     </a>
                     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 text-sm">
                       <div><span class="font-semibold text-gray-600">CPF:</span> {p.cpfPaciente}</div>
-                      <div><span class="font-semibold text-gray-600">USF:</span> {p.usfOrigem}</div>
+                      <div><span class="font-semibold text-gray-600">Unidade:</span> {p.unidadeNome ?? '—'}</div>
                     </div>
                   </div>
                 </li>

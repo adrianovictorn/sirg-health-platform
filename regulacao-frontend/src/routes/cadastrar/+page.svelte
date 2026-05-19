@@ -30,19 +30,21 @@
 	let cns = '';
 	let telefone = '';
 	let datanascimento = '';
-	let usfOrigem = '';
 	let dataMalote = '';
 	let observacoes = '';
+	let unidadeId: number | null = null;
+	let unidades: { id: number; nome: string }[] = [];
 
 	let especialidadesCatalogo: { id: number; codigo: string; nome: string }[] = [];
-	let especialidades = [{ especialidadeId: null as number | null, status: 'AGUARDANDO', prioridade: 'NORMAL', termo: '', aberto: false }];
+	let especialidades = [{ especialidadeId: null as number | null, profissionalId: null as number | null, status: 'AGUARDANDO', prioridade: 'NORMAL', termo: '', aberto: false, termoProfissional: '', abertoProfissional: false }];
+	let profissionais: { id: number; nome: string; conselho: string; numeroRegistro: string }[] = [];
 
 	// --- FUNÇÕES DO FORMULÁRIO ---
 
 	function addEspecialidade() {
 		especialidades = [
 			...especialidades,
-			{ especialidadeId: null, status: 'AGUARDANDO', prioridade: 'NORMAL', termo: '', aberto: false }
+			{ especialidadeId: null, profissionalId: null, status: 'AGUARDANDO', prioridade: 'NORMAL', termo: '', aberto: false, termoProfissional: '', abertoProfissional: false }
 		];
 	}
 
@@ -88,23 +90,30 @@
 			return;
 		}
 
+		if (!unidadeId) {
+			alert('Por favor, selecione a Unidade de Saúde.');
+			isLoading = false;
+			return;
+		}
+
 		const payload = {
 			nomePaciente,
 			cpfPaciente: cpfPaciente.replace(/\D/g, ''),
 			cns,
 			telefone,
 			datanascimento,
-			usfOrigem,
 			dataMalote,
 			observacoes,
+			unidadeId,
 			especialidades: especialidades
 				.filter((e) => e.especialidadeId)
 				.map((e) => ({
 					especialidadeId: Number(e.especialidadeId),
+					profissionalId: e.profissionalId ? Number(e.profissionalId) : null,
 					status: e.status,
 					prioridade: e.prioridade
 				})),
-			cids: idsDeCidsValidos // Envia o array de IDs
+			cids: idsDeCidsValidos
 		};
 
 		try {
@@ -133,10 +142,11 @@
 			cns = '';
 			telefone = '';
 			datanascimento = '';
-			usfOrigem = '';
 			dataMalote = '';
 			observacoes = '';
-			especialidades = [{ especialidadeId: null, status: 'AGUARDANDO', prioridade: 'NORMAL', termo: '', aberto: false }];
+			unidadeId = null;
+			profissionais = [];
+			especialidades = [{ especialidadeId: null, profissionalId: null, status: 'AGUARDANDO', prioridade: 'NORMAL', termo: '', aberto: false, termoProfissional: '', abertoProfissional: false }];
 			cidsSelecionados = [null];
 			termosCid = [''];
 			comboCidAberto = [false];
@@ -154,7 +164,14 @@
 			carregarCIDs(),
 			listarEspecialidadesMedicas()
 				.then((lista) => (especialidadesCatalogo = lista))
-				.catch((e) => console.warn('Falha ao listar especialidades (catálogo):', e))
+				.catch((e) => console.warn('Falha ao listar especialidades (catálogo):', e)),
+			getApi('unidades/ativas')
+				.then((r) => r.ok ? r.json() : [])
+				.then((lista) => (unidades = lista))
+				.catch(() => {}),
+			getApi('profissionais/buscar?size=200')
+				.then(async (r) => { if (r.ok) { const d = await r.json(); profissionais = d.content || []; } })
+				.catch(() => {})
 		]);
 	});
 
@@ -177,6 +194,12 @@
 		const base = q ? especialidadesCatalogo.filter(e => normalize(e.nome).includes(q) || normalize(e.codigo).includes(q)) : especialidadesCatalogo;
 		return base.slice(0, 50);
 	}
+
+	function filtrarProfissionaisTermo(t: string) {
+		const q = normalize(t);
+		return q ? profissionais.filter(p => normalize(p.nome).includes(q)) : profissionais;
+	}
+
 </script>
 
 <svelte:head>
@@ -202,11 +225,11 @@
 							<input type="date" bind:value={dataMalote} class="border border-gray-300 rounded-lg p-2 focus:ring-emerald-500 focus:border-emerald-500" required />
 						</div>
 						<div class="flex flex-col">
-							<label class="text-sm font-medium text-gray-700 mb-1">USF Origem</label>
-							<select bind:value={usfOrigem} class="border border-gray-300 rounded-lg p-2 focus:ring-emerald-500 focus:border-emerald-500" required>
-								<option value="" disabled>Selecione...</option>
-								{#each ['USF01', 'USF02', 'USF03', 'USF04', 'USF05', 'USF06', 'HMCA'] as u}
-									<option value={u}>{u}</option>
+							<label class="text-sm font-medium text-gray-700 mb-1">Unidade de Saúde</label>
+							<select bind:value={unidadeId} class="border border-gray-300 rounded-lg p-2 focus:ring-emerald-500 focus:border-emerald-500" required>
+								<option value={null} disabled selected>Selecione a unidade...</option>
+								{#each unidades as u (u.id)}
+									<option value={u.id}>{u.nome}</option>
 								{/each}
 							</select>
 						</div>
@@ -279,12 +302,12 @@
 						<h3 class="text-lg font-semibold text-gray-800 mb-4">Especialidades</h3>
 								<div class="space-y-4">
 									{#each especialidades as esp, i}
-										<div class="grid grid-cols-1 md:grid-cols-4 gap-4 items-center p-4 border border-gray-200 rounded-lg">
+										<div class="grid grid-cols-1 md:grid-cols-5 gap-4 items-center p-4 border border-gray-200 rounded-lg">
 											<div class="relative">
 												<input
 													type="text"
 													class="border-gray-300 rounded-lg p-2 w-full"
-													placeholder="Digite para buscar a especialidade..."
+													placeholder="Especialidade..."
 													bind:value={esp.termo}
 													on:focus={() => esp.aberto = true}
 													on:input={() => esp.aberto = true}
@@ -298,6 +321,42 @@
 															</li>
 														{/each}
 													</ul>
+												{/if}
+											</div>
+											<div class="relative">
+												<input
+													type="text"
+													class="border border-gray-300 rounded-lg p-2 w-full text-sm"
+													placeholder="Profissional solicitante (opcional)..."
+													bind:value={esp.termoProfissional}
+													on:focus={() => esp.abertoProfissional = true}
+													on:input={() => esp.abertoProfissional = true}
+													on:blur={() => setTimeout(() => esp.abertoProfissional = false, 150)}
+												/>
+												{#if esp.abertoProfissional}
+													{@const sugestoes = filtrarProfissionaisTermo(esp.termoProfissional).slice(0, 40)}
+													<ul class="absolute z-50 w-full bg-white border border-gray-300 rounded-md mt-1 max-h-60 overflow-y-auto shadow-lg">
+														{#if sugestoes.length === 0}
+															<li class="p-2 text-sm text-gray-500 select-none">Nenhum profissional encontrado</li>
+														{:else}
+															{#each sugestoes as p (p.id)}
+																<li class="hover:bg-emerald-100 text-sm">
+																	<button type="button" class="w-full text-left p-2" on:mousedown={() => { esp.profissionalId = p.id; esp.termoProfissional = p.nome; esp.abertoProfissional = false; }}>
+																		<div class="font-medium">{p.nome}</div>
+																		{#if p.conselho && p.numeroRegistro}
+																			<div class="text-xs text-gray-500">{p.conselho} {p.numeroRegistro}</div>
+																		{/if}
+																	</button>
+																</li>
+															{/each}
+														{/if}
+													</ul>
+												{/if}
+												{#if esp.profissionalId}
+													<button type="button" aria-label="Limpar profissional" class="absolute right-2 top-2.5 text-gray-400 hover:text-red-500"
+														on:click={() => { esp.profissionalId = null; esp.termoProfissional = ''; }}>
+														<svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+													</button>
 												{/if}
 											</div>
 											<select bind:value={esp.status} class="border-gray-300 rounded-lg p-2">

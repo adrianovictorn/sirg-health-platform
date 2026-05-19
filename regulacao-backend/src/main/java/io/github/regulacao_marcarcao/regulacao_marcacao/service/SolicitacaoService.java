@@ -2,7 +2,6 @@ package io.github.regulacao_marcarcao.regulacao_marcacao.service;
 
 import java.util.Arrays;
 import java.util.Comparator;
-import java.util.EnumMap;
 import java.util.LinkedHashMap;
 import java.util.HashMap;
 import java.util.Locale;
@@ -32,13 +31,14 @@ import io.github.regulacao_marcarcao.regulacao_marcacao.entity.AgendamentoSolici
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.CID;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.Solicitacao;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.SolicitacaoEspecialidade;
+import io.github.regulacao_marcarcao.regulacao_marcacao.entity.Unidade;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.enums.EspecialidadesEnum;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.enums.PrioridadeDaMarcacaoEnum;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.enums.StatusDaMarcacao;
-import io.github.regulacao_marcarcao.regulacao_marcacao.entity.enums.UsfEnum;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.AgendamentoSolicitacaoRepository;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.CidRepository;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.EspecialidadeRepository;
+import io.github.regulacao_marcarcao.regulacao_marcacao.repository.ProfissionalRepository;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.SolicitacaoEspecialidadeRepository;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.SolicitacaoRepository;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.UserRepository;
@@ -52,7 +52,6 @@ import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.Pa
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.PendenciasPacienteProjection;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.StatusCountProjection;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.UrgenciaEmergenciaPacienteProjection;
-import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.UsfPendentesProjection;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.UnidadePendentesProjection;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
@@ -66,11 +65,12 @@ public class SolicitacaoService {
     private final SolicitacaoEspecialidadeRepository especialidadeRepository;
     private final CidRepository cidRepository;
     private final EspecialidadeRepository especialidadeRepo;
+    private final ProfissionalRepository profissionalRepository;
     private final UserRepository userRepository;
     private final UnidadeRepository unidadeRepository;
 
-    private record UnidadeContexto(Long id, String codigo) {
-        static final UnidadeContexto GLOBAL = new UnidadeContexto(null, null);
+    private record UnidadeContexto(Long id) {
+        static final UnidadeContexto GLOBAL = new UnidadeContexto(null);
         boolean isGlobal() { return id == null; }
     }
 
@@ -79,23 +79,15 @@ public class SolicitacaoService {
         return userRepository.findByCpf(cpf).map(u -> {
             if (u.getRole() != null && u.getRole().name().equals("ADMIN")) return UnidadeContexto.GLOBAL;
             if (u.getUnidade() == null) return UnidadeContexto.GLOBAL;
-            return new UnidadeContexto(u.getUnidade().getId(), u.getUnidade().getCodigo());
+            return new UnidadeContexto(u.getUnidade().getId());
         }).orElse(UnidadeContexto.GLOBAL);
     }
-
-    private UsfEnum tryParseUsfEnum(String codigo) {
-        if (codigo == null) return null;
-        try { return UsfEnum.valueOf(codigo.trim().toUpperCase()); }
-        catch (IllegalArgumentException e) { return null; }
-    }
-
 
     @Transactional
     public SolicitacaoViewDTO createSolicitacao(SolicitacaoCreateDTO dto, String callerCpf) {
         Solicitacao solicitacao = new Solicitacao();
-        solicitacao.setUsfOrigem(dto.usfOrigem());
 
-        // Vincula a Unidade: usa a do caller (operador) ou a explicitamente escolhida no DTO
+        // Vincula a Unidade: usa a explicitamente escolhida no DTO, ou a do operador logado
         if (dto.unidadeId() != null) {
             unidadeRepository.findById(dto.unidadeId()).ifPresent(solicitacao::setUnidade);
         } else if (callerCpf != null) {
@@ -117,7 +109,6 @@ public class SolicitacaoService {
                 var se = new SolicitacaoEspecialidade();
                 se.setSolicitacao(solicitacao);
                 se.setAgendamentoSolicitacao(null);
-                // Preferência por ID explícito; fallback para código (enum legacy)
                 if (e.especialidadeId() != null) {
                     var esp = especialidadeRepo.findById(e.especialidadeId())
                             .orElseThrow(() -> new IllegalArgumentException("Especialidade não encontrada: id=" + e.especialidadeId()));
@@ -132,6 +123,10 @@ public class SolicitacaoService {
                         se.setEspecialidadeCodigoLegacy(codigo);
                     }
                 }
+                if (e.profissionalId() != null) {
+                    profissionalRepository.findById(e.profissionalId())
+                            .ifPresent(se::setProfissionalSolicitante);
+                }
                 se.setStatus(e.status());
                 se.setPrioridade(e.prioridade());
                 return se;
@@ -141,8 +136,8 @@ public class SolicitacaoService {
         solicitacao.setEspecialidades(especialidades);
 
         if (dto.cids() != null && !dto.cids().isEmpty()) {
-        List<CID> cidsDoBanco = cidRepository.findAllById(dto.cids());
-        solicitacao.setCids(cidsDoBanco);
+            List<CID> cidsDoBanco = cidRepository.findAllById(dto.cids());
+            solicitacao.setCids(cidsDoBanco);
         }
 
         var saved = solicitacaoRepository.save(solicitacao);
@@ -154,21 +149,21 @@ public class SolicitacaoService {
         Solicitacao solicitacao = solicitacaoRepository.findById(id)
             .orElseThrow(() -> new EntityNotFoundException("Solicitação não encontrada."));
 
-
-            
-
         solicitacao.setNomePaciente(dto.nomePaciente());
         solicitacao.setCns(dto.cns());
         solicitacao.setTelefone(dto.telefone());
         solicitacao.setDataNascimento(dto.datanascimento());
         solicitacao.setObservacoes(dto.observacoes());
         solicitacao.setDataMalote(dto.dataMalote());
-        solicitacao.setUsfOrigem(dto.usfOrigem());
+
+        if (dto.unidadeId() != null) {
+            unidadeRepository.findById(dto.unidadeId()).ifPresent(solicitacao::setUnidade);
+        }
 
         if (dto.cids() != null) {
-        List<CID> cidsDoBanco = cidRepository.findAllById(dto.cids());
-        solicitacao.setCids(cidsDoBanco); 
-    }
+            List<CID> cidsDoBanco = cidRepository.findAllById(dto.cids());
+            solicitacao.setCids(cidsDoBanco);
+        }
 
         var updated = solicitacaoRepository.save(solicitacao);
         return SolicitacaoViewDTO.fromSolicitacao(updated);
@@ -186,7 +181,7 @@ public class SolicitacaoService {
         Specification<Solicitacao> spec = SolicitacaoSpecification.aplicarFiltros(filters);
         UnidadeContexto ctx = getContextoUnidade(cpf);
         if (!ctx.isGlobal()) {
-            spec = spec.and(SolicitacaoSpecification.filtrarPorUnidade(ctx.id(), tryParseUsfEnum(ctx.codigo())));
+            spec = spec.and(SolicitacaoSpecification.filtrarPorUnidade(ctx.id()));
         }
         return solicitacaoRepository.findAll(spec, pageable)
                 .map(SolicitacaoViewDTO::fromSolicitacao);
@@ -210,12 +205,10 @@ public class SolicitacaoService {
         Map<String, Solicitacao> solicitacoesPorCpf = new LinkedHashMap<>();
 
         UnidadeContexto ctx = getContextoUnidade(cpf);
-        UsfEnum usfFallback = tryParseUsfEnum(ctx.codigo());
         solicitacaoRepository.findAll().stream()
             .filter(s -> {
                 if (ctx.isGlobal()) return true;
-                if (s.getUnidade() != null) return ctx.id().equals(s.getUnidade().getId());
-                return usfFallback != null && usfFallback.equals(s.getUsfOrigem());
+                return s.getUnidade() != null && ctx.id().equals(s.getUnidade().getId());
             })
             .sorted(ordenacaoPorNome)
             .filter(s -> !possuiFiltro || correspondeAoFiltro(s, filtroNormalizado, filtroNumerico))
@@ -237,6 +230,7 @@ public class SolicitacaoService {
         List<PacienteResumoDTO> conteudo = resultados.subList(inicio, fim);
         return new PageImpl<>(conteudo, pageable, resultados.size());
     }
+
     @Transactional(readOnly = true)
     public Page<PacienteResumoDTO> buscarPacientesDoPaciente(String cpf, int page, int size) {
         int pagina = Math.max(page, 0);
@@ -261,12 +255,7 @@ public class SolicitacaoService {
             .min(Comparator.comparing(Solicitacao::getId))
             .orElse(solicitacoes.get(0));
 
-        PacienteResumoDTO dto = new PacienteResumoDTO(
-            selecionada.getId(),
-            selecionada.getNomePaciente(),
-            selecionada.getCpfPaciente(),
-            selecionada.getUsfOrigem()
-        );
+        PacienteResumoDTO dto = toPacienteResumo(selecionada);
 
         if (pagina > 0) {
             return new PageImpl<>(List.of(), pageable, 1);
@@ -276,37 +265,21 @@ public class SolicitacaoService {
     }
 
     private boolean correspondeAoFiltro(Solicitacao solicitacao, String filtroNormalizado, String filtroNumerico) {
-        if (solicitacao == null) {
-            return false;
-        }
-
-        if (filtroNormalizado == null || filtroNormalizado.isBlank()) {
-            return true;
-        }
+        if (solicitacao == null) return false;
+        if (filtroNormalizado == null || filtroNormalizado.isBlank()) return true;
 
         String nomeNormalizado = normalizarTexto(solicitacao.getNomePaciente());
-        if (!nomeNormalizado.isBlank() && nomeNormalizado.contains(filtroNormalizado)) {
-            return true;
-        }
+        if (!nomeNormalizado.isBlank() && nomeNormalizado.contains(filtroNormalizado)) return true;
 
         String cpfOriginal = solicitacao.getCpfPaciente();
         if (cpfOriginal != null) {
-            String cpfNormalizado = normalizarTexto(cpfOriginal);
-            if (cpfNormalizado.contains(filtroNormalizado)) {
-                return true;
-            }
-
+            if (normalizarTexto(cpfOriginal).contains(filtroNormalizado)) return true;
             String cpfApenasNumeros = limparCpf(cpfOriginal);
-            if (!filtroNumerico.isBlank() && cpfApenasNumeros.contains(filtroNumerico)) {
-                return true;
-            }
+            if (!filtroNumerico.isBlank() && cpfApenasNumeros.contains(filtroNumerico)) return true;
         }
 
-        if (solicitacao.getUsfOrigem() != null) {
-            String usfNormalizado = normalizarTexto(solicitacao.getUsfOrigem().name());
-            if (usfNormalizado.contains(filtroNormalizado)) {
-                return true;
-            }
+        if (solicitacao.getUnidade() != null && solicitacao.getUnidade().getNome() != null) {
+            if (normalizarTexto(solicitacao.getUnidade().getNome()).contains(filtroNormalizado)) return true;
         }
 
         return false;
@@ -321,11 +294,13 @@ public class SolicitacaoService {
     }
 
     private PacienteResumoDTO toPacienteResumo(Solicitacao solicitacao) {
+        Unidade unidade = solicitacao.getUnidade();
         return new PacienteResumoDTO(
             solicitacao.getId(),
             solicitacao.getNomePaciente(),
             solicitacao.getCpfPaciente(),
-            solicitacao.getUsfOrigem()
+            unidade != null ? unidade.getId() : null,
+            unidade != null ? unidade.getNome() : null
         );
     }
 
@@ -334,7 +309,7 @@ public class SolicitacaoService {
         Pageable pagina = PageRequest.of(page, size, Sort.by("nomePaciente").ascending());
         UnidadeContexto ctx = getContextoUnidade(cpf);
         if (!ctx.isGlobal()) {
-            Specification<Solicitacao> spec = SolicitacaoSpecification.filtrarPorUnidade(ctx.id(), tryParseUsfEnum(ctx.codigo()));
+            Specification<Solicitacao> spec = SolicitacaoSpecification.filtrarPorUnidade(ctx.id());
             return solicitacaoRepository.findAll(spec, pagina).map(SolicitacaoViewDTO::fromSolicitacao);
         }
         return solicitacaoRepository.findAll(pagina).map(SolicitacaoViewDTO::fromSolicitacao);
@@ -343,30 +318,18 @@ public class SolicitacaoService {
     @Transactional(readOnly = true)
     public DashboardResumoDTO obterResumoDashboard(String cpf) {
         UnidadeContexto ctx = getContextoUnidade(cpf);
-        UsfEnum usfCtx = tryParseUsfEnum(ctx.codigo());
 
         long totalSolicitacoes;
         List<StatusCountProjection> porStatus;
         long totalUrgentes;
 
         if (!ctx.isGlobal()) {
-            totalSolicitacoes = usfCtx != null
-                ? solicitacaoRepository.contarSolicitacoesParaUnidade(ctx.id(), usfCtx)
-                : solicitacaoRepository.contarSolicitacoesParaUnidadeSemUsf(ctx.id());
-
-            porStatus = usfCtx != null
-                ? solicitacaoRepository.contarPorStatusParaUnidade(ctx.id(), usfCtx)
-                : solicitacaoRepository.contarPorStatusParaUnidadeSemUsf(ctx.id());
-
-            totalUrgentes = usfCtx != null
-                ? solicitacaoRepository.contarPorStatusPrioridadesParaUnidade(
-                    StatusDaMarcacao.AGUARDANDO,
-                    Arrays.asList(PrioridadeDaMarcacaoEnum.URGENTE, PrioridadeDaMarcacaoEnum.EMERGENCIA),
-                    ctx.id(), usfCtx)
-                : solicitacaoRepository.contarPorStatusPrioridadesParaUnidadeSemUsf(
-                    StatusDaMarcacao.AGUARDANDO,
-                    Arrays.asList(PrioridadeDaMarcacaoEnum.URGENTE, PrioridadeDaMarcacaoEnum.EMERGENCIA),
-                    ctx.id());
+            totalSolicitacoes = solicitacaoRepository.contarSolicitacoesParaUnidadeSemUsf(ctx.id());
+            porStatus = solicitacaoRepository.contarPorStatusParaUnidadeSemUsf(ctx.id());
+            totalUrgentes = solicitacaoRepository.contarPorStatusPrioridadesParaUnidadeSemUsf(
+                StatusDaMarcacao.AGUARDANDO,
+                Arrays.asList(PrioridadeDaMarcacaoEnum.URGENTE, PrioridadeDaMarcacaoEnum.EMERGENCIA),
+                ctx.id());
         } else {
             totalSolicitacoes = solicitacaoRepository.count();
             porStatus = solicitacaoRepository.contarPorStatus();
@@ -380,14 +343,6 @@ public class SolicitacaoService {
         long totalConcluidas = extrairTotalStatus(porStatus, StatusDaMarcacao.REALIZADO);
         long totalGel = extrairTotalStatus(porStatus, StatusDaMarcacao.GEL);
 
-        Map<UsfEnum, Long> pendentesPorUsf = new EnumMap<>(UsfEnum.class);
-        for (UsfEnum usf : UsfEnum.values()) {
-            pendentesPorUsf.put(usf, 0L);
-        }
-        for (UsfPendentesProjection proj : solicitacaoRepository.contarPorUsfEStatus(StatusDaMarcacao.AGUARDANDO)) {
-            pendentesPorUsf.put(proj.getUsf(), proj.getTotal());
-        }
-
         Map<Long, Long> pendentesPorUnidade = new HashMap<>();
         for (UnidadePendentesProjection proj : solicitacaoRepository.contarPorUnidadeEStatus(StatusDaMarcacao.AGUARDANDO)) {
             pendentesPorUnidade.put(proj.getUnidadeId(), proj.getTotal());
@@ -400,7 +355,6 @@ public class SolicitacaoService {
             totalConcluidas,
             totalUrgentes,
             totalGel,
-            pendentesPorUsf,
             pendentesPorUnidade
         );
     }
@@ -421,9 +375,7 @@ public class SolicitacaoService {
     }
 
     @Transactional
-    public AgendamentoSolicitacaoSimpleViewDTO createAgendamento(
-            Long solicitacaoId,
-            AgendamentoSolicitacaoCreateDTO dto) {
+    public AgendamentoSolicitacaoSimpleViewDTO createAgendamento(Long solicitacaoId, AgendamentoSolicitacaoCreateDTO dto) {
         Solicitacao solicitacao = solicitacaoRepository.findById(solicitacaoId)
             .orElseThrow(() -> new EntityNotFoundException("Solicitação não encontrada."));
 
@@ -484,6 +436,10 @@ public class SolicitacaoService {
                 novaEspecialidade.setEspecialidadeCodigoLegacy(codigo);
             }
         }
+        if (dto.profissionalId() != null) {
+            profissionalRepository.findById(dto.profissionalId())
+                    .ifPresent(novaEspecialidade::setProfissionalSolicitante);
+        }
         novaEspecialidade.setStatus(dto.status());
         novaEspecialidade.setPrioridade(dto.prioridade());
 
@@ -506,9 +462,8 @@ public class SolicitacaoService {
                 .collect(Collectors.toList());
     }
 
-     @Transactional
+    @Transactional
     public void removerEspecialidade(Long id) {
-        // Verifica se a especialidade existe antes de tentar deletar
         if (!especialidadeRepository.existsById(id)) {
             throw new EntityNotFoundException("Especialidade de solicitação com ID " + id + " não encontrada.");
         }
@@ -516,79 +471,60 @@ public class SolicitacaoService {
     }
 
     @Transactional
-    public List<SolicitacaoPublicViewDTO> buscarPacientePorCpf(String cpf){
-        return solicitacaoRepository.findByCpfPacienteSemPonto(cpf).stream().map(SolicitacaoPublicViewDTO::fromSolicitacao).collect(Collectors.toList());
+    public List<SolicitacaoPublicViewDTO> buscarPacientePorCpf(String cpf) {
+        return solicitacaoRepository.findByCpfPacienteSemPonto(cpf).stream()
+                .map(SolicitacaoPublicViewDTO::fromSolicitacao)
+                .collect(Collectors.toList());
     }
 
     @Transactional
-    public SolicitacaoAgendamentoViewDTO buscarSolicitacaoPorId(Long id){
-        return SolicitacaoAgendamentoViewDTO.fromEntity(solicitacaoRepository.findById(id).orElseThrow(() -> new EntityNotFoundException("Solicitação não encontrada !")));
+    public SolicitacaoAgendamentoViewDTO buscarSolicitacaoPorId(Long id) {
+        return SolicitacaoAgendamentoViewDTO.fromEntity(
+            solicitacaoRepository.findById(id)
+                .orElseThrow(() -> new EntityNotFoundException("Solicitação não encontrada !"))
+        );
     }
 
     @Transactional
-    public Page<SolicitacaoSimpleViewDTO> buscarPorNomeOuCpf(int page, int size, String termo){
+    public Page<SolicitacaoSimpleViewDTO> buscarPorNomeOuCpf(int page, int size, String termo) {
         Pageable pagina = PageRequest.of(page, size, Sort.by("nomePaciente").ascending());
 
-        if (termo == null ||termo.isEmpty()) {
+        if (termo == null || termo.isEmpty()) {
             return solicitacaoRepository.findAll(pagina).map(SolicitacaoSimpleViewDTO::fromSolicitacao);
         }
 
-        return solicitacaoRepository.findByNomePacienteContainingIgnoreCaseOrCpfPacienteContainingIgnoreCase(pagina, termo, termo).map(SolicitacaoSimpleViewDTO::fromSolicitacao);
-    } 
-
-    public Page<PendenciasPacienteProjection> buscarPorUsf(int page, int size, UsfEnum usfEnum){
-        Pageable pageable = PageRequest.of(page, size, Sort.by("nomePaciente").ascending());
-        return solicitacaoRepository.findByUsfOrigem(pageable, usfEnum);
+        return solicitacaoRepository.findByNomePacienteContainingIgnoreCaseOrCpfPacienteContainingIgnoreCase(pagina, termo, termo)
+                .map(SolicitacaoSimpleViewDTO::fromSolicitacao);
     }
 
-    public Page<PacienteProjection> buscarPorStatusAguardando(int page, int size, String termo){
+    public Page<PendenciasPacienteProjection> buscarPendentesPorUnidade(int page, int size, Long unidadeId, String termo) {
+        Pageable pageable = PageRequest.of(page, size, Sort.by("nomePaciente").ascending());
+        return solicitacaoRepository.listarPacientesPendentes(unidadeId, "AGUARDANDO", termo, pageable);
+    }
+
+    public Page<PacienteProjection> buscarPorStatusAguardando(int page, int size, String termo) {
         Pageable pagina = PageRequest.of(page, size);
         return solicitacaoRepository.buscarPorStatus(pagina, termo, StatusDaMarcacao.AGENDADO.name());
     }
 
-    public Page<PacienteProjection> buscarPorStatusConcluido(int page, int size, String termo){
+    public Page<PacienteProjection> buscarPorStatusConcluido(int page, int size, String termo) {
         Pageable pagina = PageRequest.of(page, size);
         return solicitacaoRepository.buscarConcluidosAgrupados(termo, pagina);
     }
 
-    public Page<PendenciasPacienteProjection> buscarPorStatusAguardandoeUsf(int page, int size, String usfEnum, String termo,String status){
+    public Page<UrgenciaEmergenciaPacienteProjection> buscarPorUrgenteeEmergencia(int page, int size, String termo) {
         Pageable pagina = PageRequest.of(page, size);
-
-        return solicitacaoRepository.listarPacientesPendentes(usfEnum, status, termo, pagina);
-    }
-
-    public Page<UrgenciaEmergenciaPacienteProjection> buscarPorUrgenteeEmergencia(int page, int size, String termo){
-        Pageable pagina = PageRequest.of(page, size);
-
         return solicitacaoRepository.listarPacientesUrgenteseEmergencias(pagina, termo);
-
     }
 
-    public long totalPacientesCadastrados(){
+    public long totalPacientesCadastrados() {
         return solicitacaoRepository.count();
     }
 
-    public Page<PacientesGelProjection> listarPacientesGel(int page, int size, String termo){
+    public Page<PacientesGelProjection> listarPacientesGel(int page, int size, String termo) {
         int paginaAtual = Math.max(page, 0);
         int tamanhoPagina = Math.min(Math.max(size, 1), 50);
         Pageable pagina = PageRequest.of(paginaAtual, tamanhoPagina, Sort.by("nomePaciente").ascending());
-
         return especialidadeRepository.listarPacientesGel(termo, pagina);
     }
-
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
