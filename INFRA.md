@@ -48,7 +48,7 @@ if (instanceContext.getMunicipioLocal().getNome().equals("SAO_FELIPE")) {
 │       ├── application.properties      # config base (sobrescrita por env vars)
 │       ├── application-conceicao.properties
 │       └── images/
-│           ├── brasao.png              # brasão de Conceição do Almeida
+│           ├── brasao_conceicao.png    # brasão de Conceição do Almeida
 │           └── brasao_saofelipe.png    # brasão de São Felipe
 ```
 
@@ -104,6 +104,8 @@ Via `workflow_dispatch` é possível escolher `ambos`, `conceicao` ou `saofelipe
 
 Baseado no `.env.example`. Nunca commitado. Fica em `/root/<repo>/.env`.
 
+**Conceição do Almeida** (`MUNICIPIO_BRASAO` pode ser omitido — o docker-compose usa `brasao_conceicao.png` como default):
+
 ```env
 DB_NAME=sirg_db
 DB_USER=sirg_user
@@ -116,6 +118,23 @@ MUNICIPIO_QUEUE=fila_conceicao_do_almeida
 MUNICIPIO_NOME_DISPLAY=Conceição do Almeida
 APP_ORIGIN=https://sirg.com.br
 NGINX_DOMAIN=sirg.com.br
+```
+
+**São Felipe** (`MUNICIPIO_BRASAO` é obrigatório — sem ele o brasão exibido será o de Conceição):
+
+```env
+DB_NAME=sirg_db
+DB_USER=sirg_user
+DB_PASSWORD=senha_forte
+JWT_SECRET=chave_longa_e_aleatoria_32_chars_minimo
+RABBITMQ_USER=sirg_rabbit
+RABBITMQ_PASSWORD=senha_rabbit
+MUNICIPIO_NOME=SAO_FELIPE
+MUNICIPIO_QUEUE=fila_sao_felipe
+MUNICIPIO_NOME_DISPLAY=São Felipe
+MUNICIPIO_BRASAO=brasao_saofelipe.png
+APP_ORIGIN=https://sirgsaofelipe.com
+NGINX_DOMAIN=sirgsaofelipe.com
 ```
 
 ---

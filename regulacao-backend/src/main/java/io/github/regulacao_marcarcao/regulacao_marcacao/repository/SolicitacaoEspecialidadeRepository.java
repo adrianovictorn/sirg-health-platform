@@ -17,6 +17,8 @@ import io.github.regulacao_marcarcao.regulacao_marcacao.entity.enums.StatusDaMar
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.EspecialidadesMaisSolicitadasProjection;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.PacientesGelProjection;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.PainelEspecialidadeProjection;
+import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.ProfissionalEspecialidadeRankingProjection;
+import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.ProfissionalRankingProjection;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.RelatorioGrupoAgendadoProjection;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.RelatorioGrupoPendenteProjection;
 
@@ -302,5 +304,46 @@ public interface SolicitacaoEspecialidadeRepository extends JpaRepository<Solici
                         s.nome_paciente ASC
                     """, nativeQuery = true)
             List<PacientesGelProjection> listarTodosPacientesGel();
+
+            @Query(value = """
+                    SELECT
+                        p.id              AS id,
+                        p.nome            AS nome,
+                        p.conselho        AS conselho,
+                        p.numero_registro AS numeroRegistro,
+                        COUNT(se.id)      AS totalSolicitacoes
+                    FROM solicitacao_especialidade se
+                    JOIN profissional p ON p.id = se.profissional_id
+                    JOIN solicitacao s  ON s.id = se.solicitacao_id
+                    WHERE se.profissional_id IS NOT NULL
+                      AND (:inicio IS NULL OR s.data_malote >= :inicio)
+                      AND (:fim    IS NULL OR s.data_malote <= :fim)
+                    GROUP BY p.id, p.nome, p.conselho, p.numero_registro
+                    ORDER BY COUNT(se.id) DESC
+                    LIMIT :limite
+                    """, nativeQuery = true)
+            List<ProfissionalRankingProjection> rankingProfissionaisPorPeriodo(
+                    @Param("inicio") LocalDate inicio,
+                    @Param("fim")    LocalDate fim,
+                    @Param("limite") int limite);
+
+            @Query(value = """
+                    SELECT
+                        e.nome       AS especialidadeNome,
+                        COUNT(se.id) AS total
+                    FROM solicitacao_especialidade se
+                    JOIN especialidade e ON e.id = se.especialidade_id
+                    JOIN solicitacao s   ON s.id = se.solicitacao_id
+                    WHERE se.profissional_id = :profissionalId
+                      AND (:inicio IS NULL OR s.data_malote >= :inicio)
+                      AND (:fim    IS NULL OR s.data_malote <= :fim)
+                    GROUP BY e.id, e.nome
+                    ORDER BY COUNT(se.id) DESC
+                    LIMIT 10
+                    """, nativeQuery = true)
+            List<ProfissionalEspecialidadeRankingProjection> topEspecialidadesPorProfissional(
+                    @Param("profissionalId") Long profissionalId,
+                    @Param("inicio")         LocalDate inicio,
+                    @Param("fim")            LocalDate fim);
 
 }

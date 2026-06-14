@@ -25,9 +25,9 @@
 </script>
 
 {#if notif}
-  <div class="fixed inset-0 bg-black bg-opacity-60 z-50 flex items-center justify-center p-4">
-    <div class="bg-white rounded-xl shadow-2xl max-w-md w-full overflow-hidden">
-      <div class="bg-emerald-700 px-6 py-4 flex items-center gap-3">
+  <div class="fixed inset-0 bg-black/30 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div class="bg-white/20 backdrop-blur-md border border-white/30 rounded-xl shadow-2xl max-w-md w-full overflow-hidden">
+      <div class="bg-emerald-700/80 px-6 py-4 flex items-center gap-3">
         <svg class="w-6 h-6 text-white flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
         </svg>
@@ -38,14 +38,14 @@
       </div>
 
       <div class="px-6 py-5">
-        <p class="text-gray-800 font-medium text-base">{notif.resumo}</p>
+        <p class="text-white font-medium text-base">{notif.resumo}</p>
 
         {#if payload?.descricao}
-          <p class="mt-3 text-gray-600 text-sm whitespace-pre-line leading-relaxed">{payload.descricao}</p>
+          <p class="mt-3 text-white/80 text-sm whitespace-pre-line leading-relaxed">{payload.descricao}</p>
         {/if}
 
         {#if notifications.length > 1}
-          <p class="mt-4 text-xs text-gray-400">{index + 1} de {notifications.length} atualizações</p>
+          <p class="mt-4 text-xs text-white/60">{index + 1} de {notifications.length} atualizações</p>
         {/if}
       </div>
 

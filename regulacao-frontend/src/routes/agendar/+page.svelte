@@ -333,7 +333,7 @@
     };
   });
 
-  const brasaoUrl = `${base}/images/${env.PUBLIC_MUNICIPIO_BRASAO ?? 'brasao.png'}`;
+  const brasaoUrl = `${base}/images/${env.PUBLIC_MUNICIPIO_BRASAO ?? 'brasao_conceicao.png'}`;
 
   function getLocalLabel(value: string) {
     const found = locaisAgendamento.find((loc) => String(loc.id) === String(value));

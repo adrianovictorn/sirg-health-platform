@@ -6,6 +6,7 @@ import java.util.List;
 import org.springframework.data.domain.Page;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -13,6 +14,8 @@ import org.springframework.web.bind.annotation.RestController;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.indicadores.FechamentoIndicadoresDiaDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.EspecialidadesMaisSolicitadasProjection;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.GraficoGrupoPorDataProjection;
+import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.ProfissionalEspecialidadeRankingProjection;
+import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.ProfissionalRankingProjection;
 import io.github.regulacao_marcarcao.regulacao_marcacao.service.FechamentoIndicadoresDiaService;
 
 @RestController
@@ -59,5 +62,21 @@ public class FechamentoIndicadoresController {
     @GetMapping("/especialidades/pendentes/top10")
     public ResponseEntity<List<EspecialidadesMaisSolicitadasProjection>> totalEspecialidadesPendentesTop10(){
         return ResponseEntity.ok(fechamentoIndicadoresDiaService.top10EspecialidadesPendentes());
+    }
+
+    @GetMapping("/profissionais/ranking")
+    public ResponseEntity<List<ProfissionalRankingProjection>> rankingProfissionais(
+            @RequestParam(name = "inicio", required = false) LocalDate inicio,
+            @RequestParam(name = "fim",    required = false) LocalDate fim,
+            @RequestParam(name = "limite", defaultValue = "10") int limite) {
+        return ResponseEntity.ok(fechamentoIndicadoresDiaService.rankingProfissionais(inicio, fim, limite));
+    }
+
+    @GetMapping("/profissionais/{id}/especialidades")
+    public ResponseEntity<List<ProfissionalEspecialidadeRankingProjection>> especialidadesPorProfissional(
+            @PathVariable Long id,
+            @RequestParam(name = "inicio", required = false) LocalDate inicio,
+            @RequestParam(name = "fim",    required = false) LocalDate fim) {
+        return ResponseEntity.ok(fechamentoIndicadoresDiaService.especialidadesPorProfissional(id, inicio, fim));
     }
 }

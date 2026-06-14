@@ -85,7 +85,7 @@ services:
     environment:
       ORIGIN: ${APP_ORIGIN}
       PUBLIC_MUNICIPIO_NOME: ${MUNICIPIO_NOME_DISPLAY}
-      PUBLIC_MUNICIPIO_BRASAO: ${MUNICIPIO_BRASAO:-brasao.png}
+      PUBLIC_MUNICIPIO_BRASAO: ${MUNICIPIO_BRASAO:-brasao_conceicao.png}
     networks:
       - sirg_net
     depends_on:

@@ -20,6 +20,8 @@ import io.github.regulacao_marcarcao.regulacao_marcacao.repository.LocalAgendame
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.SolicitacaoEspecialidadeRepository;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.EspecialidadesMaisSolicitadasProjection;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.GraficoGrupoPorDataProjection;
+import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.ProfissionalEspecialidadeRankingProjection;
+import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.ProfissionalRankingProjection;
 
 @Service
 public class FechamentoIndicadoresDiaService {
@@ -112,6 +114,14 @@ public class FechamentoIndicadoresDiaService {
 
     public List<EspecialidadesMaisSolicitadasProjection> top10EspecialidadesPendentes(){
         return fechamentoIndicadoresDiaRepository.countEspecialidadesPendentesTop10();
+    }
+
+    public List<ProfissionalRankingProjection> rankingProfissionais(LocalDate inicio, LocalDate fim, int limite) {
+        return solicitacaoEspecialidadeRepository.rankingProfissionaisPorPeriodo(inicio, fim, limite);
+    }
+
+    public List<ProfissionalEspecialidadeRankingProjection> especialidadesPorProfissional(Long profissionalId, LocalDate inicio, LocalDate fim) {
+        return solicitacaoEspecialidadeRepository.topEspecialidadesPorProfissional(profissionalId, inicio, fim);
     }
 
     private boolean passouDoLimite(LocalDate dataReferencia){
