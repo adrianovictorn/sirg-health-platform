@@ -6,6 +6,7 @@
   import { listarEspecialidadesCatalogo } from '$lib/especialidadesApi.js';
   import Menu from '$lib/Menu.svelte';
   import UserMenu from '$lib/UserMenu.svelte';
+  import { env } from '$env/dynamic/public';
 
   interface Cidade {
     id: number;
@@ -396,7 +397,7 @@
     doc.setFontSize(14);
     doc.setTextColor('#333333');
     doc.setFont('helvetica', 'normal');
-    doc.text('Conceição do Almeida', pageWidth / 2, currentY, { align: 'center' });
+    doc.text(env.PUBLIC_MUNICIPIO_NOME ?? '', pageWidth / 2, currentY, { align: 'center' });
     currentY += 40;
     doc.setFontSize(18);
     doc.setFont('helvetica', 'bold');

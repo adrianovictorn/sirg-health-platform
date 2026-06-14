@@ -2,6 +2,7 @@
     import { getApi } from "$lib/api";
     import { onMount } from "svelte";
     import NumberFlow from "@number-flow/svelte";
+    import { env } from "$env/dynamic/public";
 
     let totalPacientes = $state<number | null>(null)
     let totalAgendado = $state<number | null>(null)
@@ -130,7 +131,7 @@
 <section class=" flex justify-center">
   <div class="flex flex-col w-full  p-10 items-center justify-center bg-neutral-100 rounded-lg ">
     <h2 class="text-sky-600 text-3xl font-extralight mt-5">Transparência</h2>
-    <p class="text-justify mt-3 text-lg">A Prefeitura de Conceição do Almeida garante a transparência na Central de Marcação, disponibilizando indicadores em tempo real que demonstram a eficiência e a equidade no atendimento à população.</p>
+    <p class="text-justify mt-3 text-lg">A Prefeitura de {env.PUBLIC_MUNICIPIO_NOME ?? 'este município'} garante a transparência na Central de Marcação, disponibilizando indicadores em tempo real que demonstram a eficiência e a equidade no atendimento à população.</p>
   <div class="grid grid-cols-1 lg:grid-cols-3 w-full mt-5 gap-5 ">
 
     <div class="flex flex-col text-center bg-white rounded-full p-10 shadow-2xl border-gray-800 text-2xl font-extrabold text-orange-500">

@@ -1,6 +1,7 @@
 package io.github.regulacao_marcarcao.regulacao_marcacao.service;
 
 
+import io.github.regulacao_marcarcao.regulacao_marcacao.config.InstanceContext;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.SolicitacaoEspecialidadeRepository;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.PacientesGelProjection;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.RelatorioGrupoAgendadoProjection;
@@ -27,6 +28,22 @@ import java.util.List;
 public class ExcelService {
 
     private final SolicitacaoEspecialidadeRepository especialidadeRepository;
+    private final InstanceContext instanceContext;
+
+    private String getNomeCentral() {
+        try {
+            return "Central de Regulação de " + instanceContext.getMunicipioLocal().getNome();
+        } catch (Exception e) {
+            return "Central de Regulação de " + instanceContext.getNomeIdentificador();
+        }
+    }
+
+    private String getBrasaoPath() {
+        return switch (instanceContext.getNomeIdentificador().toUpperCase()) {
+            case "SAO_FELIPE" -> "images/brasao_saofelipe.png";
+            default -> "images/brasao.png";
+        };
+    }
 
     public ByteArrayInputStream gerarPlanilhaAguardando(String grupo) throws IOException {
         if (grupo == null || grupo.isEmpty()) {
@@ -92,7 +109,7 @@ public class ExcelService {
         int numberOfColumns = headers.length;
 
         // --- CABEÇALHO COM BRASÃO CENTRALIZADO ---
-        try (InputStream is = new ClassPathResource("images/brasao.png").getInputStream()) {
+        try (InputStream is = new ClassPathResource(getBrasaoPath()).getInputStream()) {
             byte[] bytes = IOUtils.toByteArray(is);
             int picIdx = workbook.addPicture(bytes, Workbook.PICTURE_TYPE_PNG);
             CreationHelper helper = workbook.getCreationHelper();
@@ -121,7 +138,7 @@ public class ExcelService {
         Row rowSub = sheet.createRow(4);
         rowSub.setHeightInPoints(16);
         Cell cellSub = rowSub.createCell(0);
-        cellSub.setCellValue("Central de Regulação de Conceição do Almeida");
+        cellSub.setCellValue(getNomeCentral());
         cellSub.setCellStyle(subtitleStyle);
         sheet.addMergedRegion(new CellRangeAddress(4, 4, 0, numberOfColumns - 1));
 
@@ -257,7 +274,7 @@ public class ExcelService {
 
 
         // --- CABEÇALHO COM BRASÃO CENTRALIZADO ---
-        try (InputStream is = new ClassPathResource("images/brasao.png").getInputStream()) {
+        try (InputStream is = new ClassPathResource(getBrasaoPath()).getInputStream()) {
             byte[] bytes = IOUtils.toByteArray(is);
             int picIdx = workbook.addPicture(bytes, Workbook.PICTURE_TYPE_PNG);
             CreationHelper helper = workbook.getCreationHelper();
@@ -288,7 +305,7 @@ public class ExcelService {
         Row rowSub = sheet.createRow(4);
         rowSub.setHeightInPoints(16);
         Cell cellSub = rowSub.createCell(0);
-        cellSub.setCellValue("Central de Regulação de Conceição do Almeida");
+        cellSub.setCellValue(getNomeCentral());
         cellSub.setCellStyle(subtitleStyle);
         sheet.addMergedRegion(new CellRangeAddress(4, 4, 0, numberOfColumns - 1));
 
@@ -427,7 +444,7 @@ public class ExcelService {
         int numberOfColumns = headers.length;
 
         // --- BRASÃO ---
-        try (InputStream is = new ClassPathResource("images/brasao.png").getInputStream()) {
+        try (InputStream is = new ClassPathResource(getBrasaoPath()).getInputStream()) {
             byte[] bytes = IOUtils.toByteArray(is);
             int picIdx = workbook.addPicture(bytes, Workbook.PICTURE_TYPE_PNG);
             CreationHelper helper = workbook.getCreationHelper();
@@ -453,7 +470,7 @@ public class ExcelService {
         Row rowSub = sheet.createRow(4);
         rowSub.setHeightInPoints(16);
         Cell cellSub = rowSub.createCell(0);
-        cellSub.setCellValue("Central de Regulação de Conceição do Almeida — Procedimentos GEL");
+        cellSub.setCellValue(getNomeCentral() + " — Procedimentos GEL");
         cellSub.setCellStyle(subtitleStyle);
         sheet.addMergedRegion(new CellRangeAddress(4, 4, 0, numberOfColumns - 1));
 

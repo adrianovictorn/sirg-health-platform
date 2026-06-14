@@ -84,6 +84,7 @@ services:
     restart: unless-stopped
     environment:
       ORIGIN: ${APP_ORIGIN}
+      PUBLIC_MUNICIPIO_NOME: ${MUNICIPIO_NOME_DISPLAY}
     networks:
       - sirg_net
     depends_on:
