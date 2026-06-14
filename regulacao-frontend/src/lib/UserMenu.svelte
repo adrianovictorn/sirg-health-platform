@@ -9,7 +9,12 @@
   let notifications = [];
   let notifLoading = false;
   let unreadCount = 0;
+  let modalDismissed = false;
+
+  $: updateNotifs = notifications.filter(n => n.tipo === 'ATUALIZACAO_SISTEMA');
+  $: showUpdateModal = !modalDismissed && updateNotifs.length > 0;
   import { listarNaoLidas, marcarComoLida, marcarTodasComoLidas } from '$lib/notificationsApi.js';
+  import SistemaUpdateModal from '$lib/SistemaUpdateModal.svelte';
   let node;
 
   function logout() {
@@ -60,6 +65,10 @@
     finally { notifLoading = false; }
   }
 </script>
+
+{#if showUpdateModal}
+  <SistemaUpdateModal notifications={updateNotifs} onDismiss={() => (modalDismissed = true)} />
+{/if}
 
 {#if $user}
   <div class="relative" bind:this={node}>

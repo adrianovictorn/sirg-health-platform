@@ -7,6 +7,7 @@
   import Menu from '$lib/Menu.svelte';
   import UserMenu from '$lib/UserMenu.svelte';
   import { env } from '$env/dynamic/public';
+  import { base } from '$app/paths';
 
   interface Cidade {
     id: number;
@@ -332,8 +333,7 @@
     };
   });
 
-  const brasaoUrl =
-    'https://upload.wikimedia.org/wikipedia/commons/9/97/Bras%C3%A3o_de_Concei%C3%A7%C3%A3o_do_Almeida.png';
+  const brasaoUrl = `${base}/images/${env.PUBLIC_MUNICIPIO_BRASAO ?? 'brasao.png'}`;
 
   function getLocalLabel(value: string) {
     const found = locaisAgendamento.find((loc) => String(loc.id) === String(value));

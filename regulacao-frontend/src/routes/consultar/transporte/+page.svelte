@@ -1,5 +1,6 @@
 ﻿<script lang="ts">
   import { base } from '$app/paths';
+  import { env } from '$env/dynamic/public';
   import { getApi, putApi, deleteByIdApi, postApi } from '$lib/api.js';
   import RoleBasedMenu from '$lib/RoleBasedMenu.svelte';
   import UserMenu from '$lib/UserMenu.svelte';
@@ -240,7 +241,7 @@
 
   async function carregarBrasao() {
     try {
-      const resposta = await fetch(`${base}/images/brasao.png`);
+      const resposta = await fetch(`${base}/images/${env.PUBLIC_MUNICIPIO_BRASAO ?? 'brasao.png'}`);
       if (!resposta.ok) {
         console.warn('Não foi possível carregar o brasão.');
         return;

@@ -16,6 +16,30 @@
   let payloadText = '';
   const placeholderJson = '{"chave":"valor"}';
 
+  // Seção de atualização do sistema
+  let atualizacaoVersao = '';
+  let atualizacaoTitulo = '';
+  let atualizacaoDescricao = '';
+
+  async function publicarAtualizacao(e) {
+    e?.preventDefault?.();
+    if (!atualizacaoTitulo.trim()) return alert('Título da atualização é obrigatório');
+    const resumoFinal = atualizacaoVersao.trim()
+      ? `${atualizacaoVersao.trim()} — ${atualizacaoTitulo.trim()}`
+      : atualizacaoTitulo.trim();
+    const payloadObj = {
+      versao: atualizacaoVersao.trim() || null,
+      descricao: atualizacaoDescricao.trim() || null
+    };
+    try {
+      await criarNotificacaoLocal({ tipo: 'ATUALIZACAO_SISTEMA', resumo: resumoFinal, payload: payloadObj });
+      alert('Atualização publicada — todos os usuários verão o modal ao abrir o sistema.');
+      atualizacaoVersao = ''; atualizacaoTitulo = ''; atualizacaoDescricao = '';
+    } catch (e) {
+      alert(e.message || 'Falha ao publicar atualização');
+    }
+  }
+
   function formatDate(dt) {
     if (!dt) return '-';
     try {
@@ -120,6 +144,35 @@
           {#if error}
             <div class="text-red-600 mb-3">{error}</div>
           {/if}
+
+          <div class="bg-emerald-50 border border-emerald-200 rounded-lg p-4 mb-6">
+            <div class="flex items-center gap-2 mb-3">
+              <svg class="w-5 h-5 text-emerald-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <h3 class="font-semibold text-emerald-800">Publicar Atualização do Sistema</h3>
+            </div>
+            <p class="text-sm text-emerald-700 mb-3">Ao publicar, todos os usuários verão um <strong>modal</strong> informando sobre a atualização na próxima vez que abrirem o sistema.</p>
+            <form on:submit|preventDefault={publicarAtualizacao} class="grid grid-cols-1 md:grid-cols-3 gap-3 items-start">
+              <div class="flex flex-col">
+                <label class="text-sm text-gray-600">Versão <span class="text-gray-400">(opcional, ex: v1.2.0)</span></label>
+                <input class="border rounded p-2" bind:value={atualizacaoVersao} placeholder="v1.2.0" />
+              </div>
+              <div class="flex flex-col md:col-span-2">
+                <label class="text-sm text-gray-600">Título <span class="text-red-500">*</span></label>
+                <input class="border rounded p-2" bind:value={atualizacaoTitulo} required placeholder="Ex: Novidades no módulo de agendamento" />
+              </div>
+              <div class="flex flex-col md:col-span-3">
+                <label class="text-sm text-gray-600">Descrição das novidades <span class="text-gray-400">(opcional)</span></label>
+                <textarea class="border rounded p-2 h-24 resize-none" bind:value={atualizacaoDescricao} placeholder="Descreva as principais mudanças desta versão..."></textarea>
+              </div>
+              <div class="flex items-end">
+                <button class="px-4 py-2 bg-emerald-700 text-white rounded font-medium hover:bg-emerald-800 transition-colors" type="submit">
+                  Publicar atualização
+                </button>
+              </div>
+            </form>
+          </div>
 
           <div class="bg-gray-50 border rounded p-4 mb-6">
             <h3 class="font-semibold mb-2">Enviar notificação local</h3>
