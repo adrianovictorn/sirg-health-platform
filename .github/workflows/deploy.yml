@@ -1,0 +1,90 @@
+name: Deploy SIRG
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 'Servidor de destino'
+        required: true
+        default: 'ambos'
+        type: choice
+        options:
+          - ambos
+          - conceicao
+          - saofelipe
+
+jobs:
+
+  # ─── Conceição do Almeida (sem Docker) ────────────────────────────────────────
+  deploy-conceicao:
+    name: "Deploy → Conceição do Almeida"
+    runs-on: ubuntu-latest
+    environment: conceicao
+    if: >
+      github.event_name == 'push' ||
+      github.event.inputs.target == 'ambos' ||
+      github.event.inputs.target == 'conceicao'
+
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: root
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            set -e
+            cd /root/Regula-o
+
+            echo ">>> Atualizando código..."
+            git pull origin main
+
+            echo ">>> Compilando backend..."
+            cd regulacao-backend
+            mvn clean package -DskipTests -q
+            cd ..
+
+            echo ">>> Compilando frontend..."
+            cd regulacao-frontend
+            npm ci --silent
+            npm run build
+            cd ..
+
+            echo ">>> Reiniciando serviços..."
+            systemctl restart regulacao-backend.service regulacao-frontend.service
+
+            echo "✅ Conceição do Almeida atualizado com sucesso"
+
+  # ─── São Felipe (com Docker) ──────────────────────────────────────────────────
+  deploy-saofelipe:
+    name: "Deploy → São Felipe"
+    runs-on: ubuntu-latest
+    environment: saofelipe
+    if: >
+      github.event_name == 'push' ||
+      github.event.inputs.target == 'ambos' ||
+      github.event.inputs.target == 'saofelipe'
+
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            set -e
+            cd ${{ secrets.VPS_PATH }}
+
+            echo ">>> Atualizando código..."
+            git pull origin main
+
+            echo ">>> Subindo containers..."
+            docker compose -f docker-compose.prod.yaml up -d --build
+
+            echo ">>> Limpando imagens antigas..."
+            docker image prune -f
+
+            echo "✅ São Felipe atualizado com sucesso"
