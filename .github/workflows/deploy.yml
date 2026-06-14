@@ -39,7 +39,8 @@ jobs:
             cd /root/Regula-o
 
             echo ">>> Atualizando código..."
-            git pull origin main
+            git fetch origin main
+            git reset --hard origin/main
 
             echo ">>> Subindo containers..."
             docker compose -f docker-compose.prod.yaml up -d --build
@@ -71,7 +72,8 @@ jobs:
             cd ${{ secrets.VPS_PATH }}
 
             echo ">>> Atualizando código..."
-            git pull origin main
+            git fetch origin main
+            git reset --hard origin/main
 
             echo ">>> Subindo containers..."
             docker compose -f docker-compose.prod.yaml up -d --build
