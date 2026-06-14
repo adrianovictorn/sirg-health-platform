@@ -18,9 +18,11 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.text.Normalizer;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.Locale;
 
 
 @Service
@@ -39,10 +41,16 @@ public class ExcelService {
     }
 
     private String getBrasaoPath() {
-        return switch (instanceContext.getNomeIdentificador().toUpperCase()) {
-            case "SAO_FELIPE" -> "images/brasao_saofelipe.png";
-            default -> "images/brasao.png";
-        };
+        String id = Normalizer.normalize(instanceContext.getNomeIdentificador(), Normalizer.Form.NFD)
+                .replaceAll("\\p{M}", "")
+                .toLowerCase(Locale.ROOT)
+                .replaceAll("[^a-z0-9]", "");
+        String specific = "images/brasao_" + id + ".png";
+        try (InputStream test = new ClassPathResource(specific).getInputStream()) {
+            return specific;
+        } catch (Exception e) {
+            return "images/brasao.png";
+        }
     }
 
     public ByteArrayInputStream gerarPlanilhaAguardando(String grupo) throws IOException {
