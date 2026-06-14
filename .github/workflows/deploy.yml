@@ -17,7 +17,7 @@ on:
 
 jobs:
 
-  # ─── Conceição do Almeida (sem Docker) ────────────────────────────────────────
+  # ─── Conceição do Almeida (Docker) ───────────────────────────────────────────
   deploy-conceicao:
     name: "Deploy → Conceição do Almeida"
     runs-on: ubuntu-latest
@@ -41,19 +41,11 @@ jobs:
             echo ">>> Atualizando código..."
             git pull origin main
 
-            echo ">>> Compilando backend..."
-            cd regulacao-backend
-            mvn clean package -DskipTests -q
-            cd ..
+            echo ">>> Subindo containers..."
+            docker compose -f docker-compose.prod.yaml up -d --build
 
-            echo ">>> Compilando frontend..."
-            cd regulacao-frontend
-            npm ci --silent
-            npm run build
-            cd ..
-
-            echo ">>> Reiniciando serviços..."
-            systemctl restart regulacao-backend.service regulacao-frontend.service
+            echo ">>> Limpando imagens antigas..."
+            docker image prune -f
 
             echo "✅ Conceição do Almeida atualizado com sucesso"
 
