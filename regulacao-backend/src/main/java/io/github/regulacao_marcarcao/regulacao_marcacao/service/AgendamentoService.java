@@ -58,7 +58,7 @@ public class AgendamentoService {
 
     @Transactional(readOnly = true)
     public Page<SolicitacaoResumoDTO> buscarPendentesParaAutoComplete(String termo, Pageable pageable){
-        var statusPendentes = List.of(StatusDaMarcacao.RETORNO, StatusDaMarcacao.RETORNO_POLICLINICA, StatusDaMarcacao.AGUARDANDO);
+        var statusPendentes = List.of(StatusDaMarcacao.RETORNO, StatusDaMarcacao.RETORNO_POLICLINICA, StatusDaMarcacao.AGUARDANDO, StatusDaMarcacao.GEL);
 
         return solicitacaoRepository.buscarPendentesPorTermo(statusPendentes, termo, pageable);
     }
