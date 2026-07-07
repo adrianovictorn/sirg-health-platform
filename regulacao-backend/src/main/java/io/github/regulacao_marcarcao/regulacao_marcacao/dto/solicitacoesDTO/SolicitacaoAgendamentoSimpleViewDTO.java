@@ -9,6 +9,8 @@ import io.github.regulacao_marcarcao.regulacao_marcacao.entity.enums.UsfEnum;
 public record SolicitacaoAgendamentoSimpleViewDTO(
     String nomePaciente,
     UsfEnum usfOrigem,
+    Long unidadeId,
+    String unidadeNome,
     String cpfPaciente,
     String telefone,
     List<String> especialidades
@@ -18,11 +20,13 @@ public record SolicitacaoAgendamentoSimpleViewDTO(
     public static SolicitacaoAgendamentoSimpleViewDTO fromEntity(AgendamentoSolicitacao agendamentoSolicitacao){
 
         Solicitacao solicitacao = agendamentoSolicitacao.getSolicitacao();
-        
+
         List<String> especialidades = agendamentoSolicitacao.getEspecialidades().stream().map(se -> se.getEspecialidadeSolicitada().getNome()).toList();
         return new SolicitacaoAgendamentoSimpleViewDTO(
             solicitacao.getNomePaciente(),
             solicitacao.getUsfOrigem(),
+            solicitacao.getUnidade() != null ? solicitacao.getUnidade().getId() : null,
+            solicitacao.getUnidade() != null ? solicitacao.getUnidade().getNome() : null,
             solicitacao.getCpfPaciente(),
             solicitacao.getTelefone(),
             especialidades

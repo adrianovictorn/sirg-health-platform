@@ -51,6 +51,8 @@
     nomePaciente: string;
     cpfPaciente: string;
     usfOrigem: string;
+    unidadeId?: number | null;
+    unidadeNome?: string | null;
     cns?: string | null;
     especialidades: EspecialidadeAgendar[];
   }
@@ -358,6 +360,7 @@
     nomePaciente: string;
     cpfPaciente: string;
     usfOrigem: string;
+    unidadeNome?: string | null;
     cns?: string;
     examesSelecionados: string[];
     dataAgendada: string;
@@ -410,7 +413,7 @@
         { label: 'ID Solicitação', value: String(dadosPDF.solicitacaoId), color: corDestaque, style: 'bold' },
         { label: 'Paciente',       value: dadosPDF.nomePaciente, color: corPadrao, style: 'bold' },
         { label: 'CPF',            value: dadosPDF.cpfPaciente, color: corPadrao },
-        { label: 'USF Origem',     value: dadosPDF.usfOrigem, color: corPadrao },
+        { label: 'Unidade',        value: dadosPDF.unidadeNome || dadosPDF.usfOrigem || 'Não informado', color: corPadrao },
         ...(dadosPDF.cns ? [{ label: 'CNS', value: dadosPDF.cns, color: corPadrao }] : []),
         { label: 'Exames Agendados', value: nomesAmigaveis.join(', '), color: corDestaque, style: 'bold' },
         { label: 'Data Agendada',  value: new Date(dadosPDF.dataAgendada + 'T00:00:00').toLocaleDateString('pt-BR'), color: corDestaque, style: 'bold' },
@@ -504,6 +507,7 @@
             nomePaciente: solicitacaoDetalhe.nomePaciente,
             cpfPaciente: solicitacaoDetalhe.cpfPaciente,
             usfOrigem: solicitacaoDetalhe.usfOrigem,
+            unidadeNome: solicitacaoDetalhe.unidadeNome,
             cns: solicitacaoDetalhe.cns,
             examesSelecionados,
             dataAgendada,
@@ -657,8 +661,8 @@
                     <input id="campo-cpf" type="text" value={solicitacaoDetalhe.cpfPaciente} readonly class="w-full bg-gray-100 border-gray-300 rounded-lg p-2" />
                   </div>
                   <div>
-                    <label for="campo-usf" class="text-sm font-medium text-gray-700">USF Origem</label>
-                    <input id="campo-usf" type="text" value={solicitacaoDetalhe.usfOrigem} readonly class="w-full bg-gray-100 border-gray-300 rounded-lg p-2" />
+                    <label for="campo-usf" class="text-sm font-medium text-gray-700">Unidade</label>
+                    <input id="campo-usf" type="text" value={solicitacaoDetalhe.unidadeNome || solicitacaoDetalhe.usfOrigem || 'Não informado'} readonly class="w-full bg-gray-100 border-gray-300 rounded-lg p-2" />
                   </div>
                    <div>
                     <label for="campo-cns" class="text-sm font-medium text-gray-700">CNS</label>

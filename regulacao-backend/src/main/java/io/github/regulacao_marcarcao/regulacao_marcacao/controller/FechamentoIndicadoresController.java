@@ -16,6 +16,8 @@ import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.Es
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.GraficoGrupoPorDataProjection;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.ProfissionalEspecialidadeRankingProjection;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.ProfissionalRankingProjection;
+import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.TempoEsperaEspecialidadeProjection;
+import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.TempoEsperaGeralProjection;
 import io.github.regulacao_marcarcao.regulacao_marcacao.service.FechamentoIndicadoresDiaService;
 
 @RestController
@@ -78,5 +80,22 @@ public class FechamentoIndicadoresController {
             @RequestParam(name = "inicio", required = false) LocalDate inicio,
             @RequestParam(name = "fim",    required = false) LocalDate fim) {
         return ResponseEntity.ok(fechamentoIndicadoresDiaService.especialidadesPorProfissional(id, inicio, fim));
+    }
+
+    @GetMapping("/tempo-espera/por-especialidade")
+    public ResponseEntity<List<TempoEsperaEspecialidadeProjection>> tempoEsperaPorEspecialidade(
+            @RequestParam(name = "inicio", required = false) LocalDate inicio,
+            @RequestParam(name = "fim",    required = false) LocalDate fim,
+            @RequestParam(name = "unidadeId", required = false) Long unidadeId) {
+        return ResponseEntity.ok(fechamentoIndicadoresDiaService.tempoEsperaPorEspecialidade(inicio, fim, unidadeId));
+    }
+
+    @GetMapping("/tempo-espera/geral")
+    public ResponseEntity<TempoEsperaGeralProjection> tempoEsperaGeral(
+            @RequestParam(name = "inicio", required = false) LocalDate inicio,
+            @RequestParam(name = "fim",    required = false) LocalDate fim,
+            @RequestParam(name = "unidadeId", required = false) Long unidadeId,
+            @RequestParam(name = "especialidadeId", required = false) Long especialidadeId) {
+        return ResponseEntity.ok(fechamentoIndicadoresDiaService.tempoEsperaGeral(inicio, fim, unidadeId, especialidadeId));
     }
 }

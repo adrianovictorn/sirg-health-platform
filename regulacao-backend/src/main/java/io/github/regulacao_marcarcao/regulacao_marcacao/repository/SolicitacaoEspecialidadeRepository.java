@@ -18,9 +18,13 @@ import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.Es
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.PacientesGelProjection;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.PainelEspecialidadeProjection;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.ProfissionalEspecialidadeRankingProjection;
+import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.ProfissionalQuantitativoProjection;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.ProfissionalRankingProjection;
+import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.ProfissionalSolicitacaoDetalheProjection;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.RelatorioGrupoAgendadoProjection;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.RelatorioGrupoPendenteProjection;
+import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.TempoEsperaEspecialidadeProjection;
+import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.TempoEsperaGeralProjection;
 
 public interface SolicitacaoEspecialidadeRepository extends JpaRepository<SolicitacaoEspecialidade, Long> {
 
@@ -316,8 +320,8 @@ public interface SolicitacaoEspecialidadeRepository extends JpaRepository<Solici
                     JOIN profissional p ON p.id = se.profissional_id
                     JOIN solicitacao s  ON s.id = se.solicitacao_id
                     WHERE se.profissional_id IS NOT NULL
-                      AND (:inicio IS NULL OR s.data_malote >= :inicio)
-                      AND (:fim    IS NULL OR s.data_malote <= :fim)
+                      AND (CAST(:inicio AS date) IS NULL OR s.data_malote >= :inicio)
+                      AND (CAST(:fim AS date)    IS NULL OR s.data_malote <= :fim)
                     GROUP BY p.id, p.nome, p.conselho, p.numero_registro
                     ORDER BY COUNT(se.id) DESC
                     LIMIT :limite
@@ -335,8 +339,8 @@ public interface SolicitacaoEspecialidadeRepository extends JpaRepository<Solici
                     JOIN especialidade e ON e.id = se.especialidade_id
                     JOIN solicitacao s   ON s.id = se.solicitacao_id
                     WHERE se.profissional_id = :profissionalId
-                      AND (:inicio IS NULL OR s.data_malote >= :inicio)
-                      AND (:fim    IS NULL OR s.data_malote <= :fim)
+                      AND (CAST(:inicio AS date) IS NULL OR s.data_malote >= :inicio)
+                      AND (CAST(:fim AS date)    IS NULL OR s.data_malote <= :fim)
                     GROUP BY e.id, e.nome
                     ORDER BY COUNT(se.id) DESC
                     LIMIT 10
@@ -345,5 +349,145 @@ public interface SolicitacaoEspecialidadeRepository extends JpaRepository<Solici
                     @Param("profissionalId") Long profissionalId,
                     @Param("inicio")         LocalDate inicio,
                     @Param("fim")            LocalDate fim);
+
+            @Query(value = """
+                    SELECT
+                        p.id              AS profissionalId,
+                        p.nome            AS profissionalNome,
+                        p.conselho        AS conselho,
+                        p.numero_registro AS numeroRegistro,
+                        e.categoria       AS tipo,
+                        e.nome            AS especialidadeNome,
+                        s.nome_paciente   AS pacienteNome,
+                        s.cpf_paciente    AS cpfPaciente,
+                        se.data_cadastro  AS dataSolicitacao
+                    FROM solicitacao_especialidade se
+                    JOIN profissional  p ON p.id = se.profissional_id
+                    JOIN solicitacao   s ON s.id = se.solicitacao_id
+                    JOIN especialidade e ON e.id = se.especialidade_id
+                    WHERE se.profissional_id IS NOT NULL
+                      AND (CAST(:inicio AS date)   IS NULL OR CAST(se.data_cadastro AS DATE) >= :inicio)
+                      AND (CAST(:fim AS date)      IS NULL OR CAST(se.data_cadastro AS DATE) <= :fim)
+                      AND (CAST(:profissionalId AS bigint) IS NULL OR p.id = :profissionalId)
+                      AND (CAST(:unidadeId AS bigint)      IS NULL OR s.unidade_id = :unidadeId)
+                    ORDER BY se.data_cadastro DESC
+                    """,
+                    countQuery = """
+                    SELECT COUNT(*)
+                    FROM solicitacao_especialidade se
+                    JOIN profissional p ON p.id = se.profissional_id
+                    JOIN solicitacao  s ON s.id = se.solicitacao_id
+                    WHERE se.profissional_id IS NOT NULL
+                      AND (CAST(:inicio AS date)   IS NULL OR CAST(se.data_cadastro AS DATE) >= :inicio)
+                      AND (CAST(:fim AS date)      IS NULL OR CAST(se.data_cadastro AS DATE) <= :fim)
+                      AND (CAST(:profissionalId AS bigint) IS NULL OR p.id = :profissionalId)
+                      AND (CAST(:unidadeId AS bigint)      IS NULL OR s.unidade_id = :unidadeId)
+                    """,
+                    nativeQuery = true)
+            Page<ProfissionalSolicitacaoDetalheProjection> listarDetalhadoPorProfissional(
+                    @Param("inicio")         LocalDate inicio,
+                    @Param("fim")            LocalDate fim,
+                    @Param("profissionalId") Long profissionalId,
+                    @Param("unidadeId")      Long unidadeId,
+                    Pageable pageable);
+
+            @Query(value = """
+                    SELECT
+                        p.id              AS profissionalId,
+                        p.nome            AS profissionalNome,
+                        p.conselho        AS conselho,
+                        p.numero_registro AS numeroRegistro,
+                        e.categoria       AS tipo,
+                        e.nome            AS especialidadeNome,
+                        s.nome_paciente   AS pacienteNome,
+                        s.cpf_paciente    AS cpfPaciente,
+                        se.data_cadastro  AS dataSolicitacao
+                    FROM solicitacao_especialidade se
+                    JOIN profissional  p ON p.id = se.profissional_id
+                    JOIN solicitacao   s ON s.id = se.solicitacao_id
+                    JOIN especialidade e ON e.id = se.especialidade_id
+                    WHERE se.profissional_id IS NOT NULL
+                      AND (CAST(:inicio AS date)   IS NULL OR CAST(se.data_cadastro AS DATE) >= :inicio)
+                      AND (CAST(:fim AS date)      IS NULL OR CAST(se.data_cadastro AS DATE) <= :fim)
+                      AND (CAST(:profissionalId AS bigint) IS NULL OR p.id = :profissionalId)
+                      AND (CAST(:unidadeId AS bigint)      IS NULL OR s.unidade_id = :unidadeId)
+                    ORDER BY p.nome ASC, se.data_cadastro DESC
+                    """, nativeQuery = true)
+            List<ProfissionalSolicitacaoDetalheProjection> listarDetalhadoPorProfissionalCompleto(
+                    @Param("inicio")         LocalDate inicio,
+                    @Param("fim")            LocalDate fim,
+                    @Param("profissionalId") Long profissionalId,
+                    @Param("unidadeId")      Long unidadeId);
+
+            @Query(value = """
+                    SELECT
+                        p.id              AS profissionalId,
+                        p.nome            AS profissionalNome,
+                        p.conselho        AS conselho,
+                        p.numero_registro AS numeroRegistro,
+                        COUNT(*)          AS totalNoPeriodo,
+                        COUNT(*) FILTER (WHERE e.categoria = 'ESPECIALIDADE_MEDICA')  AS consultas,
+                        COUNT(*) FILTER (WHERE e.categoria = 'EXAME_OU_PROCEDIMENTO') AS examesProcedimentos
+                    FROM solicitacao_especialidade se
+                    JOIN profissional  p ON p.id = se.profissional_id
+                    JOIN solicitacao   s ON s.id = se.solicitacao_id
+                    JOIN especialidade e ON e.id = se.especialidade_id
+                    WHERE se.profissional_id IS NOT NULL
+                      AND CAST(se.data_cadastro AS DATE) >= :inicio
+                      AND CAST(se.data_cadastro AS DATE) <= :fim
+                      AND (CAST(:unidadeId AS bigint) IS NULL OR s.unidade_id = :unidadeId)
+                    GROUP BY p.id, p.nome, p.conselho, p.numero_registro
+                    ORDER BY COUNT(*) DESC
+                    """, nativeQuery = true)
+            List<ProfissionalQuantitativoProjection> listarQuantitativoPorProfissional(
+                    @Param("inicio")    LocalDate inicio,
+                    @Param("fim")       LocalDate fim,
+                    @Param("unidadeId") Long unidadeId);
+
+            @Query(value = """
+                    SELECT
+                        e.id              AS especialidadeId,
+                        e.nome            AS especialidadeNome,
+                        COUNT(*)          AS totalAgendados,
+                        AVG(ag.data_agendada - CAST(se.data_cadastro AS DATE)) AS tempoMedioEsperaDias,
+                        MIN(ag.data_agendada - CAST(se.data_cadastro AS DATE)) AS tempoMinimoEsperaDias,
+                        MAX(ag.data_agendada - CAST(se.data_cadastro AS DATE)) AS tempoMaximoEsperaDias
+                    FROM solicitacao_especialidade se
+                    JOIN especialidade e  ON e.id = se.especialidade_id
+                    JOIN agendamento_solicitacao ag ON ag.id = se.agendamento_id
+                    JOIN solicitacao s    ON s.id = se.solicitacao_id
+                    WHERE se.agendamento_id IS NOT NULL
+                      AND (CAST(:inicio AS date)      IS NULL OR CAST(se.data_cadastro AS DATE) >= :inicio)
+                      AND (CAST(:fim AS date)         IS NULL OR CAST(se.data_cadastro AS DATE) <= :fim)
+                      AND (CAST(:unidadeId AS bigint) IS NULL OR s.unidade_id = :unidadeId)
+                    GROUP BY e.id, e.nome
+                    ORDER BY AVG(ag.data_agendada - CAST(se.data_cadastro AS DATE)) DESC
+                    """, nativeQuery = true)
+            List<TempoEsperaEspecialidadeProjection> tempoEsperaPorEspecialidade(
+                    @Param("inicio")    LocalDate inicio,
+                    @Param("fim")       LocalDate fim,
+                    @Param("unidadeId") Long unidadeId);
+
+            @Query(value = """
+                    SELECT
+                        COUNT(*) AS totalAgendados,
+                        AVG(ag.data_agendada - CAST(se.data_cadastro AS DATE)) AS tempoMedioEsperaDias,
+                        MIN(ag.data_agendada - CAST(se.data_cadastro AS DATE)) AS tempoMinimoEsperaDias,
+                        MAX(ag.data_agendada - CAST(se.data_cadastro AS DATE)) AS tempoMaximoEsperaDias
+                    FROM solicitacao_especialidade se
+                    JOIN especialidade e  ON e.id = se.especialidade_id
+                    JOIN agendamento_solicitacao ag ON ag.id = se.agendamento_id
+                    JOIN solicitacao s    ON s.id = se.solicitacao_id
+                    WHERE se.agendamento_id IS NOT NULL
+                      AND (CAST(:inicio AS date)          IS NULL OR CAST(se.data_cadastro AS DATE) >= :inicio)
+                      AND (CAST(:fim AS date)             IS NULL OR CAST(se.data_cadastro AS DATE) <= :fim)
+                      AND (CAST(:unidadeId AS bigint)      IS NULL OR s.unidade_id = :unidadeId)
+                      AND (CAST(:especialidadeId AS bigint) IS NULL OR e.id = :especialidadeId)
+                    """, nativeQuery = true)
+            TempoEsperaGeralProjection tempoEsperaGeral(
+                    @Param("inicio")         LocalDate inicio,
+                    @Param("fim")            LocalDate fim,
+                    @Param("unidadeId")      Long unidadeId,
+                    @Param("especialidadeId") Long especialidadeId);
 
 }

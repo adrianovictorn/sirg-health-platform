@@ -128,6 +128,82 @@
     exibirGrafico = true
   }
 
+  // --- Tempo de Espera por Especialidade ---
+  interface Unidade { id: number; nome: string }
+  interface EspecialidadeOpcao { id: number; nome: string }
+  interface TempoEsperaEspecialidade {
+    especialidadeId: number
+    especialidadeNome: string
+    totalAgendados: number
+    tempoMedioEsperaDias: number | null
+    tempoMinimoEsperaDias: number | null
+    tempoMaximoEsperaDias: number | null
+  }
+  interface TempoEsperaGeral {
+    totalAgendados: number
+    tempoMedioEsperaDias: number | null
+    tempoMinimoEsperaDias: number | null
+    tempoMaximoEsperaDias: number | null
+  }
+
+  let unidadesEspera = $state<Unidade[]>([])
+  let especialidadesEspera = $state<EspecialidadeOpcao[]>([])
+  let esperaInicio = $state<string>('')
+  let esperaFim = $state<string>('')
+  let esperaUnidadeId = $state<string>('')
+  let esperaEspecialidadeId = $state<string>('')
+  let esperaCarregando = $state(false)
+  let esperaGeral = $state<TempoEsperaGeral | null>(null)
+  let esperaPorEspecialidade = $state<TempoEsperaEspecialidade[]>([])
+
+  const esperaTop10 = $derived(esperaPorEspecialidade.slice(0, 10))
+  const esperaLabels = $derived(esperaTop10.map(e => e.especialidadeNome))
+  const esperaValores = $derived(esperaTop10.map(e => Math.round((e.tempoMedioEsperaDias ?? 0) * 10) / 10))
+
+  function formatarDias(v: number | null): string {
+    if (v === null || v === undefined) return '-'
+    return `${Math.round(v * 10) / 10} dias`
+  }
+
+  async function carregarFiltrosEspera() {
+    try {
+      const [resUnidades, resEspecialidades] = await Promise.all([
+        getApi('unidades/ativas'),
+        getApi('catalog/especialidades/listar')
+      ])
+      unidadesEspera = resUnidades.ok ? await resUnidades.json() : []
+      especialidadesEspera = resEspecialidades.ok ? await resEspecialidades.json() : []
+    } catch {
+      unidadesEspera = []
+      especialidadesEspera = []
+    }
+  }
+
+  async function buscarTempoEspera() {
+    esperaCarregando = true
+    try {
+      const paramsBase = new URLSearchParams()
+      if (esperaInicio) paramsBase.set('inicio', esperaInicio)
+      if (esperaFim) paramsBase.set('fim', esperaFim)
+      if (esperaUnidadeId) paramsBase.set('unidadeId', esperaUnidadeId)
+
+      const paramsGeral = new URLSearchParams(paramsBase)
+      if (esperaEspecialidadeId) paramsGeral.set('especialidadeId', esperaEspecialidadeId)
+
+      const [resGeral, resPorEspecialidade] = await Promise.all([
+        getApi(`fechamento/tempo-espera/geral?${paramsGeral}`),
+        getApi(`fechamento/tempo-espera/por-especialidade?${paramsBase}`)
+      ])
+      esperaGeral = resGeral.ok ? await resGeral.json() : null
+      esperaPorEspecialidade = resPorEspecialidade.ok ? await resPorEspecialidade.json() : []
+    } catch {
+      esperaGeral = null
+      esperaPorEspecialidade = []
+    } finally {
+      esperaCarregando = false
+    }
+  }
+
   // --- Ranking Profissional ---
   let rankInicio = $state<string>('')
   let rankFim = $state<string>('')
@@ -185,7 +261,8 @@
       buscarTotalDeSolicitacaoEspecialidadeDoDia(),
       buscarTop10PorPeriodo(),
       buscarTop10Pendentes(),
-      buscarRankingProfissionais()
+      buscarRankingProfissionais(),
+      carregarFiltrosEspera().then(buscarTempoEspera)
     ]);
   });
 </script>
@@ -300,6 +377,114 @@
   </section>
 
   <!-- ═══════════════════════════════════════════════════════════
+       TEMPO DE ESPERA POR ESPECIALIDADE
+  ════════════════════════════════════════════════════════════════ -->
+  <section class="bg-white rounded-lg m-5 p-6 shadow">
+    <div class="flex items-center gap-3 mb-1">
+      <svg class="w-6 h-6 text-emerald-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+      </svg>
+      <h2 class="text-2xl font-bold text-gray-800">Tempo de Espera por Especialidade</h2>
+    </div>
+    <p class="text-sm text-gray-500 mb-4">
+      Dias entre a data da solicitação e a data do atendimento agendado. Considera apenas solicitações já agendadas no período.
+    </p>
+
+    <!-- Filtros -->
+    <div class="flex flex-wrap gap-3 mb-5 items-end">
+      <div class="flex flex-col">
+        <label class="text-xs text-gray-500 mb-1" for="espera-inicio">De</label>
+        <input id="espera-inicio" type="date" bind:value={esperaInicio} class="border rounded px-2 py-1 text-sm" />
+      </div>
+      <div class="flex flex-col">
+        <label class="text-xs text-gray-500 mb-1" for="espera-fim">Até</label>
+        <input id="espera-fim" type="date" bind:value={esperaFim} class="border rounded px-2 py-1 text-sm" />
+      </div>
+      <div class="flex flex-col">
+        <label class="text-xs text-gray-500 mb-1" for="espera-unidade">Unidade</label>
+        <select id="espera-unidade" bind:value={esperaUnidadeId} class="border rounded px-2 py-1.5 text-sm">
+          <option value="">Todas</option>
+          {#each unidadesEspera as u (u.id)}
+            <option value={u.id}>{u.nome}</option>
+          {/each}
+        </select>
+      </div>
+      <div class="flex flex-col">
+        <label class="text-xs text-gray-500 mb-1" for="espera-especialidade">Especialidade</label>
+        <select id="espera-especialidade" bind:value={esperaEspecialidadeId} class="border rounded px-2 py-1.5 text-sm">
+          <option value="">Todas</option>
+          {#each especialidadesEspera as e (e.id)}
+            <option value={e.id}>{e.nome}</option>
+          {/each}
+        </select>
+      </div>
+      <button
+        onclick={buscarTempoEspera}
+        disabled={esperaCarregando}
+        class="px-4 py-1.5 bg-emerald-700 text-white rounded text-sm hover:bg-emerald-800 disabled:opacity-50 transition-colors">
+        {esperaCarregando ? 'Carregando...' : 'Filtrar'}
+      </button>
+    </div>
+
+    {#if esperaCarregando}
+      <p class="text-center text-gray-400 py-8">Carregando...</p>
+    {:else}
+      <!-- Indicador principal -->
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+        <div class="flex flex-col bg-emerald-700 rounded-xl p-5 text-center shadow">
+          <span class="text-white text-sm uppercase tracking-wide">Tempo Médio de Espera</span>
+          <span class="text-white font-bold text-3xl mt-2">{formatarDias(esperaGeral?.tempoMedioEsperaDias ?? null)}</span>
+        </div>
+        <div class="flex flex-col bg-sky-700 rounded-xl p-5 text-center shadow">
+          <span class="text-white text-sm uppercase tracking-wide">Menor Espera</span>
+          <span class="text-white font-bold text-3xl mt-2">{formatarDias(esperaGeral?.tempoMinimoEsperaDias ?? null)}</span>
+        </div>
+        <div class="flex flex-col bg-amber-700 rounded-xl p-5 text-center shadow">
+          <span class="text-white text-sm uppercase tracking-wide">Maior Espera</span>
+          <span class="text-white font-bold text-3xl mt-2">{formatarDias(esperaGeral?.tempoMaximoEsperaDias ?? null)}</span>
+        </div>
+      </div>
+      <p class="text-xs text-gray-400 text-center -mt-4 mb-6">
+        Baseado em {esperaGeral?.totalAgendados ?? 0} solicitações já agendadas{esperaEspecialidadeId ? ' para a especialidade selecionada' : ''}.
+      </p>
+
+      {#if esperaPorEspecialidade.length === 0}
+        <p class="text-center text-gray-400 py-8">Nenhuma solicitação agendada encontrada para os filtros selecionados.</p>
+      {:else}
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div>
+            <h3 class="text-sm font-semibold text-gray-600 uppercase tracking-wide mb-3">Top 10 — Maior Espera Média</h3>
+            <ChartBase type="bar" labels={esperaLabels} values={esperaValores} title="Tempo médio de espera (dias)" />
+          </div>
+          <div>
+            <h3 class="text-sm font-semibold text-gray-600 uppercase tracking-wide mb-3">Detalhe por Especialidade</h3>
+            <div class="overflow-x-auto max-h-96 overflow-y-auto">
+              <table class="w-full text-sm">
+                <thead class="sticky top-0 bg-white">
+                  <tr class="bg-gray-50 text-left text-gray-600 uppercase text-xs">
+                    <th class="p-2">Especialidade</th>
+                    <th class="p-2 text-center">Agendados</th>
+                    <th class="p-2 text-center">Média</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {#each esperaPorEspecialidade as e (e.especialidadeId)}
+                    <tr class="border-b border-gray-100 hover:bg-gray-50">
+                      <td class="p-2 text-gray-800">{e.especialidadeNome}</td>
+                      <td class="p-2 text-center">{e.totalAgendados}</td>
+                      <td class="p-2 text-center font-bold text-emerald-700">{formatarDias(e.tempoMedioEsperaDias)}</td>
+                    </tr>
+                  {/each}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      {/if}
+    {/if}
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════════
        RANK DE PROFISSIONAL SOLICITANTE
   ════════════════════════════════════════════════════════════════ -->
   <section class="bg-white rounded-lg m-5 p-6 shadow">
@@ -309,8 +494,11 @@
           d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
       </svg>
       <h2 class="text-2xl font-bold text-gray-800">Rank de Profissionais Solicitantes</h2>
+      <a href="/relatorio/profissional" class="ml-auto text-sm text-emerald-700 hover:text-emerald-900 hover:underline whitespace-nowrap">
+        Ver relatório completo →
+      </a>
     </div>
-    <p class="text-sm text-gray-500 mb-4">Identifica quais profissionais mais solicitam exames e quais especialidades predominam.</p>
+    <p class="text-sm text-gray-500 mb-4">Identifica quais profissionais mais solicitam exames e quais especialidades predominam. Para filtrar por unidade, exportar em Excel ou ver o detalhe de cada solicitação, use o relatório completo.</p>
 
     <!-- Filtros -->
     <div class="flex flex-wrap gap-3 mb-5">

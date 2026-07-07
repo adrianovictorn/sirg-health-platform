@@ -22,6 +22,8 @@ import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.Es
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.GraficoGrupoPorDataProjection;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.ProfissionalEspecialidadeRankingProjection;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.ProfissionalRankingProjection;
+import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.TempoEsperaEspecialidadeProjection;
+import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.TempoEsperaGeralProjection;
 
 @Service
 public class FechamentoIndicadoresDiaService {
@@ -122,6 +124,14 @@ public class FechamentoIndicadoresDiaService {
 
     public List<ProfissionalEspecialidadeRankingProjection> especialidadesPorProfissional(Long profissionalId, LocalDate inicio, LocalDate fim) {
         return solicitacaoEspecialidadeRepository.topEspecialidadesPorProfissional(profissionalId, inicio, fim);
+    }
+
+    public List<TempoEsperaEspecialidadeProjection> tempoEsperaPorEspecialidade(LocalDate inicio, LocalDate fim, Long unidadeId) {
+        return solicitacaoEspecialidadeRepository.tempoEsperaPorEspecialidade(inicio, fim, unidadeId);
+    }
+
+    public TempoEsperaGeralProjection tempoEsperaGeral(LocalDate inicio, LocalDate fim, Long unidadeId, Long especialidadeId) {
+        return solicitacaoEspecialidadeRepository.tempoEsperaGeral(inicio, fim, unidadeId, especialidadeId);
     }
 
     private boolean passouDoLimite(LocalDate dataReferencia){

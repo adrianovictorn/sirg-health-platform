@@ -11,6 +11,8 @@ public record SolicitacaoAgendamentoViewDTO(
     String nomePaciente,
     String cpfPaciente,
     UsfEnum usfOrigem,
+    Long unidadeId,
+    String unidadeNome,
     String cns,
     List<EspecialidadeAgendamentoDTO> especialidades
 ) {
@@ -25,12 +27,14 @@ public record SolicitacaoAgendamentoViewDTO(
 
         return  new SolicitacaoAgendamentoViewDTO(
             solicitacao.getId(),
-            solicitacao.getNomePaciente(), 
+            solicitacao.getNomePaciente(),
             solicitacao.getCpfPaciente(),
             solicitacao.getUsfOrigem(),
+            solicitacao.getUnidade() != null ? solicitacao.getUnidade().getId() : null,
+            solicitacao.getUnidade() != null ? solicitacao.getUnidade().getNome() : null,
             solicitacao.getCns(),
             especialidades
         );
     }
-    
+
 }
