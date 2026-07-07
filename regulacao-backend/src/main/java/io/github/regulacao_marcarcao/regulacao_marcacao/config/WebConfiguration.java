@@ -1,5 +1,7 @@
 package io.github.regulacao_marcarcao.regulacao_marcacao.config;
 
+import java.nio.file.Paths;
+
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -36,8 +38,12 @@ public class WebConfiguration implements WebMvcConfigurer {
 
     @Override
     public void addResourceHandlers(ResourceHandlerRegistry registry) {
-        // Serve uploaded profile pictures from the filesystem
-        String uploadLocation = "file:" + System.getProperty("user.dir") + "/" + uploadDir + "/";
+        // Serve uploaded profile pictures from the filesystem.
+        // uploadDir may be relative (dev, resolved against the working dir) or
+        // absolute (prod/Docker, e.g. APP_UPLOAD_DIR=/app/uploads/profile-pictures) —
+        // toAbsolutePath() only prepends user.dir when the path isn't already absolute,
+        // so this matches exactly what FileStorageService uses to write the files.
+        String uploadLocation = "file:" + Paths.get(uploadDir).toAbsolutePath().normalize() + "/";
         registry.addResourceHandler("/api/uploads/profile-pictures/**")
                 .addResourceLocations(uploadLocation);
 

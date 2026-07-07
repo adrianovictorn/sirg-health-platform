@@ -20,7 +20,7 @@ public record SolicitacaoAgendamentoViewDTO(
     public static SolicitacaoAgendamentoViewDTO fromEntity(Solicitacao solicitacao){
 
         List<EspecialidadeAgendamentoDTO> especialidades = solicitacao.getEspecialidades().stream()
-            .filter(s -> s.getStatus() == StatusDaMarcacao.AGUARDANDO || s.getStatus() == StatusDaMarcacao.RETORNO || s.getStatus() == StatusDaMarcacao.RETORNO_POLICLINICA)
+            .filter(s -> s.getStatus() == StatusDaMarcacao.AGUARDANDO || s.getStatus() == StatusDaMarcacao.RETORNO || s.getStatus() == StatusDaMarcacao.RETORNO_POLICLINICA || s.getStatus() == StatusDaMarcacao.GEL)
             .map(EspecialidadeAgendamentoDTO::fromEntity)
             .filter(e -> e.codigo() != null && !e.codigo().isBlank())
             .toList();

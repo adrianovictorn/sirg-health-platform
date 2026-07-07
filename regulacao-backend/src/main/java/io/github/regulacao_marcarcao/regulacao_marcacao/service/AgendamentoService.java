@@ -202,7 +202,8 @@ public class AgendamentoService {
                                 && (
                                     e.getStatus() == StatusDaMarcacao.AGUARDANDO
                                     || e.getStatus() == StatusDaMarcacao.RETORNO
-                                    || e.getStatus() == StatusDaMarcacao.RETORNO_POLICLINICA);
+                                    || e.getStatus() == StatusDaMarcacao.RETORNO_POLICLINICA
+                                    || e.getStatus() == StatusDaMarcacao.GEL);
                     })
                     .findFirst()
                     .orElseThrow(() -> new EntityNotFoundException("Exame pendente '" + nomeExame + "' não encontrado na solicitação."));
