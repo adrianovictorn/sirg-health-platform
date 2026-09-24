@@ -41,6 +41,7 @@ public class AgendamentoService {
     private final EspecialidadeRepository especialidadeRepository;
     private final UserRepository userRepository;
     private final CotaUnidadeService cotaUnidadeService;
+    private final UnidadeAcessoService unidadeAcessoService;
     private final io.github.regulacao_marcarcao.regulacao_marcacao.config.InstanceContext instanceContext;
     private final org.springframework.amqp.rabbit.core.RabbitTemplate rabbitTemplate;
 
@@ -108,8 +109,16 @@ public class AgendamentoService {
      * Lista todos os agendamentos realizados.
      */
     @Transactional(readOnly = true)
-    public List<AgendamentoSolicitacaoSimpleViewDTO> listAll() {
+    public List<AgendamentoSolicitacaoSimpleViewDTO> listAll(String callerCpf) {
+        var ctx = unidadeAcessoService.contextoDe(callerCpf);
         return agendamentoRepository.findAll().stream()
+            .filter(ag -> {
+                if (ctx.isGlobal()) return true;
+                if (ag.getSolicitacao() == null) return true;
+                // Agendamento de solicitacao legada sem unidade: continua visivel.
+                if (ag.getSolicitacao().getUnidade() == null) return true;
+                return ctx.permite(ag.getSolicitacao().getUnidade().getId());
+            })
             .map(AgendamentoSolicitacaoSimpleViewDTO::fromAgendamentoSolicitacao)
             .collect(Collectors.toList());
     }
@@ -125,10 +134,7 @@ public class AgendamentoService {
     }
 
     private boolean isAdminGlobal(String callerCpf) {
-        if (callerCpf == null) return true;
-        return userRepository.findByCpf(callerCpf)
-                .map(u -> u.getRole() != null && u.getRole().name().equals("ADMIN"))
-                .orElse(true);
+        return unidadeAcessoService.isAcessoGlobal(callerCpf);
     }
 
     @Transactional
@@ -266,15 +272,75 @@ public class AgendamentoService {
     }
 
     @Transactional
-    public void deleteAgendamento(Long id) {
+    public void deleteAgendamento(Long id, String callerCpf) {
         AgendamentoSolicitacao agendamento = agendamentoRepository.findById(id)
             .orElseThrow(() -> new EntityNotFoundException("Agendamento não encontrado."));
+
+        exigirAcessoAoAgendamento(agendamento, callerCpf);
+
+        // Devolve à cota as vagas que este agendamento havia consumido, ANTES de
+        // desvincular as especialidades (depois disso não há mais como saber quais
+        // especialidades pertenciam ao agendamento).
+        estornarCotasDoAgendamento(agendamento);
 
         // Salva as alterações nas especialidades
         solicitacaoEspecialidadeRepository.desvincularAgendamento(id);
 
         // Agora, deleta o agendamento
         agendamentoRepository.delete(agendamento);
+    }
+
+    /**
+     * Impede cancelar/excluir agendamento pertencente a outra unidade.
+     *
+     * Agendamento de solicitacao legada sem unidade vinculada nao e bloqueado —
+     * mesma regra de {@code SolicitacaoService.exigirAcessoASolicitacao}: registro
+     * orfao nao pertence a outra unidade, e bloquea-lo regrediria o comportamento
+     * anterior sem ganho de seguranca.
+     */
+    private void exigirAcessoAoAgendamento(AgendamentoSolicitacao agendamento, String callerCpf) {
+        var ctx = unidadeAcessoService.contextoDe(callerCpf);
+        if (ctx.isGlobal()) {
+            return;
+        }
+        Long unidadeId = agendamento.getSolicitacao() != null && agendamento.getSolicitacao().getUnidade() != null
+                ? agendamento.getSolicitacao().getUnidade().getId()
+                : null;
+        if (unidadeId == null) {
+            return;
+        }
+        if (!ctx.permite(unidadeId)) {
+            throw new org.springframework.security.access.AccessDeniedException(
+                    "Acesso negado: este agendamento pertence a outra unidade.");
+        }
+    }
+
+    /**
+     * Estorna a cota consumida por um agendamento que está sendo cancelado,
+     * excluído ou remanejado.
+     *
+     * O estorno espelha exatamente o consumo feito em
+     * {@link #criarAgendamentoParaMultiplosExames}: uma vaga por especialidade
+     * agendada, na unidade da solicitação e na data em que o agendamento estava
+     * marcado. Sem isto o saldo nunca volta e a unidade fica bloqueada por vagas
+     * que não correspondem a atendimento nenhum.
+     */
+    private void estornarCotasDoAgendamento(AgendamentoSolicitacao agendamento) {
+        Solicitacao solicitacao = agendamento.getSolicitacao();
+        if (solicitacao == null || solicitacao.getUnidade() == null || agendamento.getDataAgendada() == null) {
+            return;
+        }
+        Long unidadeId = solicitacao.getUnidade().getId();
+
+        List<SolicitacaoEspecialidade> agendadas =
+                solicitacaoEspecialidadeRepository.findByAgendamentoSolicitacaoId(agendamento.getId());
+
+        for (SolicitacaoEspecialidade se : agendadas) {
+            Long especialidadeId = se.getEspecialidadeSolicitada() != null
+                    ? se.getEspecialidadeSolicitada().getId()
+                    : null;
+            cotaUnidadeService.estornarUtilizacao(unidadeId, especialidadeId, agendamento.getDataAgendada());
+        }
     }
 
     private void notificarAgendamentoExternoSeAplicavel(Solicitacao solicitacao, AgendamentoSolicitacao ag) {

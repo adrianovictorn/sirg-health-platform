@@ -1,7 +1,6 @@
 ﻿<script lang="ts">
   import { deleteApi, deleteByIdApi, getApi, postApi, putApi } from '$lib/api';
-  import Menu from '$lib/Menu.svelte';
-    import RoleBasedMenu from '$lib/RoleBasedMenu.svelte';
+  import RoleBasedMenu from '$lib/RoleBasedMenu.svelte';
   import UserMenu from '$lib/UserMenu.svelte';
     import { Pencil, Trash } from 'lucide-svelte';
   import { onMount } from 'svelte';

@@ -110,6 +110,10 @@
     let dataMalote = $state('');
     let observacoes = $state('');
     let telefone = $state('');
+    // Dados cadastrais obrigatórios do paciente (backend valida via @NotBlank no update).
+    let nomePai = $state('');
+    let nomeMae = $state('');
+    let endereco = $state('');
     let status = $state('');
 
     // Objeto reativo para a nova especialidade a ser adicionada
@@ -197,6 +201,9 @@
         dataMalote = solicitacao.dataMalote;
         observacoes = solicitacao.observacoes;
         telefone = solicitacao.telefone || '';
+        nomePai = solicitacao.nomePai || '';
+        nomeMae = solicitacao.nomeMae || '';
+        endereco = solicitacao.endereco || '';
 
     } catch (e: any) {
         error = e.message;
@@ -218,6 +225,9 @@
         cpfPaciente,
         cns,
         telefone,
+        nomePai,
+        nomeMae,
+        endereco,
         datanascimento,
         unidadeId,
         dataMalote,
@@ -228,6 +238,12 @@
     const res = await putApi(`solicitacoes/${solicitacao.id}`, payload);
     if (res.ok) {
         alert('Paciente e CIDs atualizados com sucesso!');
+    } else if (res.status === 400) {
+        // Registros antigos, anteriores à V80, podem não ter os novos campos
+        // obrigatórios preenchidos — o backend devolve quais faltam.
+        const erros = await res.json().catch(() => ({}));
+        const detalhes = Object.values(erros).join(', ');
+        alert(`Não foi possível salvar. Preencha os campos obrigatórios: ${detalhes}`);
     } else {
         alert('Erro ao atualizar paciente.');
     }
@@ -243,8 +259,10 @@
         const payload = {
             especialidadeId: Number(novaEspecialidadeObj.especialidadeId),
             profissionalId: novaEspecialidadeObj.profissionalId || null,
-            status: novaEspecialidadeObj.status,
-            prioridade: novaEspecialidadeObj.prioridade
+            // status e prioridade são @NotNull no backend: garante o padrão caso o
+            // select fique sem seleção, em vez de mandar null e tomar 400.
+            status: novaEspecialidadeObj.status || 'AGUARDANDO',
+            prioridade: novaEspecialidadeObj.prioridade || 'NORMAL'
         };
 
         const res = await postApi(`solicitacoes/${solicitacao.id}/especialidades`, payload);
@@ -252,7 +270,10 @@
             alert('Especialidade adicionada com sucesso!');
             location.reload();
         } else {
-            alert('Erro ao adicionar especialidade');
+            // O backend devolve a causa em `message` — mostrá-la evita o operador
+            // ficar sem saber o que impediu o cadastro.
+            const erro = await res.json().catch(() => ({}));
+            alert(erro.message || 'Erro ao adicionar especialidade');
         }
     }
 
@@ -382,6 +403,31 @@
     }
 
 
+    // --- Alerta de cadastro incompleto -------------------------------------
+    // Puramente informativo: aponta os campos que passaram a ser exigidos no
+    // cadastro (V80) e que os registros antigos nao possuem. NAO bloqueia nada —
+    // a edicao continua liberada com os campos em branco, de proposito, para nao
+    // travar a operacao sobre o historico.
+    let alertaDispensado = $state(false);
+
+    const vazio = (v: unknown) => v == null || String(v).trim() === '';
+
+    let camposIncompletos: string[] = $derived(
+        solicitacao
+            ? [
+                vazio(solicitacao.nomePai) ? 'Nome do Pai' : null,
+                vazio(solicitacao.nomeMae) ? 'Nome da Mãe' : null,
+                vazio(solicitacao.endereco) ? 'Endereço' : null,
+                vazio(solicitacao.cns) ? 'CNS' : null,
+                solicitacao.unidadeId == null ? 'Unidade de origem' : null
+              ].filter((c): c is string => c !== null)
+            : []
+    );
+
+    let mostrarAlertaIncompleto: boolean = $derived(
+        !isLoading && !!solicitacao && camposIncompletos.length > 0 && !alertaDispensado
+    );
+
     let historico: EspecialidadeItem[] = $derived(especialidades as unknown as EspecialidadeItem[]);
     let especPendentes: EspecialidadeItem[] = $derived(
         ((((historico as unknown as EspecialidadeItem[]) || []).filter((e: EspecialidadeItem) => {
@@ -421,7 +467,31 @@
                     <p>{error}</p>
                 </div>
             {:else if solicitacao}
-                
+
+                <!-- Alerta de cadastro incompleto (somente visual, nao bloqueia) -->
+                {#if mostrarAlertaIncompleto}
+                    <div class="bg-amber-50 border-l-4 border-amber-400 rounded-r-lg p-4 flex items-start gap-3" role="status">
+                        <svg class="w-5 h-5 text-amber-500 shrink-0 mt-0.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                        </svg>
+                        <div class="flex-1 min-w-0">
+                            <p class="font-semibold text-amber-900">Cadastro incompleto</p>
+                            <p class="text-sm text-amber-800 mt-0.5">
+                                Este paciente foi cadastrado antes de estes campos passarem a ser exigidos.
+                                Faltam: <strong>{camposIncompletos.join(', ')}</strong>.
+                            </p>
+                            <p class="text-xs text-amber-700 mt-1">
+                                Você pode continuar normalmente — preencher agora é opcional e ajuda a completar a base.
+                            </p>
+                        </div>
+                        <button type="button" onclick={() => (alertaDispensado = true)}
+                            class="shrink-0 text-amber-600 hover:text-amber-900 text-sm font-medium px-2 py-1 rounded hover:bg-amber-100"
+                            aria-label="Dispensar aviso">
+                            Dispensar
+                        </button>
+                    </div>
+                {/if}
+
                 <!-- Seção Editar Paciente -->
                 <section class="bg-white rounded-lg shadow p-6">
                     <h2 class="text-lg font-bold text-emerald-800 mb-4 border-b pb-2">Editar Paciente</h2>
@@ -446,6 +516,18 @@
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-1">Data Recebimento</label>
                     <input type="date" bind:value={dataMalote} class="w-full border-gray-300 rounded-md shadow-sm focus:border-emerald-500 focus:ring-emerald-500" />
+                </div>
+                <div class="lg:col-span-2">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Nome do Pai</label>
+                    <input type="text" bind:value={nomePai} maxlength="150" class="w-full border-gray-300 rounded-md shadow-sm focus:border-emerald-500 focus:ring-emerald-500" />
+                </div>
+                <div class="lg:col-span-2">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Nome da Mãe</label>
+                    <input type="text" bind:value={nomeMae} maxlength="150" class="w-full border-gray-300 rounded-md shadow-sm focus:border-emerald-500 focus:ring-emerald-500" />
+                </div>
+                <div class="lg:col-span-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Endereço</label>
+                    <input type="text" bind:value={endereco} maxlength="300" placeholder="Rua, número, bairro" class="w-full border-gray-300 rounded-md shadow-sm focus:border-emerald-500 focus:ring-emerald-500" />
                 </div>
                 <div class="lg:col-span-2">
                     <label class="block text-sm font-medium text-gray-700 mb-1">Unidade de Saúde</label>
@@ -874,7 +956,7 @@
                             <label for="prioridade-select" class="block text-sm font-medium text-gray-700 mb-1">Prioridade</label>
                             <select id="prioridade-select" bind:value={novaEspecialidadeObj.prioridade} class="w-full border-gray-300 rounded-md shadow-sm focus:border-emerald-500 focus:ring-emerald-500">
                            
-                                <option value="NORMAL" disabled>Normal</option>
+                                <option value="NORMAL">Normal</option>
                                 <option value="URGENTE">Urgente</option>
                                 <option value="EMERGENCIA">Emergência</option>
                             </select>
@@ -882,7 +964,7 @@
                         <div>
                             <label for="retorno-select" class="block text-sm font-medium text-gray-700 mb-1">Em caso de retorno... </label>
                             <select id="retorno-select" bind:value={novaEspecialidadeObj.status} class="w-full border-gray-300 rounded-md shadow-sm">
-                                <option value="AGUARDANDO" disabled>Selecione...</option>
+                                <option value="AGUARDANDO">Sem retorno (padrão)</option>
                                 <option value="RETORNO">Retorno</option>
                                 <option value="RETORNO_POLICLINICA">Retorno Policlínica</option>
                                 <option value="GEL">Gel</option>

@@ -29,13 +29,13 @@ public class CidController {
     private final CidService cidService;
 
     @GetMapping
-    @PreAuthorize("hasAnyRole('ADMIN', 'USER', 'RECEPCAO', 'ENFERMEIRO', 'MEDICO', 'COORD_TRANSPORTE')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'ADMIN_UNIDADE', 'USER', 'RECEPCAO', 'ENFERMEIRO', 'MEDICO', 'COORD_TRANSPORTE')")
     public ResponseEntity<List<CIDListDTO>> listarCIDS(){
         return ResponseEntity.ok(cidService.listarCIDS());
     }
 
      @GetMapping("/buscar") 
-     @PreAuthorize("hasAnyRole('ADMIN', 'USER', 'RECEPCAO', 'ENFERMEIRO', 'MEDICO', 'COORD_TRANSPORTE')")
+     @PreAuthorize("hasAnyRole('ADMIN', 'ADMIN_UNIDADE', 'USER', 'RECEPCAO', 'ENFERMEIRO', 'MEDICO', 'COORD_TRANSPORTE')")
 
     public ResponseEntity<List<CIDListDTO>> buscarPorCodigo(@RequestParam String codigo) {
         List<CIDListDTO> cids = cidService.listarCIDsPorCodigo(codigo);
@@ -43,13 +43,13 @@ public class CidController {
     }
 
     @PostMapping
-    @PreAuthorize("hasAnyRole('ADMIN', 'USER', 'RECEPCAO', 'ENFERMEIRO', 'MEDICO', 'COORD_TRANSPORTE')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'ADMIN_UNIDADE', 'USER', 'RECEPCAO', 'ENFERMEIRO', 'MEDICO', 'COORD_TRANSPORTE')")
     public ResponseEntity<CIDViewDTO> cadastrarCID(@RequestBody CIDCreateDTO dto){
         return ResponseEntity.ok(cidService.cadastrarCID(dto));
     }
 
     @PutMapping("{id}")
-    @PreAuthorize("hasAnyRole('ADMIN', 'USER', 'RECEPCAO', 'ENFERMEIRO', 'MEDICO', 'COORD_TRANSPORTE')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'ADMIN_UNIDADE', 'USER', 'RECEPCAO', 'ENFERMEIRO', 'MEDICO', 'COORD_TRANSPORTE')")
 
     public ResponseEntity<CIDViewDTO> atualizarCID (@PathVariable Long id, @RequestBody CIDUpdateDTO dto){
         return ResponseEntity.ok(cidService.atualizarCid(id, dto));

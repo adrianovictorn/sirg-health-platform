@@ -1,6 +1,6 @@
 ﻿<script lang="ts">
     import { getApi, postApi, putApi } from "$lib/api";
-    import Menu2 from "$lib/Menu2.svelte";
+    import RoleBasedMenu from "$lib/RoleBasedMenu.svelte";
     import UserMenu from "$lib/UserMenu.svelte";
     import { onMount } from "svelte";
 
@@ -60,7 +60,7 @@ onMount(()=> {
   <div class="flex min-h-screen bg-gray-100">
     <!-- Sidebar -->
      
-    <Menu2></Menu2>
+    <RoleBasedMenu activePage="/agendas" />
   
    <!-- Main Content -->
     <div class="flex-1 flex flex-col">

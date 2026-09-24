@@ -32,7 +32,7 @@ public class ProfissionalController {
     private final ProfissionalService profissionalService;
 
     @PostMapping
-    @PreAuthorize("hasAnyRole('ADMIN', 'RECEPCAO', 'ENFERMEIRO', 'MEDICO')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'ADMIN_UNIDADE', 'RECEPCAO', 'ENFERMEIRO', 'MEDICO')")
     public ResponseEntity<ProfissionalViewDTO> criar(@RequestBody ProfissionalCreateDTO dto) {
         return ResponseEntity.status(HttpStatus.CREATED).body(profissionalService.criar(dto));
     }
@@ -56,7 +56,7 @@ public class ProfissionalController {
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasAnyRole('ADMIN', 'RECEPCAO', 'ENFERMEIRO', 'MEDICO')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'ADMIN_UNIDADE', 'RECEPCAO', 'ENFERMEIRO', 'MEDICO')")
     public ResponseEntity<ProfissionalViewDTO> atualizar(
             @PathVariable Long id,
             @RequestBody ProfissionalUpdateDTO dto) {
@@ -64,7 +64,7 @@ public class ProfissionalController {
     }
 
     @PatchMapping("/{id}/status")
-    @PreAuthorize("hasAnyRole('ADMIN', 'RECEPCAO', 'ENFERMEIRO', 'MEDICO')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'ADMIN_UNIDADE', 'RECEPCAO', 'ENFERMEIRO', 'MEDICO')")
     public ResponseEntity<ProfissionalViewDTO> toggleAtivo(@PathVariable Long id) {
         return ResponseEntity.ok(profissionalService.toggleAtivo(id));
     }

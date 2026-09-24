@@ -46,6 +46,10 @@ public class SolicitacaoEspecialidade {
     @JoinColumn(name = "profissional_id", nullable = true)
     private Profissional profissionalSolicitante;
 
+    // Data da coleta do material (exames/procedimentos). Opcional (V81).
+    @Column(name = "data_coleta")
+    private LocalDate dataColeta;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "status", length = 50)
     private StatusDaMarcacao status;

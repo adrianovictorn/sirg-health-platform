@@ -53,8 +53,9 @@ public class AgendamentoController {
      * Lista todos os agendamentos já criados.
      */
     @GetMapping
-    public ResponseEntity<List<AgendamentoSolicitacaoSimpleViewDTO>> listarTodosAgendamentos() {
-        List<AgendamentoSolicitacaoSimpleViewDTO> agendamentos = agendamentoService.listAll();
+    public ResponseEntity<List<AgendamentoSolicitacaoSimpleViewDTO>> listarTodosAgendamentos(Authentication authentication) {
+        List<AgendamentoSolicitacaoSimpleViewDTO> agendamentos = agendamentoService.listAll(
+                authentication != null ? authentication.getName() : null);
         return ResponseEntity.ok(agendamentos);
     }
 
@@ -81,8 +82,8 @@ public class AgendamentoController {
     }
 
     @DeleteMapping("/{id}")
-    public ResponseEntity<Void> deletarAgendamento(@PathVariable Long id){
-        agendamentoService.deleteAgendamento(id);
+    public ResponseEntity<Void> deletarAgendamento(@PathVariable Long id, Authentication authentication){
+        agendamentoService.deleteAgendamento(id, authentication != null ? authentication.getName() : null);
         return ResponseEntity.noContent().build();
     }
 

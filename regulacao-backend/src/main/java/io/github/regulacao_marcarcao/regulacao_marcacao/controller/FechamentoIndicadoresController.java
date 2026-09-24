@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.RestController;
 
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.indicadores.FechamentoIndicadoresDiaDTO;
@@ -20,8 +21,18 @@ import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.Te
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.TempoEsperaGeralProjection;
 import io.github.regulacao_marcarcao.regulacao_marcacao.service.FechamentoIndicadoresDiaService;
 
+/**
+ * Indicadores de fechamento.
+ *
+ * Estes indicadores sao consolidados globais (por local/grupo, atravessando todas
+ * as unidades), portanto ficam fora do escopo do perfil ADMIN_UNIDADE, que so
+ * pode enxergar dados da propria unidade de lotacao. A negacao e explicita aqui
+ * porque a classe nao declara @PreAuthorize por metodo — sem ela, qualquer
+ * usuario autenticado (o novo perfil inclusive) alcancaria os endpoints.
+ */
 @RestController
 @RequestMapping("/api/fechamento")
+@PreAuthorize("!hasRole('ADMIN_UNIDADE')")
 public class FechamentoIndicadoresController {
     
     private final FechamentoIndicadoresDiaService fechamentoIndicadoresDiaService;

@@ -6,15 +6,25 @@
   import { toast } from 'svelte-sonner';
 
   let unidades = [];
+  // Grupos de Relatorio reaproveitados como agrupamento de unidades para cota
+  // coletiva (a unidade aponta para o grupo via grupoRelatorioId).
+  let grupos = [];
   let loading = true;
   let showModal = false;
   let editando = null;
 
-  let form = { nome: '', codigo: '', cnes: '', telefone: '', endereco: '' };
+  let form = { nome: '', codigo: '', cnes: '', telefone: '', endereco: '', grupoRelatorioId: null };
 
   onMount(async () => {
-    await carregarUnidades();
+    await Promise.all([carregarUnidades(), carregarGrupos()]);
   });
+
+  async function carregarGrupos() {
+    try {
+      const res = await getApi('grupo-relatorio/listar');
+      grupos = res.ok ? await res.json() : [];
+    } catch {}
+  }
 
   async function carregarUnidades() {
     loading = true;
@@ -30,13 +40,13 @@
 
   function abrirModalNova() {
     editando = null;
-    form = { nome: '', codigo: '', cnes: '', telefone: '', endereco: '' };
+    form = { nome: '', codigo: '', cnes: '', telefone: '', endereco: '', grupoRelatorioId: null };
     showModal = true;
   }
 
   function abrirModalEditar(u) {
     editando = u;
-    form = { nome: u.nome, codigo: u.codigo || '', cnes: u.cnes || '', telefone: u.telefone || '', endereco: u.endereco || '' };
+    form = { nome: u.nome, codigo: u.codigo || '', cnes: u.cnes || '', telefone: u.telefone || '', endereco: u.endereco || '', grupoRelatorioId: u.grupoRelatorioId ?? null };
     showModal = true;
   }
 
@@ -157,6 +167,21 @@
         <div>
           <label class="block text-xs text-slate-400 mb-1">Endereço</label>
           <input bind:value={form.endereco} class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+        </div>
+
+        <div>
+          <label for="grupoRelatorio" class="block text-xs text-slate-400 mb-1">Grupo (cota coletiva)</label>
+          <select id="grupoRelatorio" bind:value={form.grupoRelatorioId}
+            class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-emerald-500">
+            <option value={null}>— Sem grupo —</option>
+            {#each grupos as g}
+              <option value={g.id}>{g.nome}</option>
+            {/each}
+          </select>
+          <p class="text-xs text-slate-500 mt-1">
+            Com grupo definido, as cotas lançadas para ele viram um saldo compartilhado
+            entre as unidades membros, somando-se à cota própria desta unidade.
+          </p>
         </div>
       </div>
 

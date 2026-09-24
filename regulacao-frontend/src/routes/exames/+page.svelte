@@ -78,6 +78,12 @@
   let observacoes = $state('');
   let inputsReadonly = $state(false);
   let telefone = $state('');
+  // Dados cadastrais obrigatórios do paciente (backend valida via @NotBlank).
+  let nomePai = $state('');
+  let nomeMae = $state('');
+  let endereco = $state('');
+  // Data da coleta do material: opcional, aplicada aos exames desta submissão.
+  let dataColeta = $state('');
   let examesDaSolicitacaoAtual = $state<any[]>([]);
 
   // --- Lógica de Carregamento e Envio ---
@@ -123,6 +129,9 @@
       nomePaciente = s.nomePaciente || '';
       cpfPaciente = s.cpfPaciente || '';
       cns = s.cns || '';
+      nomePai = s.nomePai || '';
+      nomeMae = s.nomeMae || '';
+      endereco = s.endereco || '';
       datanascimento = s.datanascimento ? s.datanascimento.split('T')[0] : '';
       dataMalote = s.dataMalote ? s.dataMalote.split('T')[0] : '';
       telefone = s.telefone || '';
@@ -156,6 +165,8 @@
         // A linha de filtro foi removida daqui
         .map(sel => ({
             especialidadeId: sel.id,
+            especialidadeSolicitada: sel.value,
+            dataColeta: dataColeta || null,
             status: direcionarParaGel,
             prioridade: prioridadeDaSolicitacao
         }));
@@ -192,12 +203,16 @@
         cpfPaciente,
         cns,
         telefone,
+        nomePai,
+        nomeMae,
+        endereco,
         datanascimento,
         dataMalote,
         observacoes,
         especialidades: examesSelecionados.map(sel => ({
             especialidadeId: sel.id,
             especialidadeSolicitada: sel.value,
+            dataColeta: dataColeta || null,
             status: 'AGUARDANDO',
             prioridade: prioridadeDaSolicitacao
         }))
@@ -222,6 +237,10 @@
     nomePaciente = '';
     cpfPaciente = '';
     cns = '';
+    nomePai = '';
+    nomeMae = '';
+    endereco = '';
+    dataColeta = '';
     datanascimento = '';
     dataMalote = '';
     observacoes = '';
@@ -342,15 +361,34 @@
                 <label for="telefone" class="text-sm font-medium text-gray-700 mb-1">Telefone</label>
                 <input id="telefone" type="text" bind:value={telefone} placeholder="Tel: (00) 0 0000-0000" maxlength="20" readonly={inputsReadonly} class:bg-gray-100={inputsReadonly} class="border border-gray-300 rounded-lg p-2 focus:ring-emerald-500 focus:border-emerald-500"  >
               </div>
+              <div class="flex flex-col lg:col-span-2">
+                <label for="nomePai" class="text-sm font-medium text-gray-700 mb-1">Nome do Pai</label>
+                <input id="nomePai" type="text" bind:value={nomePai} maxlength="150" readonly={inputsReadonly} class:bg-gray-100={inputsReadonly} class="border border-gray-300 rounded-lg p-2 focus:ring-emerald-500 focus:border-emerald-500" required />
+              </div>
+              <div class="flex flex-col lg:col-span-2">
+                <label for="nomeMae" class="text-sm font-medium text-gray-700 mb-1">Nome da Mãe</label>
+                <input id="nomeMae" type="text" bind:value={nomeMae} maxlength="150" readonly={inputsReadonly} class:bg-gray-100={inputsReadonly} class="border border-gray-300 rounded-lg p-2 focus:ring-emerald-500 focus:border-emerald-500" required />
+              </div>
+              <div class="flex flex-col lg:col-span-5">
+                <label for="endereco" class="text-sm font-medium text-gray-700 mb-1">Endereço</label>
+                <input id="endereco" type="text" bind:value={endereco} maxlength="300" placeholder="Rua, número, bairro" readonly={inputsReadonly} class:bg-gray-100={inputsReadonly} class="border border-gray-300 rounded-lg p-2 focus:ring-emerald-500 focus:border-emerald-500" required />
+              </div>
             </div>
           </fieldset>
 
           <fieldset class="border border-gray-300 p-4 rounded-lg">
             <legend class="text-xl font-semibold text-gray-700 px-2">Detalhes da Solicitação</legend>
-             <div class="grid grid-cols-1 gap-6 mt-4">
+             <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-4">
                 <div class="flex flex-col">
                     <label for="dataMalote" class="text-sm font-medium text-gray-700 mb-1">Data Recebimento</label>
                     <input id="dataMalote" type="date" bind:value={dataMalote} readonly={inputsReadonly} class:bg-gray-100={inputsReadonly} class="border border-gray-300 rounded-lg p-2 focus:ring-emerald-500 focus:border-emerald-500" required />
+                </div>
+                <div class="flex flex-col">
+                    <label for="dataColeta" class="text-sm font-medium text-gray-700 mb-1">
+                      Data da Coleta <span class="text-gray-400 font-normal">(opcional)</span>
+                    </label>
+                    <input id="dataColeta" type="date" bind:value={dataColeta} class="border border-gray-300 rounded-lg p-2 focus:ring-emerald-500 focus:border-emerald-500" />
+                    <span class="text-xs text-gray-500 mt-1">Aplicada aos exames selecionados nesta submissão.</span>
                 </div>
             </div>
 

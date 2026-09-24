@@ -3,9 +3,8 @@
   import { getApi } from '$lib/api';
   import jsPDF from 'jspdf';
   import autoTable from 'jspdf-autotable';
-  import Menu from "$lib/Menu.svelte";
   import UserMenu from "$lib/UserMenu.svelte";
-    import RoleBasedMenu from "$lib/RoleBasedMenu.svelte";
+  import RoleBasedMenu from "$lib/RoleBasedMenu.svelte";
 
   type Grupo = {
     codigo: string

@@ -1,6 +1,6 @@
 # Documentação Técnica — SIRG (Sistema de Regulação)
 
-> **Versão documentada:** 1.3 | **Data:** 2026-05-11  
+> **Versão documentada:** 1.6 | **Data:** 2026-09-24  
 > **Objetivo:** Permitir que qualquer desenvolvedor ou IA consiga compreender, reconstruir, manter e evoluir o sistema sem depender de explicações adicionais.
 
 ---
@@ -73,34 +73,30 @@ Regula-o/
 │       │   │   ├── SecurityConfiguration.java
 │       │   │   ├── TokenService.java (em service/)
 │       │   │   └── WebConfiguration.java
-│       │   ├── controller/                          # REST Controllers (24)
-│       │   ├── dto/                                 # DTOs organizados por domínio (80+)
-│       │   │   ├── agendamentoDTO/
-│       │   │   ├── agendamento/transporte/
-│       │   │   ├── cid/
-│       │   │   ├── especialidade/
-│       │   │   ├── municipio/
-│       │   │   ├── notificacao/
-│       │   │   ├── pacto/
-│       │   │   ├── regional/
-│       │   │   ├── relatorio/
-│       │   │   ├── solicitacoesDTO/
-│       │   │   ├── solicitacaoEspecialidadeDTO/
-│       │   │   ├── transporte/
-│       │   │   └── usuariosDTO/
-│       │   ├── entity/                              # Entidades JPA (22)
-│       │   │   └── enums/                           # Enumerações (13)
+│       │   ├── controller/                          # REST Controllers (28)
+│       │   ├── dto/                                 # DTOs organizados por domínio (21 subpacotes)
+│       │   │   ├── agendamento/  agendamentoDTO/  cid/
+│       │   │   ├── cota/                            # Cotas por unidade/grupo
+│       │   │   ├── dashboard/  especialidade/  grupo_relatorio/  indicadores/
+│       │   │   ├── motorista/  municipio/  notificacao/  paciente/  pacto/
+│       │   │   ├── profissional/  regional/  relatorio/
+│       │   │   ├── solicitacoesDTO/  solicitacaoEspecialidadeDTO/
+│       │   │   ├── transporte/  unidade/  usuariosDTO/
+│       │   ├── entity/                              # Entidades JPA (25)
+│       │   │   └── enums/                           # Enumerações (14)
 │       │   ├── exceptions/
-│       │   │   └── GlobalExceptionHandler.java
-│       │   ├── repository/                          # Repositórios Spring Data JPA (15+)
+│       │   │   └── GlobalExceptionHandler.java      # Mapeia regra de negócio → 409/400/404
+│       │   ├── repository/                          # Repositórios Spring Data JPA (23)
 │       │   │   └── projection/                      # Interfaces de projeção
-│       │   ├── service/                             # Serviços de negócio (15+)
+│       │   ├── service/                             # Serviços de negócio (31)
 │       │   └── validation/                          # Validações customizadas
 │       │       ├── UniqueCPF.java
 │       │       └── UniqueCPFValidator.java
 │       └── resources/
 │           ├── application.properties
-│           └── db/migration/                        # 67 migrações Flyway (V1–V67)
+│           ├── db/migration/                        # 84 migrações Flyway (V1–V84)
+│           ├── db/preflight/                        # Verificação pré-deploy (fora do Flyway)
+│           └── db/scripts/                          # Cópias arquivadas das migrations baselineadas
 │
 ├── regulacao-frontend/                  # Módulo SvelteKit
 │   ├── package.json
@@ -108,7 +104,7 @@ Regula-o/
 │   ├── svelte.config.js
 │   └── src/
 │       ├── app.css                                  # Tailwind base
-│       ├── routes/                                  # 51 páginas (+page.svelte)
+│       ├── routes/                                  # 55 páginas (+page.svelte)
 │       │   ├── +layout.svelte                       # Layout raiz com Toaster
 │       │   ├── login/
 │       │   ├── home/
@@ -128,11 +124,8 @@ Regula-o/
 │           ├── api.js                               # Cliente HTTP centralizado
 │           ├── stores/
 │           │   └── auth.js                          # Stores de autenticação
-│           ├── Menu.svelte                          # Menu ADMIN
-│           ├── Menu2.svelte                         # Menu USER/padrão
-│           ├── Menu3.svelte                         # Menu RECEPCAO/ENFERMEIRO/MEDICO
-│           ├── Menu4.svelte                         # Menu COORD_TRANSPORTE
-│           ├── RoleBasedMenu.svelte                 # Seletor de menu por role
+│           ├── menuConfig.js                        # Árvore de navegação única (seções/grupos/links + roles)
+│           ├── RoleBasedMenu.svelte                 # Único componente de menu, filtra menuConfig.js pela role
 │           ├── UserMenu.svelte                      # Dropdown de perfil no header
 │           ├── ModalEditarUsuarios.svelte
 │           ├── especialidadesApi.js
@@ -185,6 +178,9 @@ Entidade central do sistema. Representa a solicitação de um paciente por consu
 | `cpfPaciente` | `String` | UNIQUE, length=15 |
 | `cns` | `String` | Cartão Nacional de Saúde, length=15 |
 | `telefone` | `String` | length=15 |
+| `nomePai` | `String` | length=150 — obrigatório no cadastro (validação no DTO) |
+| `nomeMae` | `String` | length=150 — obrigatório no cadastro (validação no DTO) |
+| `endereco` | `String` | length=300 — obrigatório no cadastro (validação no DTO) |
 | `dataNascimento` | `LocalDate` | |
 | `observacoes` | `String` | max 500 chars |
 | `dataMalote` | `LocalDate` | Data de envio via malote físico |
@@ -193,6 +189,19 @@ Entidade central do sistema. Representa a solicitação de um paciente por consu
 | `agendamentos` | `List<AgendamentoSolicitacao>` | @OneToMany |
 | `origemMunicipioId` | `UUID` | null = local; não-null = federada |
 | `origemMunicipioNome` | `String` | Nome do município de origem federada |
+
+> **Obrigatoriedade dos dados cadastrais (V80):** `nomePai`, `nomeMae` e `endereco` são
+> colunas *nullable* no banco e obrigatórias **apenas no cadastro novo**
+> (`@NotBlank` em `SolicitacaoCreateDTO`, junto com `cns`, `nomePaciente` e `cpfPaciente`).
+>
+> `SolicitacaoUpdateDTO` **não** os exige, de propósito: exigi-los na edição faria com
+> que alterar qualquer registro anterior à V80 — corrigir um telefone, por exemplo —
+> passasse a demandar o preenchimento dos três campos novos, travando a operação
+> diária em produção. Assim, todo registro **novo** nasce completo e a base se saneia
+> naturalmente, sem impacto sobre o histórico.
+>
+> Quando os registros históricos estiverem completos, o `@NotBlank` pode ser promovido
+> para o Update DTO e, na sequência, o `NOT NULL` aplicado no banco.
 
 ---
 
@@ -208,6 +217,8 @@ Cada linha representa uma especialidade solicitada dentro de uma Solicitacao.
 | `agendamentoSolicitacao` | `AgendamentoSolicitacao` | @ManyToOne, nullable |
 | `especialidadeSolicitada` | `Especialidade` | @ManyToOne |
 | `especialidadeCodigoLegacy` | `String` | Para dados migrados de versões antigas |
+| `profissionalSolicitante` | `Profissional` | @ManyToOne, nullable |
+| `dataColeta` | `LocalDate` | Data da coleta do material — **opcional** (V81) |
 | `status` | `StatusDaMarcacao` | enum |
 | `prioridade` | `PrioridadeDaMarcacaoEnum` | enum |
 | `dataDeCadastro` | `LocalDateTime` | @CreationTimestamp |
@@ -385,18 +396,120 @@ Controla a quantidade de vagas/cotas disponíveis por unidade, podendo ser geral
 | Campo | Tipo Java | Notas |
 |---|---|---|
 | `id` | `Long` | PK |
-| `unidade` | `Unidade` | @ManyToOne NOT NULL |
-| `especialidade` | `Especialidade` | @ManyToOne nullable — null = cota geral |
-| `periodo` | `String` | Formato "YYYY-MM", NOT NULL, max 7 |
+| `unidade` | `Unidade` | @ManyToOne nullable — titular quando a cota é da unidade |
+| `grupoUnidades` | `GrupoRelatorio` | @ManyToOne nullable — **titular**, quando a cota é de um grupo de unidades |
+| `especialidade` | `Especialidade` | @ManyToOne nullable — **escopo**, uma especialidade |
+| `grupoEspecialidades` | `GrupoRelatorio` | @ManyToOne nullable — **escopo**, todas as especialidades do grupo (V84) |
+| `tipoPeriodo` | `TipoPeriodoCota` | `MENSAL` ou `DATA` |
+| `periodo` | `String` | Formato "YYYY-MM" (usado quando tipoPeriodo = MENSAL), max 7 |
+| `dataEspecifica` | `LocalDate` | Usado quando tipoPeriodo = DATA |
 | `quantidadeTotal` | `Integer` | Vagas definidas, default=0 |
 | `quantidadeUtilizada` | `Integer` | Vagas consumidas, default=0 |
 | `ativo` | `boolean` | default=true |
 | `criadoEm` | `LocalDateTime` | @CreationTimestamp |
 | `version` | `Long` | @Version — optimistic locking |
 
-**Restrições de unicidade (índices parciais PostgreSQL):**
-- `uk_cota_unidade_especialidade` — (unidade_id, especialidade_id, periodo) WHERE especialidade_id IS NOT NULL
-- `uk_cota_unidade_geral` — (unidade_id, periodo) WHERE especialidade_id IS NULL
+**Duas dimensões independentes:**
+
+| Dimensão | Colunas | Regra |
+|---|---|---|
+| **Titular** — de quem é a cota | `unidade_id`, `grupo_unidades_id` | exatamente um (CHECK `ck_cota_titular_exclusivo`) |
+| **Escopo** — o que a cota limita | `especialidade_id`, `grupo_especialidades_id` | no máximo um; ambos nulos = cota geral (CHECK `ck_cota_escopo_exclusivo`) |
+
+Ambos os grupos apontam para `grupo_relatorio`, em papéis distintos: um agrupa
+**unidades**, o outro agrupa **especialidades**.
+
+**Unicidade (V84):** 2 titulares × 3 escopos × 2 tipos de período dariam 12 índices
+parciais. Em vez disso há **um índice por tipo de período** sobre a chave inteira, usando
+`COALESCE(coluna, -1)` para tratar os nulos (ids são BIGSERIAL, sempre positivos):
+`uk_cota_mensal` e `uk_cota_data`.
+
+### 3.15.1 Regra de consumo de cota
+
+A cota limita **o agendamento** (não o cadastro da solicitação): o consumo acontece em
+`AgendamentoService.criarAgendamentoParaMultiplosExames`, uma vaga por especialidade
+agendada, na unidade da solicitação e na data do agendamento.
+
+**Quais cotas incidem.** Todas as combinações de titular × escopo que se aplicam ao caso
+e estão ativas, em ambos os tipos de período:
+
+| Titular | Escopo |
+|---|---|
+| Unidade da solicitação | especialidade agendada |
+| Grupo de unidades a que ela pertence | grupo de especialidades que contém a especialidade agendada |
+| | cota geral (sem escopo) |
+
+**Todas precisam ter saldo.** Isso permite configurar "100 exames de laboratório no mês,
+sendo no máximo 10 de Hemograma": a cota do grupo e a da especialidade convivem, e a mais
+restritiva é que bloqueia. Se qualquer uma estiver esgotada, a transação é abortada e
+nenhum consumo persiste — inclusive os já feitos no mesmo laço (verificado em
+`CotaRollbackIT`).
+
+**Cota por grupo de especialidades = saldo único compartilhado.** "Unidade A /
+Laboratório / 10" significa 10 exames de laboratório no mês somando todos os tipos do
+grupo — e não 10 de cada. Existe para evitar cadastrar cota uma especialidade por vez: o
+grupo "Laboratorio" sozinho tem 172.
+
+**Resolução em uma consulta.** `CotaUnidadeRepository#buscarCotasAplicaveis` resolve as
+duas dimensões de uma vez (antes eram até 8 consultas). Usa `LEFT JOIN` obrigatoriamente:
+navegar direto (`c.unidade.id`) geraria INNER JOIN e descartaria justamente as linhas de
+FK nula, que aqui são os casos válidos.
+
+**Cota ausente = sem restrição.** Nenhuma cota configurada significa agendamento livre,
+preservando o comportamento das unidades que nunca tiveram cota.
+
+**ADMIN global não está sujeito a cota** (`UnidadeAcessoService.isAcessoGlobal`).
+
+**Cota de grupo = pool compartilhado.** O total do grupo é um saldo único consumido por
+ordem de chegada pelas unidades membros — não é dividido por unidade.
+
+**Concorrência.** O consumo é um UPDATE condicional atômico
+(`CotaUnidadeRepository#consumirVaga`), com `quantidade_utilizada < quantidade_total` no
+próprio WHERE. Duas operações simultâneas não conseguem ler o mesmo saldo e ultrapassar o
+limite: a segunda não afeta linha nenhuma e o serviço reporta cota esgotada.
+
+**Mensagem de bloqueio.** A cota esgotada vira `IllegalStateException`, mapeada pelo
+`GlobalExceptionHandler` para **409 Conflict** com `{ "message": ... }` — o campo que as
+telas leem. A cota é recarregada (`findById`) antes de montar a mensagem porque
+`consumirVaga` usa `@Modifying(clearAutomatically = true)`: sem isso a entidade fica
+desanexada e ler `unidade`/`grupoRelatorio`/`especialidade` (todos LAZY) estoura
+`LazyInitializationException`.
+
+**Estorno.** Cancelar/excluir um agendamento devolve as vagas
+(`CotaUnidadeService.estornarUtilizacao`, chamado por `AgendamentoService.deleteAgendamento`
+**antes** da desvinculação das especialidades — depois dela não haveria mais como saber
+quais especialidades pertenciam ao agendamento). Remanejar = excluir + recriar, portanto
+estorna e reconsome, inclusive quando a nova data cai em outro período.
+
+**Redução de cota.** `atualizar` recusa uma quantidade menor que a já utilizada, que
+deixaria o saldo negativo.
+
+---
+
+### 3.15b Agrupamento de Unidades (reaproveita `GrupoRelatorio`)
+
+Não existe tabela própria de "grupo de unidades". O agrupamento reaproveita
+`grupo_relatorio` (§3.6), que já tem o desenho `codigo`/`nome`/`ativo`:
+
+- `especialidade.grupo_relatorio_id` — uma Especialidade pertence a um grupo *(V58)*.
+  Usado tanto para relatório quanto como **escopo de cota** (V84).
+- `unidade.grupo_relatorio_id` — uma Unidade pertence a um grupo *(V82)*.
+  Usado como **titular de cota** coletiva entre unidades.
+
+Ou seja, o mesmo registro de grupo pode reunir especialidades (para relatório) e
+unidades (para cota coletiva). O vínculo da unidade é manual, em `/admin/unidades`;
+nenhuma unidade é agrupada automaticamente pela migração.
+
+> **Consequência a conhecer:** os grupos cadastrados hoje foram criados para
+> relatório (ex.: "Laboratório", "Cardiologia") e aparecem no seletor de grupo da
+> cota. Um grupo só passa a ter efeito sobre cotas quando alguma unidade é
+> explicitamente vinculada a ele.
+
+> **Exclusão de grupo:** como o mesmo registro passou a carregar dois papéis,
+> `DELETE /api/grupo-relatorio/deletar/{id}` agora recusa a exclusão quando há cotas
+> ou unidades vinculadas (409), e a FK de `cota_unidade` é `ON DELETE RESTRICT`.
+> Sem isso, apagar um grupo de relatório destruiria silenciosamente a configuração
+> de cotas atrelada a ele.
 
 ---
 
@@ -424,12 +537,13 @@ Profissional de saúde solicitante vinculado a uma unidade.
 
 | Enum | Valores |
 |---|---|
-| `Roles` | `ADMIN, USER, PACIENTE, ENFERMEIRO, MEDICO, RECEPCAO, COORD_TRANSPORTE` |
+| `Roles` | `ADMIN, ADMIN_UNIDADE, USER, PACIENTE, ENFERMEIRO, MEDICO, RECEPCAO, COORD_TRANSPORTE` |
 | `StatusDaMarcacao` | `AGUARDANDO, AGENDADO, FALTOU, CANCELADO, REALIZADO, RETORNO, RETORNO_POLICLINICA, GEL` |
 | `StatusAgendamento` | `AGENDADO, CANCELADO, PENDENTE, CONFIRMADO, REALIZADO, GEL` |
-| `ItemCategoria` | `CONSULTA, EXAME, PROCEDIMENTO` |
+| `ItemCategoria` | `ESPECIALIDADE_MEDICA, EXAME_OU_PROCEDIMENTO` |
 | `PrioridadeDaMarcacaoEnum` | `NORMAL, URGENTE, ...` |
 | `TurnoEnum` | `MANHA, TARDE` |
+| `TipoPeriodoCota` | `MENSAL, DATA` |
 | `UsfEnum` | Siglas das USFs cadastradas |
 | `TipoVeiculoEnum` | Tipos de veículos sanitários |
 | `LocalDeAgendamentoEnum` | Locais de atendimento (enum legado) |
@@ -459,13 +573,31 @@ Os DTOs são registros imutáveis (`record` Java) organizados por subpacote de d
 
 | DTO | Uso |
 |---|---|
-| `SolicitacaoCreateDTO` | Cadastro de solicitação |
+| `SolicitacaoCreateDTO` | Cadastro — exige nome, CPF, CNS, nome do pai, nome da mãe e endereço |
 | `SolicitacaoViewDTO` | Retorno completo (inclui especialidades e agendamentos) |
-| `SolicitacaoUpdateDTO` | Edição |
+| `SolicitacaoUpdateDTO` | Edição — **não** exige os dados cadastrais, de propósito (§3.2) |
 | `SolicitacaoPublicViewDTO` | Acesso público via `/transparencia` |
 | `SolicitacaoSimpleViewDTO` | Lista paginada otimizada |
 | `SolicitacaoResumoDTO` | Contagem por status para dashboard |
 | `SolicitacaoListFiltersDTO` | Filtros para buscas avançadas com Specification |
+
+### 4.2b Cotas (`dto/cota`)
+
+| DTO | Uso |
+|---|---|
+| `CotaUnidadeCreateDTO` | Cadastro — titular (`unidadeId` **ou** `grupoUnidadesId`) + escopo (`especialidadeId` **ou** `grupoEspecialidadesId` **ou** nenhum) |
+| `CotaUnidadeUpdateDTO` | Ajuste de `quantidadeTotal` e `ativo` |
+| `CotaUnidadeViewDTO` | Retorno com titular, escopo, período, consumo e saldo |
+| `CotaUnidadeSaldoDTO` | Saldo disponível; quantidades **nulas** = sem cota configurada (sem restrição), não zero vagas |
+
+### 4.2c Unidades e Profissionais
+
+| DTO | Uso |
+|---|---|
+| `UnidadeCreateDTO` / `UnidadeUpdateDTO` | Cadastro/edição, incluindo o vínculo ao grupo de cota (`grupoRelatorioId`) |
+| `UnidadeViewDTO` | Retorno completo com o grupo vinculado |
+| `UnidadeSimpleViewDTO` | Listas (id, nome, codigo) |
+| `ProfissionalCreateDTO` / `ProfissionalViewDTO` | Profissionais solicitantes |
 
 ### 4.3 Especialidades
 
@@ -474,7 +606,7 @@ Os DTOs são registros imutáveis (`record` Java) organizados por subpacote de d
 | `EspecialidadeCreateDTO` | Cadastro |
 | `EspecialidadeViewDTO` | Retorno completo com vagas e grupo |
 | `EspecialidadeSimpleViewDTO` | Listas (id, nome, codigo, categoria) |
-| `SolicitacaoEspecialidadeViewDTO` | Especialidade dentro de uma solicitação |
+| `SolicitacaoEspecialidadeViewDTO` | Especialidade dentro de uma solicitação (expõe `dataColeta`) |
 
 ### 4.4 Agendamento de Transporte
 
@@ -525,29 +657,70 @@ Requisições subsequentes:
 ### 5.2 Fluxo de Cadastro de Solicitação
 
 ```
-Usuário (RECEPCAO/ENFERMEIRO/ADMIN) → POST /api/solicitacoes { dados }
-  → SolicitacaoController.criar()
-  → SolicitacaoService.criar(dto)
-    → Valida CPF único
+Usuário (RECEPCAO/ENFERMEIRO/MEDICO/ADMIN/ADMIN_UNIDADE)
+  → POST /api/solicitacoes { dados }
+  → SolicitacaoController.criarSolicitacao()      [@Valid]
+    → Bean Validation no SolicitacaoCreateDTO:
+        nomePaciente, cpfPaciente (@CPF, @UniqueCPF), cns,
+        nomePai, nomeMae, endereco  ......... todos @NotBlank
+        (falha → 400 com a lista de campos faltantes)
+  → SolicitacaoService.createSolicitacao(dto, callerCpf)
+    → unidadeAcessoService.resolverUnidadeAlvo(callerCpf, dto.unidadeId)
+        · ADMIN               → usa a unidade enviada no DTO
+        · usuário restrito    → FORÇA a unidade de lotação dele
+          (impede cadastrar em nome de outra unidade trocando o campo)
     → Salva Solicitacao
     → Para cada especialidade no DTO:
-        → Cria SolicitacaoEspecialidade com status=AGUARDANDO
-    → Publica no RabbitMQ se pacto ativo? (opcional)
-  → return 201 { SolicitacaoViewDTO }
+        → Cria SolicitacaoEspecialidade (status do DTO, dataColeta opcional)
+  → return 200 { SolicitacaoViewDTO }
 ```
 
-### 5.3 Fluxo de Agendamento
+> A obrigatoriedade dos dados cadastrais vale **apenas no cadastro**.
+> `SolicitacaoUpdateDTO` não exige `nomePai`/`nomeMae`/`endereco`/`cns`, para que os
+> registros anteriores à V80 continuem editáveis — ver §3.2.
+
+### 5.3 Fluxo de Agendamento (com consumo de cota)
 
 ```
-Usuário → POST /api/agendamentos { solicitacaoId, localId, data, turno, especialidadeIds }
-  → AgendamentoController
-  → AgendamentoService
+Usuário → POST /api/agendamentos/{solicitacaoId} { examesSelecionados, data, turno, local }
+  → AgendamentoController.criarAgendamento()
+  → AgendamentoService.criarAgendamentoParaMultiplosExames()   [@Transactional]
+    → Valida capacidade global da especialidade (Especialidade.vagas) na data
     → Cria AgendamentoSolicitacao
-    → Para cada SolicitacaoEspecialidade:
-        → Atualiza status → AGENDADO
-        → Vincula ao AgendamentoSolicitacao
-  → return 201 { AgendamentoViewDto }
+    → adminGlobal = unidadeAcessoService.isAcessoGlobal(callerCpf)
+    → Para cada exame selecionado:
+        → Localiza a SolicitacaoEspecialidade pendente
+        → Se NÃO for admin global e a solicitação tiver unidade:
+            → cotaUnidadeService.incrementarUtilizacao(unidadeId, especialidadeId, data)
+                → busca TODAS as cotas incidentes (titular × escopo × período)
+                → para cada uma: UPDATE atômico condicional
+                    · 1 linha afetada → vaga consumida
+                    · 0 linhas        → esgotada ⇒ IllegalStateException
+                                        ⇒ rollback desfaz os consumos já feitos
+        → Atualiza status → AGENDADO e vincula ao agendamento
+  → return 201 { AgendamentoSolicitacaoSimpleViewDTO }
+
+  Cota esgotada ⇒ GlobalExceptionHandler ⇒ 409 { message: "Cota esgotada para ..." }
 ```
+
+### 5.3b Fluxo de Cancelamento (estorno de cota)
+
+```
+Usuário → DELETE /api/agendamentos/{id}
+  → AgendamentoService.deleteAgendamento(id, callerCpf)        [@Transactional]
+    → exigirAcessoAoAgendamento()  (bloqueia agendamento de outra unidade)
+    → estornarCotasDoAgendamento()
+        → Para cada SolicitacaoEspecialidade do agendamento:
+            → cotaUnidadeService.estornarUtilizacao(unidadeId, especialidadeId, dataAgendada)
+                → devolve 1 vaga em cada cota incidente (guard: utilizada > 0)
+    → desvincularAgendamento()   ← só DEPOIS do estorno: daqui em diante não há
+                                   mais como saber quais especialidades eram do agendamento
+    → delete AgendamentoSolicitacao
+  → return 204
+```
+
+> **Remanejar = excluir + recriar**, portanto estorna e reconsome — inclusive quando a
+> nova data cai em outro período.
 
 ### 5.4 Fluxo de Upload de Foto de Perfil
 
@@ -632,7 +805,7 @@ Próxima requisição do usuário desativado:
 | `usuarios` | V3 | Usuários do sistema |
 | `cid` | V5+ | Classificação Internacional de Doenças |
 | `especialidade` | V40 | Especialidades/exames cadastrados |
-| `grupo_relatorio` | V43 | Grupos de relatório |
+| `grupo_relatorio` | V43 | Grupos — agrupa **especialidades** (relatório e escopo de cota) e **unidades** (titular de cota) |
 | `municipio` | V30 | Municípios da rede federada |
 | `pacto_regional` | V30 | Pactos entre municípios |
 | `pacto_membros` | V30 | M:N entre pacto e municipio |
@@ -651,9 +824,15 @@ Próxima requisição do usuário desativado:
 | `cota_unidade` | V70 | Cotas por unidade (geral ou por especialidade) |
 | `profissional` | V71 | Profissionais solicitantes |
 
+
 **Colunas adicionadas em tabelas existentes:**
-- `usuarios.unidade_id` (V69) — FK para `unidade`, nullable — vínculo do usuário à unidade
+- `usuarios.unidade_id` (V69) — FK para `unidade`, nullable — unidade de lotação do usuário
 - `solicitacao.unidade_id` (V72) — FK para `unidade`, nullable — unidade de origem da solicitação
+- `solicitacao.nome_pai` / `nome_mae` / `endereco` (V80) — nullable no banco, obrigatórios no cadastro
+- `solicitacao_especialidade.data_coleta` (V81) — nullable, opcional
+- `unidade.grupo_relatorio_id` (V82) — FK, nullable — grupo de unidades para cota coletiva
+- `cota_unidade.grupo_unidades_id` (V82/V84) — FK, nullable — **titular** grupo de unidades
+- `cota_unidade.grupo_especialidades_id` (V84) — FK, nullable — **escopo** grupo de especialidades
 
 ### 6.3 Histórico de Migrações Notáveis
 
@@ -674,6 +853,23 @@ Próxima requisição do usuário desativado:
 | V70 | Tabela `cota_unidade` com índices únicos parciais |
 | V71 | Tabela `profissional` |
 | V72 | Coluna `unidade_id` em `solicitacao` (FK) |
+| V73 | Backfill `solicitacao.unidade_id` a partir de `usf_origem` (rodou com `unidade` vazia) |
+| V74 | `usf_origem` passa a aceitar NULL |
+| V75 | Limpeza de `data_nascimento` órfã |
+| V76 | Re-executa o backfill da V73, agora com as unidades cadastradas |
+| V77 | Semeia USF01–USF06 + HMCA e vincula as solicitações legadas restantes |
+| V78 | `tipo_periodo` + `data_especifica` em `cota_unidade` (cota por data) |
+| V79 | `profissional_id` em `solicitacao_especialidade` |
+| V80 | `nome_pai`, `nome_mae`, `endereco` em `solicitacao` |
+| V81 | `data_coleta` em `solicitacao_especialidade` |
+| V82 | `unidade.grupo_relatorio_id`; cota por grupo em `cota_unidade` (titular exclusivo) |
+| V83 | `ADMIN_UNIDADE` na constraint `usuarios_cargo_check` |
+| V84 | `cota_unidade.grupo_especialidades_id` (escopo por grupo); rename `grupo_relatorio_id` → `grupo_unidades_id`; CHECK de escopo; índices únicos consolidados |
+
+> **Limite do backfill (V73/V76/V77):** só é possível vincular a unidade quando
+> `usf_origem` está preenchido **e** casa com alguma unidade cadastrada. O que sobra é
+> uma solicitação *órfã* (`unidade_id IS NULL`), que nenhuma migração consegue atribuir.
+> É por isso que o controle de acesso por unidade não bloqueia esses registros — ver §10.0.
 
 ### 6.4 Relacionamentos Principais (ERD Simplificado)
 
@@ -688,7 +884,10 @@ User N──1 Unidade (opcional — null para ADMIN)
 
 Unidade 1──N CotaUnidade
 Unidade 1──N Profissional
-CotaUnidade N──1 Especialidade (null = cota geral)
+Unidade N──1 GrupoRelatorio (opcional — habilita cota coletiva entre unidades)
+Especialidade N──1 GrupoRelatorio (agrupamento para relatório E para cota)
+CotaUnidade: titular = Unidade XOR GrupoRelatorio(unidades)
+CotaUnidade: escopo  = Especialidade XOR GrupoRelatorio(especialidades) XOR nada
 
 AgendamentoTransporte N──1 Transporte
 AgendamentoTransporte N──1 Cidade
@@ -829,11 +1028,19 @@ Pacto 1──N PactoJoinRequest
 | Método | Endpoint | Role Mínima | Descrição |
 |---|---|---|---|
 | GET | `/cotas` | ADMIN | Lista todas as cotas |
-| GET | `/cotas/unidade/{unidadeId}` | Autenticado | Cotas da unidade |
-| GET | `/cotas/unidade/{id}/periodo/{periodo}` | Autenticado | Cotas da unidade no período |
-| GET | `/cotas/saldo?unidadeId=&especialidadeId=&periodo=` | Autenticado | Consulta saldo disponível |
-| POST | `/cotas` | ADMIN | Cria cota |
+| GET | `/cotas/unidade/{unidadeId}` | Autenticado¹ | Cotas da unidade |
+| GET | `/cotas/grupo-unidades/{grupoUnidadesId}` | ADMIN, ADMIN_UNIDADE | Cotas cujo titular é o grupo de unidades |
+| GET | `/cotas/unidade/{id}/periodo/{periodo}` | Autenticado¹ | Cotas da unidade no período |
+| GET | `/cotas/saldo?unidadeId=&especialidadeId=&periodo=` | Autenticado¹ | Saldo disponível (menor entre as cotas incidentes) |
+| POST | `/cotas` | ADMIN | Cria cota (titular = `unidadeId` **ou** `grupoUnidadesId`; escopo = `especialidadeId` **ou** `grupoEspecialidadesId` **ou** nenhum) |
 | PUT | `/cotas/{id}` | ADMIN | Atualiza quantidade/status da cota |
+
+¹ Os endpoints que recebem `unidadeId` passam por `UnidadeAcessoService.exigirAcessoA`:
+trocar o id na chamada direta não dá acesso a outra unidade.
+
+> `GET /cotas/saldo` devolve `quantidadeTotal`/`saldoDisponivel` **nulos** com
+> `disponivel = true` quando não há cota configurada — isso significa "sem restrição",
+> e não "zero vagas".
 
 ### 7.10d Profissionais (`/profissionais`)
 
@@ -930,18 +1137,70 @@ Todas as requisições passam pela função `send()` centralizada que:
 | `deleteByIdApi(path)` | DELETE sem body |
 | `postApiFile(path, formData)` | POST multipart (não define Content-Type — browser define o boundary) |
 
-### 8.4 Menus por Role (`RoleBasedMenu`)
+### 8.4 Menu único orientado por configuração (`RoleBasedMenu` + `menuConfig.js`)
 
-```svelte
-{#if $user.role === 'ADMIN'}      → Menu.svelte    (acesso total)
-{:else if $user.role === 'RECEPCAO'
-       || $user.role === 'ENFERMEIRO'
-       || $user.role === 'MEDICO'} → Menu3.svelte   (clínico)
-{:else if $user.role === 'COORD_TRANSPORTE'} → Menu4.svelte   (transporte)
-{:else}                            → Menu2.svelte   (usuário básico)
+Até a v1.4 existiam 4 componentes de menu distintos (`Menu.svelte`, `Menu2.svelte`,
+`Menu3.svelte`, `Menu4.svelte`), cada um com sua própria árvore de itens hardcoded, e
+`RoleBasedMenu.svelte` apenas escolhia qual deles renderizar via `if/else` no `$user.role`.
+Isso obrigava a editar HTML duplicado em até 4 lugares para qualquer mudança de navegação,
+e já havia gerado inconsistências reais entre os componentes (ex.: link "Agendamento"
+presente na versão mobile do menu clínico mas ausente na versão desktop).
+
+A partir da v1.5, existe **um único** componente de menu (`lib/RoleBasedMenu.svelte`), cuja
+árvore de navegação vem inteiramente de `lib/menuConfig.js`. Para dar ou tirar acesso de uma
+tela, basta editar a lista `roles` do item correspondente nesse arquivo — não é necessário
+tocar em nenhum `.svelte`.
+
+**Estrutura do `menuConfig.js`:**
+
+```js
+export const MENU_SECTIONS = [
+  {
+    label: 'Principal',                 // cabeçalho de seção, sempre visível se tiver ao menos 1 item visível
+    items: [
+      {
+        type: 'link',
+        label: 'Dashboard',
+        icon: [...],                     // array de `d` de <path>, suporta ícones multi-path
+        href: '/dashboard/procedimentos', // destino padrão
+        hrefByRole: {                     // override por role, quando o mesmo item aponta para páginas diferentes
+          ADMIN: '/dashboard',
+          RECEPCAO: '/dashboard/unidade',
+          // ...
+        },
+        roles: ['ADMIN', 'RECEPCAO', 'ENFERMEIRO', 'MEDICO', 'COORD_TRANSPORTE', 'USER', 'PACIENTE']
+      },
+      // grupo colapsável — cada link interno declara suas próprias `roles`
+      {
+        type: 'group',
+        key: 'gestao',                   // chave única, usada para abrir/fechar o acordeão
+        label: 'Painel Gerencial',
+        icon: [...],
+        items: [
+          { label: 'Cadastrar CID', href: '/cadastrar/cid', roles: [...] },
+          // ...
+        ]
+      }
+    ]
+  }
+  // ...demais seções: Solicitação, Agendas, Transporte, Gestão
+];
 ```
 
-**Todas as páginas autenticadas devem usar `<RoleBasedMenu activePage="..." />`**, não menus específicos diretamente.
+**Regras de visibilidade:**
+- Apenas **links-folha** declaram `roles`. Grupos e seções não declaram roles — ficam
+  visíveis automaticamente se tiverem ao menos um link visível para a role atual
+  (`buildMenuForRole()` filtra a árvore recursivamente e remove grupos/seções vazios).
+  Isso evita duas fontes de verdade: dar acesso a um item = adicionar a role na lista
+  `roles` desse item, nada mais.
+- `resolveHref(item, role)` resolve `hrefByRole[role] ?? href` — usado tanto para o
+  destino do link quanto para comparar com `activePage` (highlight do item ativo).
+- O grupo colapsável que contém a página atual abre automaticamente ao montar o
+  componente, calculado a partir da própria árvore filtrada (sem lista de rotas
+  hardcoded por componente, ao contrário da versão anterior).
+
+**Uso em uma página:** idêntico a antes — `<RoleBasedMenu activePage="/sua/rota" />`.
+Nenhuma página deve importar um menu específico diretamente.
 
 ### 8.4b Novas Rotas Admin
 
@@ -949,27 +1208,15 @@ Todas as requisições passam pela função `send()` centralizada que:
 |---|---|---|
 | `/admin/unidades` | Gestão de Unidades de Saúde | ADMIN |
 | `/admin/profissionais` | Gestão de Profissionais Solicitantes | ADMIN |
-| `/admin/cotas` | Gestão de Cotas por Unidade | ADMIN |
+| `/admin/cotas` | Gestão de Cotas (por unidade ou por grupo) | ADMIN |
+| `/admin/unidades` | Unidades + vínculo ao grupo de cota | ADMIN |
+| `/unidade/cotas` | Consulta somente-leitura das cotas da própria unidade | ADMIN_UNIDADE |
 
----
-
-### 8.5 Menu ADMIN (`Menu.svelte`)
-
-Seções: Dashboard, Agenda do Dia, Pacientes, Solicitação (expandível: Consulta + Exame), Gestão (expandível: CID, Usuários, Especialidades, Cidades, Transportes, Motoristas, Municípios, Pactos, Grupos de Relatório).
-
-### 8.6 Menu Clínico (`Menu3.svelte`)
-
-Seções: Principal (Dashboard `/dashboard/unidade`, Agenda do Dia, Pacientes), Solicitação (Consulta, Exame/Procedimento), Gestão (CID).
-
-### 8.7 Menu Transporte (`Menu4.svelte`)
-
-Seções: Principal (Dashboard), Transporte (Agendar, Consultar), Gestão (Transporte, Cidade, Motorista, Paciente, Ponto de Parada).
-
-### 8.8 Componente UserMenu
+### 8.5 Componente UserMenu
 
 Exibido no header de todas as páginas autenticadas. Mostra foto de perfil ou inicial do nome. Contém dropdown com link para `/perfil` e botão de logout.
 
-### 8.9 Rotas Principais
+### 8.6 Rotas Principais
 
 | Rota | Descrição | Roles |
 |---|---|---|
@@ -979,18 +1226,21 @@ Exibido no header de todas as páginas autenticadas. Mostra foto de perfil ou in
 | `/dashboard/unidade` | Dashboard da unidade | Todos |
 | `/dashboard/procedimentos/data` | Agenda do dia | Todos |
 | `/paciente` | Lista de pacientes/solicitações | Clínicos, Admin |
-| `/paciente/[id]` | Detalhe da solicitação | Clínicos, Admin |
-| `/cadastrar` | Cadastro de consulta | Clínicos |
-| `/exames` | Cadastro de exame/procedimento | Clínicos |
+| `/paciente/[id]` | Detalhe da solicitação — alerta de cadastro incompleto | Clínicos, Admin, ADMIN_UNIDADE |
+| `/cadastrar` | Cadastro de consulta | Clínicos, ADMIN_UNIDADE |
+| `/exames` | Cadastro de exame/procedimento (com Data da Coleta) | Clínicos, ADMIN_UNIDADE |
+| `/unidade/cotas` | Consulta das cotas da própria unidade (somente leitura) | ADMIN_UNIDADE |
 | `/agendar/transporte` | Agendamento de transporte | COORD_TRANSPORTE, Admin |
 | `/admin/listar-usuarios` | Gestão de usuários | ADMIN |
 | `/admin/especialidades` | Gestão de especialidades | ADMIN |
+| `/admin/unidades` | Unidades + vínculo ao grupo de cota | ADMIN |
+| `/admin/cotas` | Cotas (titular: unidade/grupo; escopo: especialidade/grupo/geral) | ADMIN |
 | `/admin/pactos` | Gestão de pactos federados | ADMIN |
 | `/relatorio` | Relatório de produção | ADMIN |
 | `/transparencia` | Dados públicos | Público |
 | `/federation/convite/[token]` | Aceitar convite de pacto | Público |
 
-### 8.10 Exportação de Relatórios no Frontend
+### 8.7 Exportação de Relatórios no Frontend
 
 O frontend suporta geração de documentos sem servidor:
 - **Excel:** via `ExcelJS` — gera `.xlsx` no browser
@@ -1054,6 +1304,25 @@ Implementada via `@PreAuthorize` ou verificações no service:
 - Operações clínicas (solicitação, agendamento): RECEPCAO, ENFERMEIRO, MEDICO, ADMIN
 - Transporte: COORD_TRANSPORTE, ADMIN
 
+### 9.4b Tratamento de Erros (GlobalExceptionHandler)
+
+Todas as respostas de erro trazem `{ "message": ... }`, que é o campo lido pelas telas.
+
+| Exceção | Status | Uso típico |
+|---|---|---|
+| `MethodArgumentNotValidException` (CPF duplicado) | 409 | CPF já cadastrado |
+| `MethodArgumentNotValidException` (demais) | 400 | Mensagens dos campos inválidos |
+| `IllegalStateException` | 409 | **Cota esgotada**; grupo com cotas/unidades vinculadas |
+| `IllegalArgumentException` | 400 | Dados inválidos (período fora do formato, titular de cota ausente…) |
+| `EntityNotFoundException` | 404 | Recurso inexistente |
+
+> Antes da v1.6 nenhuma dessas três últimas era tratada: viravam 500, e o corpo padrão do
+> Spring não inclui `message` (`server.error.include-message=never`). A cota bloqueava o
+> agendamento corretamente, mas a tela exibia apenas "Verifique os dados e tente
+> novamente", sem dizer que o limite da unidade havia sido atingido.
+
+---
+
 ### 9.5 Proteções Especiais
 
 **Último admin:** `UserService.toggleStatus()` impede desativar o último ADMIN ativo do sistema. Retorna `409 Conflict` com mensagem explicativa.
@@ -1075,12 +1344,55 @@ O sistema implementa **segregação de dados por unidade** na camada de serviço
 | Role | Comportamento |
 |---|---|
 | `ADMIN` | Acessa dados de todas as unidades (sem filtro) |
-| Demais roles | Veem apenas dados da sua própria unidade |
+| `ADMIN_UNIDADE` | **Sempre** restrito à unidade de lotação; sem lotação ⇒ acesso negado |
+| Demais roles | Restritos à unidade de lotação quando houver; sem lotação mantêm o comportamento histórico de acesso global |
 
-**Implementação:**
-- `SolicitacaoService.getUnidadeIdDoUsuario(cpf)` — retorna `null` para ADMIN ou usuário sem unidade, ou `unidade.id` para os demais
-- Os métodos `todasSolicitacoes()` e `buscarPacientes()` aceitam o parâmetro `cpf` (vindo de `Authentication.getName()`) e aplicam `SolicitacaoSpecification.filtrarPorUnidade(unidadeId)` automaticamente
-- O filtro é aplicado via **JPA Specification**, garantindo segurança na query SQL (não é possível bypas via manipulação de parâmetros de request)
+**Autoridade central: `UnidadeAcessoService`**
+
+A decisão fica num único serviço (antes estava duplicada em `SolicitacaoService` e
+`AgendamentoService`, cada um com seu próprio `role.equals("ADMIN")`):
+
+| Método | Uso |
+|---|---|
+| `contextoDe(cpf)` | Contexto do chamador — `id == null` significa global |
+| `isAcessoGlobal(cpf)` | Se o chamador escapa de filtro e de cota |
+| `exigirAcessoA(cpf, unidadeId)` | Valida um `unidadeId` vindo do request (lança `AccessDenied`) |
+| `resolverUnidadeAlvo(cpf, unidadeSolicitada)` | Força a unidade do próprio usuário na escrita |
+
+> **Por que `ADMIN_UNIDADE` sem lotação é negado em vez de global:** o ramo histórico
+> "sem unidade ⇒ sem filtro" é adequado para os perfis antigos, mas aplicado a este perfil
+> transformaria um administrador de unidade em administrador global de fato. O cadastro de
+> usuário também exige a unidade para esse cargo (`UserService`), então o caso não deveria
+> ocorrer — a negação é a segunda barreira.
+
+**Registros legados sem unidade (`unidade_id IS NULL`):** não são bloqueados.
+As migrações de backfill (V73/V76/V77) só vinculam a unidade quando `usf_origem` está
+preenchido e casa com alguma unidade cadastrada; o que sobra é uma solicitação *órfã*,
+que não pertence a unidade nenhuma — portanto não é "dado de outra unidade". Bloqueá-la
+seria uma regressão sem ganho de segurança: um usuário restrito nunca cria solicitação
+órfã, porque `resolverUnidadeAlvo` força a unidade de lotação dele no cadastro.
+
+**Onde o filtro é aplicado:**
+- *Listagens* — via **JPA Specification** (`SolicitacaoSpecification.filtrarPorUnidade`),
+  garantindo o filtro na query SQL.
+- *Acessos por id* — `SolicitacaoService.exigirAcessoASolicitacao` e
+  `AgendamentoService.exigirAcessoAoAgendamento` cobrem `GET/PUT /solicitacoes/{id}`,
+  `POST /solicitacoes/{id}/especialidades`, `DELETE /solicitacoes/especialidades/{id}` e
+  `DELETE /agendamentos/{id}`. Sem isso o filtro das listagens seria contornável buscando
+  o registro diretamente pela chave.
+- *Escrita* — `resolverUnidadeAlvo` ignora o `unidadeId` do corpo quando o usuário é
+  restrito, impedindo cadastrar/mover solicitação em nome de outra unidade.
+
+**Escopo do perfil `ADMIN_UNIDADE`:**
+
+| Acesso | Recurso |
+|---|---|
+| ✅ | Solicitações, agendamentos, pacientes, CIDs, profissionais — **da própria unidade** |
+| ✅ | Consulta das cotas da própria unidade e do seu grupo (`/unidade/cotas`) |
+| ❌ | Painel Administrativo (usuários, unidades, pactos, municípios, notificações) |
+| ❌ | Indicadores (`/api/fechamento/**` — negado explicitamente na classe) |
+| ❌ | Solicitações por Profissional (`hasRole('ADMIN')`) |
+| ❌ | Criação/alteração de cotas e de grupos de unidades |
 
 **Entidade User:**
 - Campo `unidade` (`@ManyToOne`, nullable) — ADMIN pode ter `unidade = null`
@@ -1264,6 +1576,38 @@ java -jar target/regulacao-marcacao-0.0.1-SNAPSHOT.jar
 
 O backend estará disponível em `http://localhost:8080`.  
 Swagger UI: `http://localhost:8080/swagger-ui/index.html`
+
+### 12.3b Executando os Testes
+
+```bash
+cd regulacao-backend
+
+# Só os testes unitários (não precisam de banco)
+./mvnw test
+
+# Unitários + integração (exigem PostgreSQL no ar)
+./mvnw test -Dtest='*Test,*IT'
+
+# Uma suíte específica
+./mvnw test -Dtest=CotaUnidadeSimulacaoTest
+```
+
+| Suíte | Precisa de banco? | Cobre |
+|---|---|---|
+| `CotaUnidadeValidacaoTest` | não | Validações de cadastro de cota |
+| `CotaUnidadeSimulacaoTest` | não | Sequências de agendamento e **concorrência** |
+| `UnidadeAcessoServiceTest` | não | Segregação por unidade |
+| `SolicitacaoAcessoLegadoTest` | não | Compatibilidade com registros antigos |
+| `CotaUnidadeIntegracaoIT` | **sim** | JPQL de consumo/estorno, CHECKs, saldo |
+| `AgendamentoCotaFluxoIT` | **sim** | Fluxo de `/agendar` estourando a cota |
+| `CotaRollbackIT` | **sim** | Rollback do consumo parcial |
+
+> Os `*IT` são `@Transactional` (rollback ao fim), exceto `CotaRollbackIT` — que
+> precisa rodar **fora** da transação do teste para observar o rollback real, e por
+> isso limpa os dados que cria no `@AfterEach`.
+>
+> `RegulacaoMarcacaoApplicationTests.contextLoads` também exige banco: ele valida o
+> mapeamento entidade↔schema (`ddl-auto=validate`) depois de o Flyway migrar.
 
 ### 12.4 Executando o Frontend
 

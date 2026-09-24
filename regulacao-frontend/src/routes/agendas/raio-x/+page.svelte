@@ -1,6 +1,6 @@
 ﻿<script lang="ts">
     import { getApi, putApi } from "$lib/api";
-    import Menu2 from "$lib/Menu2.svelte";
+    import RoleBasedMenu from "$lib/RoleBasedMenu.svelte";
     import UserMenu from "$lib/UserMenu.svelte";
     import { onMount } from "svelte";
 
@@ -97,7 +97,7 @@
 </svelte:head>
 
 <div class="flex min-h-screen bg-gray-100">
-    <Menu2/>
+    <RoleBasedMenu activePage="/agendas/raio-x" />
     <div class="flex-1 flex flex-col">
         <header class="bg-emerald-700 text-white shadow p-4 flex items-center justify-between">
             <h1 class="text-xl font-semibold">Agenda do Dia - Raio-X</h1>

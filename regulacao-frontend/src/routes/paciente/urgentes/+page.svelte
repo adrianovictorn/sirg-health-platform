@@ -1,7 +1,7 @@
 ﻿<script lang="ts">
   import { onMount } from "svelte";
   import { getApi } from "$lib/api";
-    import Menu from "$lib/Menu.svelte";
+    import RoleBasedMenu from "$lib/RoleBasedMenu.svelte";
     import UserMenu from "$lib/UserMenu.svelte";
     import type { UrgenciaEmergenciaPaciente } from "$lib/type/PendenciasPaciente";
 
@@ -69,7 +69,7 @@
 <div class="flex min-h-screen bg-gray-100">
   
   <!-- Sidebar navigation -->
-  <Menu activePage="/urgentes" />
+  <RoleBasedMenu activePage="/urgentes" />
 
   <!-- Main content area -->
   <div class="flex-1 flex flex-col">

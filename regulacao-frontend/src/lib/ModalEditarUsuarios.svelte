@@ -71,6 +71,7 @@
           <label for="edit-role" class="block text-xs font-medium text-gray-600 mb-1">Cargo</label>
           <select id="edit-role" bind:value={role} class="border border-gray-300 rounded-md p-2 w-full focus:ring-emerald-500 focus:border-emerald-500">
             <option value="ADMIN">Administrador</option>
+            <option value="ADMIN_UNIDADE">Administrador da Unidade</option>
             <option value="USER">Usuário Padrão</option>
             <option value="ENFERMEIRO">Enfermeiro</option>
             <option value="MEDICO">Médico</option>

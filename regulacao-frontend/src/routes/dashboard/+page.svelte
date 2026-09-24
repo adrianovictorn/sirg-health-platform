@@ -5,7 +5,7 @@
   import Card2 from '$lib/Card2.svelte';
   import { getApi } from '$lib/api.js';
   import Card3 from '$lib/Card3.svelte';
-  import Menu from '$lib/Menu.svelte';
+  import RoleBasedMenu from '$lib/RoleBasedMenu.svelte';
   import UserMenu from '$lib/UserMenu.svelte';
 
   let resumo: {
@@ -70,7 +70,7 @@
   </div>
 {:else}
   <div class="flex min-h-screen bg-gray-200">
-    <Menu activePage="/dashboard" />
+    <RoleBasedMenu activePage="/dashboard" />
     <div class="flex-1 flex flex-col">
       <header class="bg-emerald-700 text-white shadow p-4 flex items-center justify-between">
         <h1 class="text-xl font-semibold">Painel de Controle</h1>

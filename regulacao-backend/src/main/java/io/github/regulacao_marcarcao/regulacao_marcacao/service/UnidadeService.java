@@ -10,6 +10,7 @@ import io.github.regulacao_marcarcao.regulacao_marcacao.dto.unidade.UnidadeSimpl
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.unidade.UnidadeUpdateDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.unidade.UnidadeViewDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.Unidade;
+import io.github.regulacao_marcarcao.regulacao_marcacao.repository.GrupoRelatorioRepository;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.UnidadeRepository;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
@@ -19,6 +20,7 @@ import lombok.RequiredArgsConstructor;
 public class UnidadeService {
 
     private final UnidadeRepository unidadeRepository;
+    private final GrupoRelatorioRepository grupoRelatorioRepository;
 
     @Transactional
     public UnidadeViewDTO criar(UnidadeCreateDTO dto) {
@@ -40,6 +42,7 @@ public class UnidadeService {
         unidade.setCnes(cnes);
         unidade.setTelefone(blankToNull(dto.telefone()));
         unidade.setEndereco(blankToNull(dto.endereco()));
+        aplicarGrupo(unidade, dto.grupoRelatorioId());
         unidade.setAtivo(true);
         return UnidadeViewDTO.from(unidadeRepository.save(unidade));
     }
@@ -53,7 +56,18 @@ public class UnidadeService {
         unidade.setCnes(blankToNull(dto.cnes()));
         unidade.setTelefone(blankToNull(dto.telefone()));
         unidade.setEndereco(blankToNull(dto.endereco()));
+        aplicarGrupo(unidade, dto.grupoRelatorioId());
         return UnidadeViewDTO.from(unidadeRepository.save(unidade));
+    }
+
+    /** Vincula (ou desvincula, quando o id vem nulo) a unidade a um grupo de cotas. */
+    private void aplicarGrupo(Unidade unidade, Long grupoRelatorioId) {
+        if (grupoRelatorioId == null) {
+            unidade.setGrupoRelatorio(null);
+            return;
+        }
+        unidade.setGrupoRelatorio(grupoRelatorioRepository.findById(grupoRelatorioId)
+                .orElseThrow(() -> new EntityNotFoundException("Grupo nao encontrado.")));
     }
 
     private String blankToNull(String value) {

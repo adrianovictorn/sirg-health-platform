@@ -29,6 +29,10 @@
 	let cpfPaciente = '';
 	let cns = '';
 	let telefone = '';
+	// Dados cadastrais obrigatórios do paciente (backend valida via @NotBlank).
+	let nomePai = '';
+	let nomeMae = '';
+	let endereco = '';
 	let datanascimento = '';
 	let dataMalote = '';
 	let observacoes = '';
@@ -101,6 +105,9 @@
 			cpfPaciente: cpfPaciente.replace(/\D/g, ''),
 			cns,
 			telefone,
+			nomePai,
+			nomeMae,
+			endereco,
 			datanascimento,
 			dataMalote,
 			observacoes,
@@ -141,6 +148,9 @@
 			cpfPaciente = '';
 			cns = '';
 			telefone = '';
+			nomePai = '';
+			nomeMae = '';
+			endereco = '';
 			datanascimento = '';
 			dataMalote = '';
 			observacoes = '';
@@ -255,6 +265,19 @@
 						<div class="flex flex-col">
 							<label class="text-sm font-medium text-gray-700 mb-1">Data de Nascimento</label>
 							<input type="date" bind:value={datanascimento} class="border border-gray-300 rounded-lg p-2 focus:ring-emerald-500 focus:border-emerald-500" required />
+						</div>
+
+						<div class="flex flex-col lg:col-span-2">
+							<label class="text-sm font-medium text-gray-700 mb-1">Nome do Pai</label>
+							<input type="text" bind:value={nomePai} maxlength="150" class="border border-gray-300 rounded-lg p-2 focus:ring-emerald-500 focus:border-emerald-500" required />
+						</div>
+						<div class="flex flex-col lg:col-span-2">
+							<label class="text-sm font-medium text-gray-700 mb-1">Nome da Mãe</label>
+							<input type="text" bind:value={nomeMae} maxlength="150" class="border border-gray-300 rounded-lg p-2 focus:ring-emerald-500 focus:border-emerald-500" required />
+						</div>
+						<div class="flex flex-col lg:col-span-5">
+							<label class="text-sm font-medium text-gray-700 mb-1">Endereço</label>
+							<input type="text" bind:value={endereco} maxlength="300" placeholder="Rua, número, bairro" class="border border-gray-300 rounded-lg p-2 focus:ring-emerald-500 focus:border-emerald-500" required />
 						</div>
 
 						<div class="flex flex-col lg:col-span-5">

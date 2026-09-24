@@ -14,6 +14,9 @@ import java.util.List;
 import java.util.Optional;
 
 public interface EspecialidadeRepository extends JpaRepository<Especialidade, Long> {
+
+    /** Quantas especialidades pertencem ao grupo — usado para recusar cota de grupo vazio. */
+    long countByGrupoRelatorioId(Long grupoRelatorioId);
     Optional<Especialidade> findByCodigo(String codigo);
     Optional<Especialidade> findByNome(String nome);
     List<Especialidade> findByCodigoIn(Collection<String> codigos);

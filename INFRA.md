@@ -76,6 +76,27 @@ O arquivo `.github/workflows/deploy.yml` dispara automaticamente a cada push na 
 | `VPS_SSH_KEY` | Chave privada SSH (`~/.ssh/github_deploy` na VPS 2) |
 | `VPS_PATH` | `/root/sirg-health-platform` |
 
+### Antes de um deploy com migrations novas
+
+Rode o script de **pré-flight** contra o banco da VPS. Ele é somente leitura e
+aponta o que quebraria a migração (cargo fora da constraint, duplicidade que
+impediria um índice único, migration anterior com `success = false`, etc.):
+
+```bash
+docker compose -f docker-compose.prod.yaml exec -T postgres   psql -U "$DB_USER" -d "$DB_NAME" -f -   < regulacao-backend/src/main/resources/db/preflight/preflight_v80_v84.sql
+```
+
+Leia a coluna `resultado` de cada bloco:
+
+| Marcador | Significado |
+|---|---|
+| `OK` | pode prosseguir |
+| `ATENCAO` | não impede o deploy, mas muda o comportamento operacional |
+| `BLOQUEIO` | corrija antes de aplicar as migrations |
+
+O script fica em `db/preflight/`, **fora** de `db/migration` — portanto o Flyway
+não o executa (`spring.flyway.locations=classpath:db/migration`).
+
 ### O que o deploy faz em cada VPS
 
 ```bash
@@ -204,6 +225,18 @@ su - postgres -c "pg_dump <banco> > /tmp/backup.sql"
 8. Adicionar job no `.github/workflows/deploy.yml` e opção no `workflow_dispatch`
 
 ---
+
+## Notas sobre migrations
+
+- `spring.jpa.hibernate.ddl-auto=validate`: se o schema divergir das entidades, a
+  aplicação **não sobe**. Depois de aplicar migrations novas, confirme que o
+  backend iniciou antes de considerar o deploy concluído.
+- As migrations V80–V84 são **aditivas**: nenhuma coluna é removida e nenhum dado
+  existente é alterado. `ADD COLUMN` nullable sem default é operação de metadados
+  no PostgreSQL 11+, sem reescrita de tabela.
+- Uma migration que falha deixa `success = false` em `flyway_schema_history` e
+  **trava o próximo deploy**. Nesse caso, rode `flyway repair` antes de tentar de
+  novo (o bloco 1b do pré-flight detecta isso).
 
 ## Pendências conhecidas
 

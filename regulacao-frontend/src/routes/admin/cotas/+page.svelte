@@ -7,6 +7,7 @@
 
   let cotas = [];
   let unidades = [];
+  let grupos = [];
   let especialidades = [];
   let loading = true;
   let showModal = false;
@@ -16,7 +17,16 @@
   let periodoAtual = new Date().toISOString().slice(0, 7);
   let hojeISO = new Date().toISOString().slice(0, 10);
 
+  // A cota tem duas dimensões independentes:
+  //   TITULAR — de quem é: uma unidade OU um grupo de unidades (pool compartilhado).
+  //   ESCOPO  — o que limita: uma especialidade, OU um grupo de especialidades
+  //             (saldo único entre todas elas), OU nada (cota geral).
+  // O backend recusa titular ausente/duplicado e escopo duplicado.
   let form = {
+    titular: 'UNIDADE',
+    escopo: 'ESPECIALIDADE',
+    grupoUnidadesId: null,
+    grupoEspecialidadesId: null,
     unidadeId: null,
     especialidadeId: null,
     tipoPeriodo: 'MENSAL',
@@ -27,7 +37,7 @@
   let formEditar = { quantidadeTotal: 0, ativo: true };
 
   onMount(async () => {
-    await Promise.all([carregarUnidades(), carregarEspecialidades()]);
+    await Promise.all([carregarUnidades(), carregarEspecialidades(), carregarGrupos()]);
     await carregarCotas();
   });
 
@@ -50,6 +60,15 @@
     } catch {}
   }
 
+  async function carregarGrupos() {
+    try {
+      // O agrupamento de unidades reaproveita os Grupos de Relatorio (a unidade
+      // aponta para o grupo via unidade.grupoRelatorioId).
+      const res = await getApi('grupo-relatorio/listar');
+      grupos = res.ok ? await res.json() : [];
+    } catch {}
+  }
+
   async function carregarEspecialidades() {
     try {
       const res = await getApi('catalog/especialidades/listar');
@@ -57,8 +76,15 @@
     } catch {}
   }
 
+  // Ao filtrar por unidade, mostra também as cotas do grupo a que ela pertence:
+  // elas limitam essa unidade tanto quanto as cotas próprias.
+  $: grupoDaUnidadeFiltrada = filtroUnidade
+    ? (unidades.find(u => u.id === Number(filtroUnidade))?.grupoRelatorioId ?? null)
+    : null;
+
   $: cotasFiltradas = filtroUnidade
-    ? cotas.filter(c => c.unidadeId === Number(filtroUnidade))
+    ? cotas.filter(c => c.unidadeId === Number(filtroUnidade)
+        || (grupoDaUnidadeFiltrada && c.grupoUnidadesId === grupoDaUnidadeFiltrada))
     : cotas;
 
   function formatarPeriodo(c) {
@@ -69,6 +95,10 @@
   function abrirModalNova() {
     editando = null;
     form = {
+      titular: 'UNIDADE',
+      escopo: 'ESPECIALIDADE',
+      grupoUnidadesId: null,
+      grupoEspecialidadesId: null,
       unidadeId: null,
       especialidadeId: null,
       tipoPeriodo: 'MENSAL',
@@ -91,16 +121,29 @@
         await putApi(`cotas/${editando.id}`, formEditar);
         toast.success('Cota atualizada.');
       } else {
-        if (!form.unidadeId) { toast.error('Selecione a unidade.'); return; }
+        const porGrupoUnidades = form.titular === 'GRUPO';
+        if (porGrupoUnidades && !form.grupoUnidadesId) { toast.error('Selecione o grupo de unidades.'); return; }
+        if (!porGrupoUnidades && !form.unidadeId) { toast.error('Selecione a unidade.'); return; }
+
+        const porGrupoEsp = form.escopo === 'GRUPO_ESPECIALIDADES';
+        if (porGrupoEsp && !form.grupoEspecialidadesId) { toast.error('Selecione o grupo de especialidades.'); return; }
+
         const payload = {
-          unidadeId: Number(form.unidadeId),
-          especialidadeId: form.especialidadeId ? Number(form.especialidadeId) : null,
+          unidadeId: porGrupoUnidades ? null : Number(form.unidadeId),
+          grupoUnidadesId: porGrupoUnidades ? Number(form.grupoUnidadesId) : null,
+          especialidadeId: (!porGrupoEsp && form.especialidadeId) ? Number(form.especialidadeId) : null,
+          grupoEspecialidadesId: porGrupoEsp ? Number(form.grupoEspecialidadesId) : null,
           tipoPeriodo: form.tipoPeriodo,
           periodo: form.tipoPeriodo === 'MENSAL' ? form.periodo : null,
           dataEspecifica: form.tipoPeriodo === 'DATA' ? form.dataEspecifica : null,
           quantidadeTotal: Number(form.quantidadeTotal)
         };
-        await postApi('cotas', payload);
+        const res = await postApi('cotas', payload);
+        if (!res.ok) {
+          const erro = await res.json().catch(() => ({}));
+          toast.error(erro.message ?? 'Erro ao criar cota.');
+          return;
+        }
         toast.success('Cota criada.');
       }
       showModal = false;
@@ -144,7 +187,7 @@
           <table class="w-full text-sm text-slate-300">
             <thead class="bg-slate-800 text-slate-400 uppercase text-xs">
               <tr>
-                <th class="px-4 py-3 text-left">Unidade</th>
+                <th class="px-4 py-3 text-left">Titular</th>
                 <th class="px-4 py-3 text-left">Especialidade</th>
                 <th class="px-4 py-3 text-left">Tipo</th>
                 <th class="px-4 py-3 text-left">Período / Data</th>
@@ -158,8 +201,24 @@
             <tbody class="divide-y divide-slate-800">
               {#each cotasFiltradas as c}
                 <tr class="hover:bg-slate-800/40 transition-colors">
-                  <td class="px-4 py-3 font-medium text-white">{c.unidadeNome}</td>
-                  <td class="px-4 py-3">{c.especialidadeNome ?? 'Geral'}</td>
+                  <td class="px-4 py-3 font-medium text-white">
+                    {#if c.grupoUnidadesId}
+                      <span class="px-2 py-0.5 rounded text-xs font-medium bg-emerald-500/20 text-emerald-300">Grupo</span>
+                      <span class="ml-2">{c.grupoUnidadesNome}</span>
+                    {:else}
+                      {c.unidadeNome}
+                    {/if}
+                  </td>
+                  <td class="px-4 py-3">
+                    {#if c.grupoEspecialidadesId}
+                      <span class="px-2 py-0.5 rounded text-xs font-medium bg-sky-500/20 text-sky-300">Grupo</span>
+                      <span class="ml-2">{c.grupoEspecialidadesNome}</span>
+                    {:else if c.especialidadeNome}
+                      {c.especialidadeNome}
+                    {:else}
+                      <span class="text-slate-500">Geral (todas)</span>
+                    {/if}
+                  </td>
                   <td class="px-4 py-3">
                     <span class="px-2 py-0.5 rounded text-xs font-medium {c.tipoPeriodo === 'DATA' ? 'bg-blue-500/20 text-blue-300' : 'bg-slate-600/40 text-slate-300'}">
                       {c.tipoPeriodo === 'DATA' ? 'Por Data' : 'Mensal'}
@@ -200,8 +259,8 @@
       {#if editando}
         <div class="space-y-3">
           <p class="text-slate-400 text-sm">
-            <span class="text-white font-medium">{editando.unidadeNome}</span>
-            {editando.especialidadeNome ? ` · ${editando.especialidadeNome}` : ' · Geral'}
+            <span class="text-white font-medium">{editando.grupoUnidadesNome ?? editando.unidadeNome}</span>
+            {editando.grupoEspecialidadesNome ? ` · Grupo ${editando.grupoEspecialidadesNome}` : (editando.especialidadeNome ? ` · ${editando.especialidadeNome}` : ' · Geral')}
             · <span class="text-slate-300">{formatarPeriodo(editando)}</span>
           </p>
           <div>
@@ -217,25 +276,94 @@
       {:else}
         <div class="space-y-3">
           <div>
-            <label class="block text-xs text-slate-400 mb-1">Unidade *</label>
-            <select bind:value={form.unidadeId}
-              class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-emerald-500">
-              <option value={null}>Selecionar unidade...</option>
-              {#each unidades as u}
-                <option value={u.id}>{u.nome}</option>
-              {/each}
-            </select>
+            <label class="block text-xs text-slate-400 mb-1">Titular da cota *</label>
+            <div class="flex gap-4">
+              <label class="flex items-center gap-2 text-sm text-slate-300 cursor-pointer">
+                <input type="radio" bind:group={form.titular} value="UNIDADE" class="accent-emerald-500" />
+                Unidade
+              </label>
+              <label class="flex items-center gap-2 text-sm text-slate-300 cursor-pointer">
+                <input type="radio" bind:group={form.titular} value="GRUPO" class="accent-emerald-500" />
+                Grupo
+              </label>
+            </div>
           </div>
+
+          {#if form.titular === 'UNIDADE'}
+            <div>
+              <label class="block text-xs text-slate-400 mb-1">Unidade *</label>
+              <select bind:value={form.unidadeId}
+                class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                <option value={null}>Selecionar unidade...</option>
+                {#each unidades as u}
+                  <option value={u.id}>{u.nome}</option>
+                {/each}
+              </select>
+            </div>
+          {:else}
+            <div>
+              <label class="block text-xs text-slate-400 mb-1">Grupo de Unidades *</label>
+              <select bind:value={form.grupoUnidadesId}
+                class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                <option value={null}>Selecionar grupo...</option>
+                {#each grupos as g}
+                  <option value={g.id}>{g.nome}</option>
+                {/each}
+              </select>
+              <p class="text-xs text-slate-500 mt-1">
+                Saldo compartilhado entre as unidades do grupo — consumido por ordem de chegada.
+              </p>
+            </div>
+          {/if}
           <div>
-            <label class="block text-xs text-slate-400 mb-1">Especialidade (deixe vazio para cota geral)</label>
-            <select bind:value={form.especialidadeId}
-              class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-emerald-500">
-              <option value={null}>— Cota Geral —</option>
-              {#each especialidades as e}
-                <option value={e.id}>{e.nome}</option>
-              {/each}
-            </select>
+            <label class="block text-xs text-slate-400 mb-1">O que a cota limita *</label>
+            <div class="flex flex-wrap gap-4">
+              <label class="flex items-center gap-2 text-sm text-slate-300 cursor-pointer">
+                <input type="radio" bind:group={form.escopo} value="ESPECIALIDADE" class="accent-emerald-500" />
+                Uma especialidade
+              </label>
+              <label class="flex items-center gap-2 text-sm text-slate-300 cursor-pointer">
+                <input type="radio" bind:group={form.escopo} value="GRUPO_ESPECIALIDADES" class="accent-emerald-500" />
+                Um grupo de especialidades
+              </label>
+              <label class="flex items-center gap-2 text-sm text-slate-300 cursor-pointer">
+                <input type="radio" bind:group={form.escopo} value="GERAL" class="accent-emerald-500" />
+                Todas (cota geral)
+              </label>
+            </div>
           </div>
+
+          {#if form.escopo === 'ESPECIALIDADE'}
+            <div>
+              <label class="block text-xs text-slate-400 mb-1">Especialidade</label>
+              <select bind:value={form.especialidadeId}
+                class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                <option value={null}>Selecionar especialidade...</option>
+                {#each especialidades as e}
+                  <option value={e.id}>{e.nome}</option>
+                {/each}
+              </select>
+            </div>
+          {:else if form.escopo === 'GRUPO_ESPECIALIDADES'}
+            <div>
+              <label class="block text-xs text-slate-400 mb-1">Grupo de Especialidades *</label>
+              <select bind:value={form.grupoEspecialidadesId}
+                class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                <option value={null}>Selecionar grupo...</option>
+                {#each grupos as g}
+                  <option value={g.id}>{g.nome}</option>
+                {/each}
+              </select>
+              <p class="text-xs text-slate-500 mt-1">
+                Evita cadastrar uma cota por especialidade. O saldo é <strong>único e
+                compartilhado</strong> entre todas as especialidades do grupo.
+              </p>
+            </div>
+          {:else}
+            <p class="text-xs text-slate-500">
+              A cota valerá para qualquer especialidade deste titular.
+            </p>
+          {/if}
           <div>
             <label class="block text-xs text-slate-400 mb-1">Tipo de Controle *</label>
             <div class="flex gap-4">

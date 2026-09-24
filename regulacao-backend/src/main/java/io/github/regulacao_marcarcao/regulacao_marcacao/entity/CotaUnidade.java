@@ -35,13 +35,39 @@ public class CotaUnidade {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    // ------------------------------------------------------------------
+    // TITULAR — quem detem a cota.
+    // Exatamente um entre `unidade` e `grupoUnidades`
+    // (CHECK ck_cota_titular_exclusivo).
+    // ------------------------------------------------------------------
+
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "unidade_id", nullable = false)
+    @JoinColumn(name = "unidade_id", nullable = true)
     private Unidade unidade;
+
+    /** Grupo cujas UNIDADES compartilham a cota (pool). Vinculo em Unidade#grupoRelatorio. */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "grupo_unidades_id", nullable = true)
+    private GrupoRelatorio grupoUnidades;
+
+    // ------------------------------------------------------------------
+    // ESCOPO — o que a cota limita.
+    // No maximo um entre `especialidade` e `grupoEspecialidades`; ambos nulos
+    // significa cota geral (CHECK ck_cota_escopo_exclusivo).
+    // ------------------------------------------------------------------
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "especialidade_id", nullable = true)
     private Especialidade especialidade;
+
+    /**
+     * Grupo cujas ESPECIALIDADES a cota cobre, com saldo unico compartilhado
+     * entre elas. Evita cadastrar uma cota por especialidade — o grupo
+     * "Laboratorio", por exemplo, tem 172.
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "grupo_especialidades_id", nullable = true)
+    private GrupoRelatorio grupoEspecialidades;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "tipo_periodo", nullable = false, length = 10)

@@ -43,6 +43,7 @@ import io.github.regulacao_marcarcao.regulacao_marcacao.repository.SolicitacaoEs
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.SolicitacaoRepository;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.UserRepository;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.UnidadeRepository;
+import io.github.regulacao_marcarcao.regulacao_marcacao.service.UnidadeAcessoService.UnidadeContexto;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.SolicitacaoSpecification;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.solicitacoesDTO.SolicitacaoListFiltersDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.solicitacoesDTO.SolicitacaoPublicViewDTO;
@@ -68,28 +69,24 @@ public class SolicitacaoService {
     private final ProfissionalRepository profissionalRepository;
     private final UserRepository userRepository;
     private final UnidadeRepository unidadeRepository;
+    private final UnidadeAcessoService unidadeAcessoService;
 
-    private record UnidadeContexto(Long id) {
-        static final UnidadeContexto GLOBAL = new UnidadeContexto(null);
-        boolean isGlobal() { return id == null; }
-    }
-
+    // Delega ao UnidadeAcessoService, que concentra a regra de segregação por unidade
+    // (inclusive o perfil ADMIN_UNIDADE, restrito à própria unidade de lotação).
     private UnidadeContexto getContextoUnidade(String cpf) {
-        if (cpf == null) return UnidadeContexto.GLOBAL;
-        return userRepository.findByCpf(cpf).map(u -> {
-            if (u.getRole() != null && u.getRole().name().equals("ADMIN")) return UnidadeContexto.GLOBAL;
-            if (u.getUnidade() == null) return UnidadeContexto.GLOBAL;
-            return new UnidadeContexto(u.getUnidade().getId());
-        }).orElse(UnidadeContexto.GLOBAL);
+        return unidadeAcessoService.contextoDe(cpf);
     }
 
     @Transactional
     public SolicitacaoViewDTO createSolicitacao(SolicitacaoCreateDTO dto, String callerCpf) {
         Solicitacao solicitacao = new Solicitacao();
 
-        // Vincula a Unidade: usa a explicitamente escolhida no DTO, ou a do operador logado
-        if (dto.unidadeId() != null) {
-            unidadeRepository.findById(dto.unidadeId()).ifPresent(solicitacao::setUnidade);
+        // Vincula a Unidade. Operador restrito a uma unidade sempre grava na própria
+        // unidade, mesmo que envie outro unidadeId no corpo da requisição — caso
+        // contrário bastaria trocar o campo para cadastrar em nome de outra unidade.
+        Long unidadeAlvo = unidadeAcessoService.resolverUnidadeAlvo(callerCpf, dto.unidadeId());
+        if (unidadeAlvo != null) {
+            unidadeRepository.findById(unidadeAlvo).ifPresent(solicitacao::setUnidade);
         } else if (callerCpf != null) {
             userRepository.findByCpf(callerCpf).ifPresent(u -> {
                 if (u.getUnidade() != null) solicitacao.setUnidade(u.getUnidade());
@@ -100,6 +97,9 @@ public class SolicitacaoService {
         solicitacao.setCpfPaciente(dto.cpfPaciente());
         solicitacao.setCns(dto.cns());
         solicitacao.setTelefone(dto.telefone());
+        solicitacao.setNomePai(dto.nomePai());
+        solicitacao.setNomeMae(dto.nomeMae());
+        solicitacao.setEndereco(dto.endereco());
         solicitacao.setDataNascimento(dto.datanascimento());
         solicitacao.setObservacoes(dto.observacoes());
         solicitacao.setDataMalote(dto.dataMalote());
@@ -115,18 +115,19 @@ public class SolicitacaoService {
                     se.setEspecialidadeSolicitada(esp);
                     se.setEspecialidadeCodigoLegacy(esp.getCodigo());
                 } else {
-                    var codigo = e.especialidadeSolicitada() != null ? e.especialidadeSolicitada().name() : null;
-                    if (codigo != null) {
+                    var codigo = e.especialidadeSolicitada() != null ? e.especialidadeSolicitada().trim() : null;
+                    if (codigo != null && !codigo.isBlank()) {
                         var esp = especialidadeRepo.findByCodigo(codigo)
                                 .orElseThrow(() -> new IllegalArgumentException("Especialidade não cadastrada: " + codigo));
                         se.setEspecialidadeSolicitada(esp);
-                        se.setEspecialidadeCodigoLegacy(codigo);
+                        se.setEspecialidadeCodigoLegacy(esp.getCodigo());
                     }
                 }
                 if (e.profissionalId() != null) {
                     profissionalRepository.findById(e.profissionalId())
                             .ifPresent(se::setProfissionalSolicitante);
                 }
+                se.setDataColeta(e.dataColeta());
                 se.setStatus(e.status());
                 se.setPrioridade(e.prioridade());
                 return se;
@@ -145,19 +146,26 @@ public class SolicitacaoService {
     }
 
     @Transactional
-    public SolicitacaoViewDTO updateSolicitacao(Long id, SolicitacaoUpdateDTO dto) {
+    public SolicitacaoViewDTO updateSolicitacao(Long id, SolicitacaoUpdateDTO dto, String callerCpf) {
         Solicitacao solicitacao = solicitacaoRepository.findById(id)
             .orElseThrow(() -> new EntityNotFoundException("Solicitação não encontrada."));
+
+        // Impede editar solicitação de outra unidade via chamada direta à API.
+        exigirAcessoASolicitacao(solicitacao, callerCpf);
 
         solicitacao.setNomePaciente(dto.nomePaciente());
         solicitacao.setCns(dto.cns());
         solicitacao.setTelefone(dto.telefone());
+        solicitacao.setNomePai(dto.nomePai());
+        solicitacao.setNomeMae(dto.nomeMae());
+        solicitacao.setEndereco(dto.endereco());
         solicitacao.setDataNascimento(dto.datanascimento());
         solicitacao.setObservacoes(dto.observacoes());
         solicitacao.setDataMalote(dto.dataMalote());
 
-        if (dto.unidadeId() != null) {
-            unidadeRepository.findById(dto.unidadeId()).ifPresent(solicitacao::setUnidade);
+        Long unidadeAlvo = unidadeAcessoService.resolverUnidadeAlvo(callerCpf, dto.unidadeId());
+        if (unidadeAlvo != null) {
+            unidadeRepository.findById(unidadeAlvo).ifPresent(solicitacao::setUnidade);
         }
 
         if (dto.cids() != null) {
@@ -170,10 +178,45 @@ public class SolicitacaoService {
     }
 
     @Transactional(readOnly = true)
-    public SolicitacaoViewDTO getSolicitacaoById(Long id) {
+    public SolicitacaoViewDTO getSolicitacaoById(Long id, String callerCpf) {
         Solicitacao s = solicitacaoRepository.findById(id)
             .orElseThrow(() -> new EntityNotFoundException("Solicitação não encontrada."));
+        exigirAcessoASolicitacao(s, callerCpf);
         return SolicitacaoViewDTO.fromSolicitacao(s);
+    }
+
+    /**
+     * Bloqueia o acesso a uma solicitação que pertence a outra unidade.
+     * O filtro por Specification já protege as listagens; este método protege os
+     * acessos por id, onde o registro é buscado diretamente pela chave.
+     */
+    private void exigirAcessoASolicitacao(Solicitacao solicitacao, String callerCpf) {
+        UnidadeContexto ctx = getContextoUnidade(callerCpf);
+        if (ctx.isGlobal()) {
+            return;
+        }
+
+        Long unidadeDaSolicitacao = solicitacao.getUnidade() != null ? solicitacao.getUnidade().getId() : null;
+
+        // Registro legado sem unidade vinculada: NAO bloqueia.
+        //
+        // As migracoes de backfill (V73/V76/V77) so conseguem vincular a unidade
+        // quando `usf_origem` esta preenchido e casa com alguma unidade cadastrada.
+        // O que sobra e uma solicitacao "orfa", que nao pertence a unidade nenhuma —
+        // portanto nao e "dado de outra unidade". Bloquea-la seria uma regressao:
+        // antes deste controle qualquer usuario abria esses registros, e nenhuma
+        // migracao consegue atribui-los automaticamente.
+        //
+        // Isto nao abre brecha: um usuario restrito nunca cria solicitacao orfa,
+        // porque `resolverUnidadeAlvo` forca a unidade de lotacao dele no cadastro.
+        if (unidadeDaSolicitacao == null) {
+            return;
+        }
+
+        if (!ctx.permite(unidadeDaSolicitacao)) {
+            throw new org.springframework.security.access.AccessDeniedException(
+                    "Acesso negado: esta solicitação pertence a outra unidade.");
+        }
     }
 
     @Transactional(readOnly = true)
@@ -414,9 +457,11 @@ public class SolicitacaoService {
     }
 
     @Transactional
-    public SolicitacaoViewDTO adicionarEspecialidadeASolicitacao(Long solicitacaoId, EspecialidadeAdicionarDTO dto) {
+    public SolicitacaoViewDTO adicionarEspecialidadeASolicitacao(Long solicitacaoId, EspecialidadeAdicionarDTO dto, String callerCpf) {
         Solicitacao solicitacao = solicitacaoRepository.findById(solicitacaoId)
             .orElseThrow(() -> new EntityNotFoundException("Solicitação não encontrada."));
+
+        exigirAcessoASolicitacao(solicitacao, callerCpf);
 
         SolicitacaoEspecialidade novaEspecialidade = new SolicitacaoEspecialidade();
         novaEspecialidade.setSolicitacao(solicitacao);
@@ -428,18 +473,20 @@ public class SolicitacaoService {
             novaEspecialidade.setEspecialidadeSolicitada(esp);
             novaEspecialidade.setEspecialidadeCodigoLegacy(esp.getCodigo());
         } else {
-            String codigo = dto.especialidadeSolicitada() != null ? dto.especialidadeSolicitada().name() : null;
-            if (codigo != null) {
-                var esp = especialidadeRepo.findByCodigo(codigo)
-                        .orElseThrow(() -> new IllegalArgumentException("Especialidade não cadastrada: " + codigo));
-                novaEspecialidade.setEspecialidadeSolicitada(esp);
-                novaEspecialidade.setEspecialidadeCodigoLegacy(codigo);
+            String codigo = dto.especialidadeSolicitada() != null ? dto.especialidadeSolicitada().trim() : null;
+            if (codigo == null || codigo.isBlank()) {
+                throw new IllegalArgumentException("Informe a especialidade (especialidadeId ou especialidadeSolicitada).");
             }
+            var esp = especialidadeRepo.findByCodigo(codigo)
+                    .orElseThrow(() -> new IllegalArgumentException("Especialidade não cadastrada: " + codigo));
+            novaEspecialidade.setEspecialidadeSolicitada(esp);
+            novaEspecialidade.setEspecialidadeCodigoLegacy(esp.getCodigo());
         }
         if (dto.profissionalId() != null) {
             profissionalRepository.findById(dto.profissionalId())
                     .ifPresent(novaEspecialidade::setProfissionalSolicitante);
         }
+        novaEspecialidade.setDataColeta(dto.dataColeta());
         novaEspecialidade.setStatus(dto.status());
         novaEspecialidade.setPrioridade(dto.prioridade());
 
@@ -463,9 +510,12 @@ public class SolicitacaoService {
     }
 
     @Transactional
-    public void removerEspecialidade(Long id) {
-        if (!especialidadeRepository.existsById(id)) {
-            throw new EntityNotFoundException("Especialidade de solicitação com ID " + id + " não encontrada.");
+    public void removerEspecialidade(Long id, String callerCpf) {
+        SolicitacaoEspecialidade se = especialidadeRepository.findById(id)
+                .orElseThrow(() -> new EntityNotFoundException(
+                        "Especialidade de solicitação com ID " + id + " não encontrada."));
+        if (se.getSolicitacao() != null) {
+            exigirAcessoASolicitacao(se.getSolicitacao(), callerCpf);
         }
         especialidadeRepository.deleteById(id);
     }

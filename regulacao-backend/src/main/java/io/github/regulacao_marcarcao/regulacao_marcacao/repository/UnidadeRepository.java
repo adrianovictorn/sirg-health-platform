@@ -16,4 +16,6 @@ public interface UnidadeRepository extends JpaRepository<Unidade, Long> {
     Optional<Unidade> findByCnes(String cnes);
 
     List<Unidade> findByAtivoTrue();
+
+    List<Unidade> findByGrupoRelatorioId(Long grupoRelatorioId);
 }

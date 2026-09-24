@@ -1,6 +1,6 @@
 ﻿<script>
     import { getApi, putApi, patchApi } from "$lib/api";
-    import Menu from "$lib/Menu.svelte";
+    import RoleBasedMenu from "$lib/RoleBasedMenu.svelte";
     import ModalEditarUsuarios from "$lib/ModalEditarUsuarios.svelte";
     import UserMenu from "$lib/UserMenu.svelte";
 
@@ -89,7 +89,7 @@ onMount( () => {
 
 <div class="flex min-h-screen bg-gray-100">
   
-  <Menu activePage="/admin/listar-usuarios" />
+  <RoleBasedMenu activePage="/admin/listar-usuarios" />
 
   <div class="flex-1 flex flex-col">
     <header class="bg-emerald-700 text-white shadow p-4 flex items-center justify-between">

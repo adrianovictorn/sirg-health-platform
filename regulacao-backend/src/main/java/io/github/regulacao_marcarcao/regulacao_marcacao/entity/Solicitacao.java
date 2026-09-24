@@ -59,6 +59,18 @@ public class Solicitacao {
     @Column(name = "telefone", nullable = true, length = 15)
     private String telefone;
 
+    // Dados cadastrais obrigatórios do paciente (V80).
+    // Colunas nullable no banco para preservar os registros legados; a
+    // obrigatoriedade é garantida na validação dos DTOs de entrada.
+    @Column(name = "nome_pai", length = 150)
+    private String nomePai;
+
+    @Column(name = "nome_mae", length = 150)
+    private String nomeMae;
+
+    @Column(name = "endereco", length = 300)
+    private String endereco;
+
 
     @Column(name = "datanascimento")
     private LocalDate dataNascimento;

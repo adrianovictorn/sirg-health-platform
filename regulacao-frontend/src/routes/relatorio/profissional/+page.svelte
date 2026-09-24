@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { getApi } from "$lib/api";
-  import Menu from "$lib/Menu.svelte";
+  import RoleBasedMenu from "$lib/RoleBasedMenu.svelte";
   import UserMenu from "$lib/UserMenu.svelte";
 
   type Unidade = { id: number; nome: string };
@@ -225,7 +225,7 @@
 </svelte:head>
 
 <div class="flex min-h-screen bg-gray-100">
-  <Menu activePage="/relatorio/profissional" />
+  <RoleBasedMenu activePage="/relatorio/profissional" />
 
   <div class="flex-1 flex flex-col">
     <header class="bg-emerald-700 text-white shadow p-4 flex items-center justify-between">

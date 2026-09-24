@@ -8,10 +8,17 @@ import io.github.regulacao_marcarcao.regulacao_marcacao.entity.enums.TipoPeriodo
 
 public record CotaUnidadeViewDTO(
         Long id,
+        // titular
         Long unidadeId,
         String unidadeNome,
+        Long grupoUnidadesId,
+        String grupoUnidadesNome,
+        // escopo
         Long especialidadeId,
         String especialidadeNome,
+        Long grupoEspecialidadesId,
+        String grupoEspecialidadesNome,
+        // periodo e saldo
         TipoPeriodoCota tipoPeriodo,
         String periodo,
         LocalDate dataEspecifica,
@@ -24,10 +31,14 @@ public record CotaUnidadeViewDTO(
     public static CotaUnidadeViewDTO from(CotaUnidade c) {
         return new CotaUnidadeViewDTO(
                 c.getId(),
-                c.getUnidade().getId(),
-                c.getUnidade().getNome(),
+                c.getUnidade() != null ? c.getUnidade().getId() : null,
+                c.getUnidade() != null ? c.getUnidade().getNome() : null,
+                c.getGrupoUnidades() != null ? c.getGrupoUnidades().getId() : null,
+                c.getGrupoUnidades() != null ? c.getGrupoUnidades().getNome() : null,
                 c.getEspecialidade() != null ? c.getEspecialidade().getId() : null,
                 c.getEspecialidade() != null ? c.getEspecialidade().getNome() : null,
+                c.getGrupoEspecialidades() != null ? c.getGrupoEspecialidades().getId() : null,
+                c.getGrupoEspecialidades() != null ? c.getGrupoEspecialidades().getNome() : null,
                 c.getTipoPeriodo(),
                 c.getPeriodo(),
                 c.getDataEspecifica(),

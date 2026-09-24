@@ -4,7 +4,7 @@
   import jsPDF from 'jspdf';
   import autoTable from 'jspdf-autotable';
   import { opcoesEspecialidades } from '$lib/Especialidades.js';
-  import Menu from "$lib/Menu.svelte";
+  import RoleBasedMenu from "$lib/RoleBasedMenu.svelte";
   import UserMenu from "$lib/UserMenu.svelte";
 
   // --- Estado do Componente ---
@@ -579,7 +579,7 @@
 </svelte:head>
 
 <div class="flex min-h-screen bg-gray-100">
-    <Menu activePage="/exportar" />
+    <RoleBasedMenu activePage="/exportar" />
 
   <div class="flex-1 flex flex-col">
     <header class="bg-emerald-700 text-white shadow p-4 flex items-center justify-between">

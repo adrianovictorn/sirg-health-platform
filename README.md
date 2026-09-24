@@ -32,9 +32,44 @@ O SIRG tem como objetivo central:
 ## 🏗️ Arquitetura (Visão Geral)
 
 ```text
-sirg-platform
-├── backend/        # API REST (Spring Boot)
-├── frontend/       # Aplicação Web (Frontend moderno)
-├── docs/           # Documentação e diagramas
-├── compose.yaml    # Orquestração local (Docker Compose)
+Regula-o/
+├── regulacao-backend/          # API REST (Spring Boot 3.4 / Java 21)
+├── regulacao-frontend/         # Aplicação Web (SvelteKit 2 / Svelte 5)
+├── nginx/                      # Template de proxy reverso (produção)
+├── docker-compose.prod.yaml    # Orquestração de produção
+├── CHANGELOG.md
+├── DOCUMENTACAO_TECNICA.md
+├── INFRA.md
 └── README.md
+```
+
+---
+
+## 📚 Documentação
+
+| Arquivo | Para quê |
+|---|---|
+| [DOCUMENTACAO_TECNICA.md](DOCUMENTACAO_TECNICA.md) | Referência completa: entidades, DTOs, fluxos, banco, endpoints, segurança e guia de execução |
+| [CHANGELOG.md](CHANGELOG.md) | O que mudou em cada versão, com a causa raiz das correções |
+| [INFRA.md](INFRA.md) | Deploy, VPS, SSL, multi-município e checklist de migrations |
+
+**Começando pelo código?** Leia a `DOCUMENTACAO_TECNICA.md` — ela é escrita para que
+alguém consiga compreender, manter e evoluir o sistema sem depender de explicações
+adicionais.
+
+---
+
+## 🚀 Execução Rápida (desenvolvimento)
+
+```bash
+# Backend — requer PostgreSQL em localhost:5432
+cd regulacao-backend
+./mvnw spring-boot:run          # http://localhost:8080
+
+# Frontend — proxy /api/** aponta para o backend automaticamente
+cd regulacao-frontend
+npm install && npm run dev      # http://localhost:5173
+```
+
+Detalhes de pré-requisitos, criação do banco e execução dos testes:
+[DOCUMENTACAO_TECNICA.md §12](DOCUMENTACAO_TECNICA.md#12-guia-de-execução).

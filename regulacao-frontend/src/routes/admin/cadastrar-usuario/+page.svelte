@@ -137,6 +137,7 @@
             <label for="role" class="block text-sm font-medium text-gray-700 mb-1">Perfil de Acesso</label>
             <select id="role" bind:value={cargo} class="w-full border border-gray-300 rounded-lg p-2">
               <option value="ADMIN">Administrador</option>
+              <option value="ADMIN_UNIDADE">Administrador da Unidade</option>
               <option value="USER">Usuário Padrão</option>
               <option value="RECEPCAO">Recepcionista</option>
               <option value="ENFERMEIRO">Enfermeiro</option>

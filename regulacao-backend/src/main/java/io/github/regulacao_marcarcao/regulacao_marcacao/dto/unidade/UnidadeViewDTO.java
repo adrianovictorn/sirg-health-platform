@@ -11,6 +11,8 @@ public record UnidadeViewDTO(
         String cnes,
         String telefone,
         String endereco,
+        Long grupoRelatorioId,
+        String grupoRelatorioNome,
         boolean ativo,
         LocalDateTime criadoEm) {
 
@@ -22,6 +24,8 @@ public record UnidadeViewDTO(
                 u.getCnes(),
                 u.getTelefone(),
                 u.getEndereco(),
+                u.getGrupoRelatorio() != null ? u.getGrupoRelatorio().getId() : null,
+                u.getGrupoRelatorio() != null ? u.getGrupoRelatorio().getNome() : null,
                 u.isAtivo(),
                 u.getCriadoEm());
     }

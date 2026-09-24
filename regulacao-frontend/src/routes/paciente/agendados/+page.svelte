@@ -2,7 +2,7 @@
   import { onDestroy, onMount } from "svelte";
   import { getApi, patchApi } from "$lib/api";
   import type { PacienteProjection } from "$lib/models/PacienteProjection";
-  import Menu from "$lib/Menu.svelte";
+  import RoleBasedMenu from "$lib/RoleBasedMenu.svelte";
   import UserMenu from "$lib/UserMenu.svelte";
   import { toast } from "svelte-sonner";
 
@@ -166,7 +166,7 @@
 </svelte:head>
 
 <div class="flex min-h-screen bg-gray-100">
-  <Menu activePage="/paciente/agendados" />
+  <RoleBasedMenu activePage="/paciente/agendados" />
 
   <div class="flex-1 flex flex-col">
     <header class="bg-emerald-700 text-white shadow p-4 flex items-center justify-between">

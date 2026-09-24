@@ -5,5 +5,6 @@ public record UnidadeCreateDTO(
         String codigo,
         String cnes,
         String telefone,
-        String endereco) {
+        String endereco,
+        Long grupoRelatorioId) {
 }

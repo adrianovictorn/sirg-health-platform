@@ -39,6 +39,8 @@ public class UserService {
         novoUsuario.setRole(dto.getCargo());
         novoUsuario.setAtivo(true);
 
+        exigirUnidadeParaAdminDeUnidade(dto.getCargo(), dto.getUnidadeId());
+
         if (dto.getUnidadeId() != null) {
             Unidade unidade = unidadeRepository.findById(dto.getUnidadeId())
                     .orElseThrow(() -> new EntityNotFoundException("Unidade não encontrada."));
@@ -103,6 +105,8 @@ public class UserService {
             usuarioExistente.setPassword(passwordEncoder.encode(user.password()));
         }
         usuarioExistente.setRole(user.role());
+
+        exigirUnidadeParaAdminDeUnidade(user.role(), user.unidadeId());
 
         if (user.unidadeId() != null) {
             Unidade unidade = unidadeRepository.findById(user.unidadeId())
@@ -173,5 +177,18 @@ public class UserService {
             }
         });
         userRepository.deleteById(id);
+    }
+
+    /**
+     * O perfil ADMIN_UNIDADE só existe em relação a uma unidade: todo o seu acesso
+     * é filtrado pela unidade de lotação. Criá-lo sem vínculo produziria um usuário
+     * que recebe 403 em qualquer operação, então a exigência é validada aqui, no
+     * momento do cadastro, em vez de falhar depois no uso.
+     */
+    private void exigirUnidadeParaAdminDeUnidade(Roles cargo, Long unidadeId) {
+        if (cargo == Roles.ADMIN_UNIDADE && unidadeId == null) {
+            throw new IllegalArgumentException(
+                    "O perfil Administrador da Unidade exige uma unidade de lotação vinculada.");
+        }
     }
 }

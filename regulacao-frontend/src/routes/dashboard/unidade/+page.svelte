@@ -5,7 +5,7 @@
   import Card2 from '$lib/Card2.svelte';
   import Card3 from '$lib/Card3.svelte';
   import { getApi } from '$lib/api.js';
-  import Menu3 from '$lib/Menu3.svelte';
+  import RoleBasedMenu from '$lib/RoleBasedMenu.svelte';
   import UserMenu from '$lib/UserMenu.svelte';
 
   let resumo: {
@@ -20,6 +20,9 @@
 
   let unidadeId: number | null = null;
   let unidadeNome = '';
+  // Cotas do mês corrente da própria unidade — o dado da unidade que mais muda
+  // o que o usuário consegue fazer hoje. Somente-leitura; a gestão é do ADMIN.
+  let cotasDoMes: any[] = [];
   let isLoading = true;
   let error = '';
 
@@ -37,6 +40,13 @@
       const me = await resMe.json();
       unidadeId = me.unidadeId ?? null;
       unidadeNome = me.unidadeNome ?? 'Minha Unidade';
+
+      if (unidadeId) {
+        const periodo = new Date().toISOString().slice(0, 7);
+        const resCotas = await getApi(`cotas/unidade/${unidadeId}/periodo/${periodo}`);
+        // A ausência de cotas não é erro: significa unidade sem limite configurado.
+        if (resCotas.ok) cotasDoMes = await resCotas.json();
+      }
     } catch (e: unknown) {
       error = e instanceof Error ? e.message : String(e);
     } finally {
@@ -50,6 +60,7 @@
   $: concluida = resumo?.totalConcluidas ?? 0;
   $: urgencia = resumo?.totalUrgentes ?? 0;
   $: gel = resumo?.totalGel ?? 0;
+  $: cotasEsgotadas = cotasDoMes.filter((c) => c.ativo && c.saldoDisponivel <= 0);
   $: pendentesDaMinhaUnidade = (unidadeId && resumo?.pendentesPorUnidade)
     ? (resumo.pendentesPorUnidade[String(unidadeId)] ?? pendentes)
     : pendentes;
@@ -69,7 +80,7 @@
   </div>
 {:else}
   <div class="flex min-h-screen bg-gray-200">
-    <Menu3 activePage="/dashboard/unidade" />
+    <RoleBasedMenu activePage="/dashboard/unidade" />
     <div class="flex-1 flex flex-col">
       <header class="bg-emerald-700 text-white shadow p-4 flex items-center justify-between">
         <h1 class="text-xl font-semibold">Painel de Controle — {unidadeNome}</h1>
@@ -115,6 +126,39 @@
                   href={`/unidade/${unidadeId}`}
                   color="emerald"
                 />
+              </div>
+            </section>
+          {/if}
+
+          <!-- Cotas do mês -->
+          {#if cotasDoMes.length > 0}
+            <section>
+              <div class="flex items-baseline justify-between mb-3">
+                <h2 class="text-xs font-semibold text-gray-700 uppercase tracking-widest">Cotas do Mês</h2>
+                <a href="/unidade/cotas" class="text-xs text-emerald-800 hover:underline">ver todas</a>
+              </div>
+
+              {#if cotasEsgotadas.length > 0}
+                <div class="mb-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+                  {cotasEsgotadas.length}
+                  {cotasEsgotadas.length === 1 ? 'cota esgotada' : 'cotas esgotadas'} —
+                  novos agendamentos serão bloqueados até haver saldo.
+                </div>
+              {/if}
+
+              <div class="bg-white rounded-xl shadow-sm border border-gray-100 divide-y divide-gray-100">
+                {#each cotasDoMes as c (c.id)}
+                  <div class="flex items-center justify-between gap-4 px-4 py-3">
+                    <span class="text-sm text-gray-800 truncate">
+                      {c.especialidadeNome ?? 'Cota geral (todas)'}
+                    </span>
+                    <span class="text-sm font-semibold shrink-0"
+                          class:text-red-600={c.saldoDisponivel <= 0}
+                          class:text-gray-900={c.saldoDisponivel > 0}>
+                      {c.quantidadeUtilizada}/{c.quantidadeTotal}
+                    </span>
+                  </div>
+                {/each}
               </div>
             </section>
           {/if}
