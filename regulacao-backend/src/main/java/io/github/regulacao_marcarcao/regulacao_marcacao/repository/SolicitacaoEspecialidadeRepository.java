@@ -188,7 +188,8 @@ public interface SolicitacaoEspecialidadeRepository extends JpaRepository<Solici
                         s.datanascimento AS dataNascimento,
                         s.usf_origem AS usfOrigem,
                         STRING_AGG(DISTINCT CAST(se.id AS text), ', ' ORDER BY se.id::text) AS solicitacaoEspecialidadeId,
-                        STRING_AGG(DISTINCT e.nome, ', ' ORDER BY e.nome) as especialidades 
+                        STRING_AGG(DISTINCT e.nome, ', ' ORDER BY e.nome) as especialidades,
+                        STRING_AGG(DISTINCT TO_CHAR(se.data_coleta, 'DD/MM/YYYY'), ', ') AS dataColeta 
                     FROM solicitacao s 
                     JOIN solicitacao_especialidade se ON se.solicitacao_id = s.id
                     JOIN especialidade e ON e.id = se.especialidade_id

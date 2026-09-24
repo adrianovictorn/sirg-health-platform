@@ -86,16 +86,16 @@ export const MENU_SECTIONS = [
         key: 'agendas',
         label: 'Agendas',
         icon: ICONS.calendar,
-        items: [
-          { label: 'Cardiologista', href: '/agendas/cardiologista', roles: ['USER', 'PACIENTE'] },
-          { label: 'Doppler', href: '/agendas/doppler', roles: ['USER', 'PACIENTE'] },
-          { label: 'Eletrocardiograma', href: '/agendas/eletrocardiograma', roles: ['USER', 'PACIENTE'] },
-          { label: 'Laboratório', href: '/agendas/laboratorio', roles: ['USER', 'PACIENTE'] },
-          { label: 'Ortopedista', href: '/agendas/ortopedista', roles: ['USER', 'PACIENTE'] },
-          { label: 'Pediatria', href: '/agendas/pediatra', roles: ['USER', 'PACIENTE'] },
-          { label: 'Raio X', href: '/agendas/raio-x', roles: ['USER', 'PACIENTE'] },
-          { label: 'USG', href: '/agendas/ultrasom', roles: ['USER', 'PACIENTE'] }
-        ]
+        // Grupo DINÂMICO: os itens não são fixos aqui — vêm dos Grupos de Relatório
+        // marcados como "direcionado ao hospital" (grupo_relatorio.direcionado_hospital).
+        // Antes esta lista era fixa (Cardiologista, Doppler, ..., USG) e ficava fora de
+        // sincronia com o cadastro: bastava criar/renomear um grupo para o menu mentir.
+        // Agora, marcar o grupo em /cadastrar/grupo-relatorio é o que o coloca no menu.
+        //
+        // `dynamic` diz QUAL fonte preenche os itens; `roles` diz quem vê o grupo.
+        dynamic: 'agendasHospital',
+        roles: ['USER', 'PACIENTE'],
+        items: []
       }
     ]
   },
@@ -175,12 +175,31 @@ function isLinkVisible(link, role) {
   return !!role && Array.isArray(link.roles) && link.roles.includes(role);
 }
 
-// Filtra a árvore de menu para a role atual, removendo grupos/seções sem nenhum link visível.
-export function buildMenuForRole(role) {
+/**
+ * Filtra a árvore de menu para a role atual, removendo grupos/seções sem nenhum
+ * link visível.
+ *
+ * @param role     role do usuário logado
+ * @param dinamicos mapa `{ [chave]: [{ label, href }] }` com os itens dos grupos
+ *                  que declaram `dynamic`. Quem carrega esses dados é o
+ *                  RoleBasedMenu; aqui só são encaixados na árvore.
+ *
+ * Um grupo dinâmico ainda não carregado (ou sem resultado) simplesmente não
+ * aparece — mesma regra dos grupos vazios, sem tratamento especial.
+ */
+export function buildMenuForRole(role, dinamicos = {}) {
   return MENU_SECTIONS.map((section) => {
     const items = section.items
       .map((item) => {
         if (item.type === 'group') {
+          // Grupo dinâmico: as roles ficam no próprio grupo (os itens vêm do
+          // backend e não têm como declarar roles individualmente).
+          if (item.dynamic) {
+            if (!Array.isArray(item.roles) || !role || !item.roles.includes(role)) return null;
+            const carregados = dinamicos[item.dynamic] ?? [];
+            if (carregados.length === 0) return null;
+            return { ...item, items: carregados };
+          }
           const visibleLinks = item.items.filter((link) => isLinkVisible(link, role));
           if (visibleLinks.length === 0) return null;
           return { ...item, items: visibleLinks };
@@ -192,4 +211,9 @@ export function buildMenuForRole(role) {
     if (items.length === 0) return null;
     return { ...section, items };
   }).filter(Boolean);
+}
+
+/** Monta o href da agenda de um grupo. O backend casa por `grupo_relatorio.codigo`. */
+export function hrefDaAgendaDoGrupo(codigo) {
+  return `/agendas/${encodeURIComponent(codigo)}`;
 }

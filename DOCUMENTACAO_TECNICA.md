@@ -419,6 +419,17 @@ Controla a quantidade de vagas/cotas disponíveis por unidade, podendo ser geral
 Ambos os grupos apontam para `grupo_relatorio`, em papéis distintos: um agrupa
 **unidades**, o outro agrupa **especialidades**.
 
+**Exibição do escopo (v1.6):** `CotaUnidadeViewDTO.from()` já projeta os quatro nomes
+(`unidadeNome`, `grupoUnidadesNome`, `especialidadeNome`, `grupoEspecialidadesNome`), mas
+cada tela decide como resolver o rótulo — não há um "nome do escopo" único no DTO. O card
+"Cotas do Mês" de `/dashboard/unidade` (alimentado por
+`GET /cotas/unidade/{unidadeId}/periodo/{periodo}`) checava só `especialidadeNome`, então
+uma cota de escopo **grupo** (`grupoEspecialidadesNome` preenchido, `especialidadeNome`
+nulo) caía no rótulo de cota **sem** escopo ("Cota geral (todas)") — mesmo texto para dois
+casos diferentes. A tela `/unidade/cotas` já resolvia certo (`grupoEspecialidadesNome` →
+`especialidadeNome` → "Cota geral (todas)"); o card do dashboard passou a seguir a mesma
+ordem. Nenhum campo novo foi necessário — só a leitura no frontend.
+
 **Unicidade (V84):** 2 titulares × 3 escopos × 2 tipos de período dariam 12 índices
 parciais. Em vez disso há **um índice por tipo de período** sobre a chave inteira, usando
 `COALESCE(coluna, -1)` para tratar os nulos (ids são BIGSERIAL, sempre positivos):
@@ -1199,6 +1210,40 @@ export const MENU_SECTIONS = [
   componente, calculado a partir da própria árvore filtrada (sem lista de rotas
   hardcoded por componente, ao contrário da versão anterior).
 
+**Grupos dinâmicos (v1.6):**
+
+Um grupo pode declarar `dynamic: '<chave>'` em vez de `items` fixos. Nesse caso os
+itens vêm do backend, e as `roles` ficam **no próprio grupo** (os itens carregados não
+têm como declarar roles individualmente).
+
+```js
+{
+  type: 'group', key: 'agendas', label: 'Agendas',
+  dynamic: 'agendasHospital',          // quem preenche: RoleBasedMenu
+  roles: ['USER', 'PACIENTE'],          // quem vê
+  items: []
+}
+```
+
+`buildMenuForRole(role, dinamicos)` recebe um mapa `{ chave: [{ label, href }] }` e
+encaixa os itens. Um grupo dinâmico ainda não carregado — ou sem resultado — não
+aparece, seguindo a mesma regra dos grupos vazios.
+
+Hoje existe uma fonte dinâmica:
+
+| Chave | Origem | Regra |
+|---|---|---|
+| `agendasHospital` | `GET /api/grupo-relatorio/listar` | Grupos com `direcionadoHospital && ativo`, ordenados por nome; href = `/agendas/{codigo}` |
+
+> **Por que deixou de ser fixo:** a lista anterior (Cardiologista, Doppler, …, USG)
+> estava escrita no `menuConfig.js` e não tinha relação com o cadastro. Criar, renomear
+> ou desativar um Grupo de Relatório não refletia no menu. Agora, marcar o grupo como
+> *direcionado ao hospital* em `/cadastrar/grupo-relatorio` é o que o coloca no menu.
+>
+> **Consequência operacional:** o menu passa a mostrar exatamente os grupos marcados.
+> Grupos que apareciam na lista fixa mas não estão marcados deixam de aparecer — é
+> preciso marcá-los antes do deploy para preservar a navegação atual.
+
 **Uso em uma página:** idêntico a antes — `<RoleBasedMenu activePage="/sua/rota" />`.
 Nenhuma página deve importar um menu específico diretamente.
 
@@ -1230,6 +1275,7 @@ Exibido no header de todas as páginas autenticadas. Mostra foto de perfil ou in
 | `/cadastrar` | Cadastro de consulta | Clínicos, ADMIN_UNIDADE |
 | `/exames` | Cadastro de exame/procedimento (com Data da Coleta) | Clínicos, ADMIN_UNIDADE |
 | `/unidade/cotas` | Consulta das cotas da própria unidade (somente leitura) | ADMIN_UNIDADE |
+| `/agendas/[grupo]` | Agenda do dia do grupo no hospital; `[grupo]` = `grupo_relatorio.codigo`. Coluna Data da Coleta aparece quando algum paciente da lista a tem preenchida (na prática, laboratório) | USER, PACIENTE |
 | `/agendar/transporte` | Agendamento de transporte | COORD_TRANSPORTE, Admin |
 | `/admin/listar-usuarios` | Gestão de usuários | ADMIN |
 | `/admin/especialidades` | Gestão de especialidades | ADMIN |

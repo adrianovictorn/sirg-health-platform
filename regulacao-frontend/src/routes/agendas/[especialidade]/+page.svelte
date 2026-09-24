@@ -22,6 +22,7 @@
         nomePaciente: string
         especialidades: string
         solicitacaoEspecialidadeId: number
+        dataColeta: string | null
         
     }
 
@@ -33,6 +34,15 @@
     }
 
     const grupo = $derived(() => page.params.especialidade)
+
+    /**
+     * A Data da Coleta só faz sentido onde há coleta de material — na prática, os
+     * grupos de laboratório. Em vez de fixar o código do grupo (que agora é
+     * cadastrável, e o menu monta dinamicamente), a coluna aparece quando algum
+     * paciente da agenda tem a data preenchida. Assim ela surge sozinha no
+     * laboratório e não polui as agendas de consulta.
+     */
+    const exibirDataColeta = $derived(() => pacientes.some((p) => !!p.dataColeta))
     const data = $derived(() => page.url.searchParams.get("data") ?? new Date().toISOString().slice(0,10))
     let carregando = $state(false)
     let pacientes = $state<PainelEspecialidadeProjection[]>([])
@@ -240,6 +250,14 @@
                                         <p class="text-sm text-gray-500 font-mono"> <span class="text-gray-800 font-semibold">Especialidade:</span> {s.especialidades}</p>
                                         <p class="text-sm text-gray-500 font-mono"><span class="text-gray-800 font-semibold">USF Origem:</span> {s.usfOrigem}</p>
                                     </div>
+                                    {#if exibirDataColeta()}
+                                        <div class="grid grid-cols-3">
+                                            <p class="text-sm text-gray-500 font-mono">
+                                                <span class="text-gray-800 font-semibold">Data da Coleta:</span>
+                                                {s.dataColeta ?? '—'}
+                                            </p>
+                                        </div>
+                                    {/if}
                                     {#if idSelecionado === s.solicitacaoEspecialidadeId}
                                     <div class="grid grid-cols-1 mt-2">
                                         <p class="text-sm text-gray-800 font-semibold ">Observação:</p>

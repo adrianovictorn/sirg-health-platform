@@ -1,17 +1,48 @@
 <script>
   import { onMount } from 'svelte';
   import { user } from '$lib/stores/auth.js';
-  import { buildMenuForRole, resolveHref, CHEVRON_DOWN } from '$lib/menuConfig.js';
+  import { getApi } from '$lib/api.js';
+  import { buildMenuForRole, resolveHref, hrefDaAgendaDoGrupo, CHEVRON_DOWN } from '$lib/menuConfig.js';
 
   export let activePage = '';
 
   let abertoMobile = false;
   let open = '';
 
+  // Itens dos grupos de menu declarados como `dynamic` no menuConfig.
+  let dinamicos = {};
+
   const toggle = (key) => { open = open === key ? '' : key; };
 
   $: role = $user?.role ?? null;
-  $: sections = buildMenuForRole(role);
+  $: sections = buildMenuForRole(role, dinamicos);
+
+  /**
+   * Carrega as agendas do hospital a partir dos Grupos de Relatório marcados como
+   * `direcionadoHospital`. Antes esta lista era fixa no menuConfig e não refletia o
+   * cadastro — criar ou renomear um grupo não aparecia no menu.
+   *
+   * Só ativos entram: um grupo desativado não deve continuar navegável.
+   * Se a chamada falhar, o grupo "Agendas" apenas não aparece — nada mais no menu
+   * é afetado, porque os demais itens continuam vindo da configuração estática.
+   */
+  async function carregarAgendasDoHospital() {
+    try {
+      const res = await getApi('grupo-relatorio/listar');
+      if (!res.ok) return;
+      const grupos = await res.json();
+
+      dinamicos = {
+        ...dinamicos,
+        agendasHospital: grupos
+          .filter((g) => g.direcionadoHospital && g.ativo)
+          .sort((a, b) => (a.nome ?? '').localeCompare(b.nome ?? ''))
+          .map((g) => ({ label: g.nome, href: hrefDaAgendaDoGrupo(g.codigo) }))
+      };
+    } catch {
+      // Menu é navegação: falha aqui não pode derrubar a página.
+    }
+  }
 
   const link = (href) =>
     activePage === href
@@ -27,6 +58,8 @@
     `w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
       open === key ? 'text-white bg-slate-800' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
     }`;
+
+  onMount(carregarAgendasDoHospital);
 
   // Abre automaticamente o grupo que contém a página atual, sem listas de rotas hardcoded.
   $: {

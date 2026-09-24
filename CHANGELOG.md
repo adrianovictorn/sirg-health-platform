@@ -165,6 +165,37 @@ Script de verificação pré-deploy (somente leitura) em
 
 ### Novidades (interface)
 
+- **Menu de Agendas do perfil Usuario Padrao passa a seguir o cadastro.**
+  A lista era fixa no `menuConfig.js` (Cardiologista, Doppler, Eletrocardiograma,
+  Laboratorio, Ortopedista, Pediatria, Raio X, USG) e nao tinha relacao nenhuma com os
+  Grupos de Relatorio: criar, renomear ou desativar um grupo nao refletia no menu.
+  Agora o menu monta a partir dos grupos marcados como **direcionado ao hospital**
+  (`grupo_relatorio.direcionado_hospital`), ativos e ordenados por nome.
+
+  O `menuConfig.js` ganhou suporte a **grupo dinamico** (`dynamic: '<chave>'`), mantendo
+  a fonte unica de verdade: quem declara quem ve continua sendo o proprio arquivo; so a
+  lista de itens vem do backend. Grupo dinamico sem resultado nao aparece, mesma regra
+  dos grupos vazios.
+
+  > **Atencao no deploy:** o menu passa a refletir exatamente o que esta marcado. Os
+  > grupos da lista antiga que nao estiverem marcados deixam de aparecer — marque-os em
+  > `/cadastrar/grupo-relatorio` antes de subir.
+
+- **Data da Coleta na agenda do hospital.**
+  A projecao `PainelEspecialidadeProjection` e a consulta de pacientes agendados por
+  grupo passam a trazer a data de coleta, agregada por paciente (DISTINCT, no mesmo
+  padrao ja usado para `especialidades`, porque um registro pode reunir varios exames).
+  A coluna so aparece quando algum paciente da agenda tem a data preenchida — assim ela
+  surge sozinha no laboratorio, sem fixar o codigo do grupo, que agora e cadastravel.
+
+- **Dashboard "Cotas do Mes": cota por grupo mostra o nome do grupo.**
+  Cota com escopo de grupo de especialidades aparecia como "Cota geral (todas)", que e o
+  rotulo de cota **sem** escopo — duas coisas diferentes com o mesmo texto. O backend
+  (`CotaUnidadeViewDTO`) ja devolvia `grupoEspecialidadesNome`; o card em
+  `/dashboard/unidade` so lia `especialidadeNome`, que fica nulo quando o escopo e um
+  grupo. Sem alteracao no backend — so o card passou a checar `grupoEspecialidadesNome`
+  antes de cair no rotulo de "sem escopo".
+
 - **Alerta de cadastro incompleto em `/paciente/{id}`.**
   Ao abrir um paciente cujo registro nao tem Nome do Pai, Nome da Mae, Endereco, CNS ou
   unidade de origem, um aviso ambar lista o que falta. E **somente visual e dispensavel**:

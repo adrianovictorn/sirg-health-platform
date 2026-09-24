@@ -150,7 +150,9 @@
                 {#each cotasDoMes as c (c.id)}
                   <div class="flex items-center justify-between gap-4 px-4 py-3">
                     <span class="text-sm text-gray-800 truncate">
-                      {c.especialidadeNome ?? 'Cota geral (todas)'}
+                      <!-- Cota por grupo de especialidades: mostra o nome do grupo.
+                           Sem escopo nenhum e que e "Cota geral (todas)". -->
+                      {c.grupoEspecialidadesNome ?? c.especialidadeNome ?? 'Cota geral (todas)'}
                     </span>
                     <span class="text-sm font-semibold shrink-0"
                           class:text-red-600={c.saldoDisponivel <= 0}
