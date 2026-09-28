@@ -78,6 +78,8 @@
   let catalogoCarregado = false;
   let catalogoEspecialidades = $state<EspecialidadeCatalogo[]>([]);
   let contagemPorEspecialidade = $state<Record<string, { agendados: number; capacidade: number; restante: number }>>({});
+  let saldoCotaPorEspecialidade = $state<Record<string, { quantidadeTotal: number | null; quantidadeUtilizada: number | null; saldoDisponivel: number | null }>>({});
+  let saldoCotaPorDataEspecialidade = $state<Record<string, { quantidadeTotal: number | null; quantidadeUtilizada: number | null; saldoDisponivel: number | null }>>({});
 
   const solicitacoesFiltradas = $derived(
     !valorBusca
@@ -145,6 +147,87 @@
     }
   }
 
+  // Saldo do sistema de Cotas por Unidade (mensal) para a especialidade
+  // escolhida — atalho para o operador ver, antes de confirmar, se a unidade
+  // ainda tem cota disponível no mês do agendamento (distinto do limite simples
+  // de `Especialidade.vagas` já mostrado acima).
+  async function carregarSaldoCotaPorEspecialidade(codigo: string) {
+    if (!dataAgendada || !codigo || !solicitacaoDetalhe?.unidadeId) {
+      return;
+    }
+
+    const chave = codigo.toUpperCase();
+    const especialidadeId = catalogoEspecialidades.find((e) => e.codigo?.toUpperCase() === chave)?.id;
+    if (!especialidadeId) {
+      return;
+    }
+
+    try {
+      const params = new URLSearchParams();
+      params.append('unidadeId', String(solicitacaoDetalhe.unidadeId));
+      params.append('especialidadeId', String(especialidadeId));
+      params.append('periodo', dataAgendada.slice(0, 7));
+
+      const res = await getApi(`cotas/saldo?${params.toString()}`);
+      if (!res.ok) {
+        delete saldoCotaPorEspecialidade[chave];
+        return;
+      }
+
+      const json = await res.json();
+      saldoCotaPorEspecialidade = {
+        ...saldoCotaPorEspecialidade,
+        [chave]: {
+          quantidadeTotal: json.quantidadeTotal ?? null,
+          quantidadeUtilizada: json.quantidadeUtilizada ?? null,
+          saldoDisponivel: json.saldoDisponivel ?? null
+        }
+      };
+    } catch (error) {
+      console.warn('Falha ao carregar saldo de cota por especialidade', error);
+    }
+  }
+
+  // Saldo por DATA específica (complementa o saldo mensal acima): sem isso o
+  // operador só via a cota agregada do mês, mesmo quando a unidade tem uma cota
+  // cadastrada só para aquele dia.
+  async function carregarSaldoCotaPorDataEspecialidade(codigo: string) {
+    if (!dataAgendada || !codigo || !solicitacaoDetalhe?.unidadeId) {
+      return;
+    }
+
+    const chave = codigo.toUpperCase();
+    const especialidadeId = catalogoEspecialidades.find((e) => e.codigo?.toUpperCase() === chave)?.id;
+    if (!especialidadeId) {
+      return;
+    }
+
+    try {
+      const params = new URLSearchParams();
+      params.append('unidadeId', String(solicitacaoDetalhe.unidadeId));
+      params.append('especialidadeId', String(especialidadeId));
+      params.append('data', dataAgendada);
+
+      const res = await getApi(`cotas/saldo-data?${params.toString()}`);
+      if (!res.ok) {
+        delete saldoCotaPorDataEspecialidade[chave];
+        return;
+      }
+
+      const json = await res.json();
+      saldoCotaPorDataEspecialidade = {
+        ...saldoCotaPorDataEspecialidade,
+        [chave]: {
+          quantidadeTotal: json.quantidadeTotal ?? null,
+          quantidadeUtilizada: json.quantidadeUtilizada ?? null,
+          saldoDisponivel: json.saldoDisponivel ?? null
+        }
+      };
+    } catch (error) {
+      console.warn('Falha ao carregar saldo de cota por data', error);
+    }
+  }
+
   async function atualizarContagemPorEspecialidades() {
     if (!dataAgendada) {
       return;
@@ -152,6 +235,8 @@
 
     for (const codigo of examesSelecionados) {
       await carregarContagemPorEspecialidade(codigo);
+      await carregarSaldoCotaPorEspecialidade(codigo);
+      await carregarSaldoCotaPorDataEspecialidade(codigo);
     }
   }
 
@@ -710,6 +795,30 @@
                           {/if}
                         {:else}
                           <p class="text-xs text-gray-500">Carregando contagem...</p>
+                        {/if}
+                        {#if saldoCotaPorEspecialidade[codigo.toUpperCase()]}
+                          {@const cota = saldoCotaPorEspecialidade[codigo.toUpperCase()]}
+                          {#if cota.quantidadeTotal == null}
+                            <p class="text-xs text-gray-500">Sem cota mensal configurada.</p>
+                          {:else}
+                            <p class="text-xs text-gray-600">
+                              Cota do mês: {cota.quantidadeUtilizada}/{cota.quantidadeTotal} — saldo {cota.saldoDisponivel}
+                            </p>
+                            {#if cota.saldoDisponivel !== null && cota.saldoDisponivel <= 0}
+                              <p class="text-xs text-red-600">Limite de cota atingido para este mês.</p>
+                            {/if}
+                          {/if}
+                        {/if}
+                        {#if saldoCotaPorDataEspecialidade[codigo.toUpperCase()]}
+                          {@const cotaData = saldoCotaPorDataEspecialidade[codigo.toUpperCase()]}
+                          {#if cotaData.quantidadeTotal != null}
+                            <p class="text-xs text-gray-600">
+                              Cota da data: {cotaData.quantidadeUtilizada}/{cotaData.quantidadeTotal} — saldo {cotaData.saldoDisponivel}
+                            </p>
+                            {#if cotaData.saldoDisponivel !== null && cotaData.saldoDisponivel <= 0}
+                              <p class="text-xs text-red-600">Limite de cota atingido para esta data.</p>
+                            {/if}
+                          {/if}
                         {/if}
                       </div>
                     {/each}

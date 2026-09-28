@@ -19,6 +19,8 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
+import io.github.regulacao_marcarcao.regulacao_marcacao.dto.usuariosDTO.LoginResponseDTO;
+import io.github.regulacao_marcarcao.regulacao_marcacao.dto.usuariosDTO.TrocarPerfilDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.usuariosDTO.UserCreateDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.usuariosDTO.UserUpdateDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.usuariosDTO.UserViewDTO;
@@ -43,6 +45,22 @@ public class UserController {
     @GetMapping("/me")
     public ResponseEntity<UserViewDTO> getMe(Authentication authentication) {
         return ResponseEntity.ok(userService.buscarPorCpf(authentication.getName()));
+    }
+
+    /**
+     * Alterna o perfil ativo do próprio usuário e devolve um token novo.
+     *
+     * Fica em `/api/users` de propósito: `/api/auth/**` é `permitAll` no
+     * SecurityConfiguration, e esta operação precisa de um usuário autenticado
+     * para saber de quem é a troca. Só se troca para um perfil já concedido —
+     * quem valida é o serviço, não o cliente.
+     */
+    @PostMapping("/me/perfil")
+    public ResponseEntity<LoginResponseDTO> trocarPerfilAtivo(
+            @RequestBody @Valid TrocarPerfilDTO dto,
+            Authentication authentication) {
+        String token = userService.trocarPerfilAtivo(authentication.getName(), dto.perfil());
+        return ResponseEntity.ok(new LoginResponseDTO(token));
     }
 
     @GetMapping("/medicos")

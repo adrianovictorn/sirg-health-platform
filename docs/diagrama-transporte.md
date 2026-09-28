@@ -1,3 +1,10 @@
+---
+tags:
+  - sirg/diagrama
+  - sirg/dominio
+gerado: manual
+---
+
 # Diagrama — Módulo de Transporte Sanitário
 
 Cobre o agendamento de veículos para levar pacientes a consultas e exames.
@@ -123,3 +130,13 @@ classDiagram
 | Tabela | Entidades | Colunas |
 |---|---|---|
 | `agendamento_transporte_local_agendamento` | AgendamentoTransporte ↔ LocalAgendamento | `agendamento_transporte_id`, `local_agendamento_id` |
+
+---
+
+## Ver também
+
+- [[Mapa - Domínio]]
+- [[03 - Entidades e Classes de Domínio]]
+- [[diagrama-solicitacoes]]
+
+Volta para [[Início]].

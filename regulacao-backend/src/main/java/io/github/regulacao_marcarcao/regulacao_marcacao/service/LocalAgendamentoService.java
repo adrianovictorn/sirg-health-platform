@@ -1,5 +1,6 @@
 package io.github.regulacao_marcarcao.regulacao_marcacao.service;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 import org.springframework.stereotype.Service;
@@ -21,7 +22,7 @@ public class LocalAgendamentoService {
 
     private final LocalAgendamentoRepository localAgendamentoRepository;
     private final CidadeRepository cidadeRepository;
-    
+
     @Transactional
     public LocalAgendamentoViewDTO cadastrarLocalAgendamento(LocalAgendamentoCreateDTO dto){
         LocalAgendamento novoLocalAgendamento = new LocalAgendamento();
@@ -32,7 +33,55 @@ public class LocalAgendamentoService {
         );
         novoLocalAgendamento.setNumero(dto.numero());
         novoLocalAgendamento.setEndereco(dto.endereco());
+        aplicarDadosEstabelecimento(novoLocalAgendamento, dto.cnes(), dto.cnpj(), dto.razaoSocial(),
+                dto.nomeFantasia(), dto.bairro(), dto.cep(), dto.telefone(), dto.email(),
+                dto.importadoDoCnes());
         return LocalAgendamentoViewDTO.fromEntity(localAgendamentoRepository.save(novoLocalAgendamento));
+    }
+
+    /**
+     * Aplica os dados cadastrais do estabelecimento vindos da busca por CNES
+     * (V91) — só usada no cadastro; a edição inline da tela continua sem
+     * esses campos, por decisão explícita (editar CNES exige recriar o
+     * registro, não editar em linha).
+     */
+    private void aplicarDadosEstabelecimento(LocalAgendamento local, String cnes, String cnpj,
+            String razaoSocial, String nomeFantasia, String bairro, String cep, String telefone,
+            String email, Boolean importadoDoCnes) {
+
+        String cnesLimpo = blankToNull(cnes);
+        if (cnesLimpo != null) {
+            localAgendamentoRepository.findByCnes(cnesLimpo).ifPresent(outro -> {
+                throw new IllegalArgumentException(
+                        "Já existe um local de atendimento com o CNES " + cnesLimpo + ".");
+            });
+        }
+
+        local.setCnes(cnesLimpo);
+        local.setCnpj(somenteDigitos(cnpj));
+        local.setRazaoSocial(blankToNull(razaoSocial));
+        local.setNomeFantasia(blankToNull(nomeFantasia));
+        local.setBairro(blankToNull(bairro));
+        local.setCep(somenteDigitos(cep));
+        local.setTelefone(blankToNull(telefone));
+        local.setEmail(blankToNull(email));
+
+        if (Boolean.TRUE.equals(importadoDoCnes)) {
+            local.setSincronizadoCnesEm(LocalDateTime.now());
+        }
+    }
+
+    private String blankToNull(String value) {
+        return (value == null || value.isBlank()) ? null : value;
+    }
+
+    /** CNPJ e CEP são guardados só com dígitos — a tela formata na exibição. */
+    private String somenteDigitos(String value) {
+        if (value == null) {
+            return null;
+        }
+        String limpo = value.replaceAll("\\D", "");
+        return limpo.isEmpty() ? null : limpo;
     }
 
     public List<LocalAgendamentoListDTO> listarAgendamentoListDTOs(Long cidadeId){

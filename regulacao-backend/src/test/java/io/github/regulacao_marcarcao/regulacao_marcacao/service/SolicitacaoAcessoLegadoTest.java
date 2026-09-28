@@ -174,4 +174,28 @@ class SolicitacaoAcessoLegadoTest {
         when(solicitacaoRepository.findById(1L)).thenReturn(Optional.of(solicitacaoDaUnidade(null)));
         assertThatCode(() -> service.getSolicitacaoById(1L, "admin")).doesNotThrowAnyException();
     }
+
+    /**
+     * CARACTERIZACAO (pre-ajuste do GlobalExceptionHandler): trocar a unidade de uma
+     * solicitacao ("tela de Paciente" no frontend) para fora do escopo do chamador
+     * restrito continua bloqueado por {@code resolverUnidadeAlvo}, propagando
+     * {@link AccessDeniedException}. O ajuste do GlobalExceptionHandler muda apenas
+     * o corpo/status HTTP que essa excecao vira no controller — este teste trava que
+     * a regra de negocio em si (o bloqueio) nao muda.
+     */
+    @Test
+    @DisplayName("Transferir solicitacao para unidade fora do escopo do chamador continua bloqueado")
+    void transferenciaParaUnidadeForaDoEscopoEBloqueada() {
+        dadoUsuarioRestritoA(MINHA_UNIDADE);
+        when(solicitacaoRepository.findById(1L)).thenReturn(Optional.of(solicitacaoDaUnidade(MINHA_UNIDADE)));
+        when(unidadeAcessoService.resolverUnidadeAlvo(CPF_RESTRITO, OUTRA_UNIDADE))
+                .thenThrow(new AccessDeniedException("Acesso negado aos dados de outra unidade."));
+
+        var dto = new io.github.regulacao_marcarcao.regulacao_marcacao.dto.solicitacoesDTO.SolicitacaoUpdateDTO(
+                OUTRA_UNIDADE, "Paciente Legado", null, null, null, null, null, null, null, null, null, null, null);
+
+        assertThatThrownBy(() -> service.updateSolicitacao(1L, dto, CPF_RESTRITO))
+                .isInstanceOf(AccessDeniedException.class)
+                .hasMessageContaining("outra unidade");
+    }
 }

@@ -44,6 +44,12 @@ public class UnidadeController {
         return ResponseEntity.ok(unidadeService.listarAtivas());
     }
 
+    /** Estabelecimentos executantes ativos — combo da abertura de agenda. */
+    @GetMapping("/executantes")
+    public ResponseEntity<List<UnidadeViewDTO>> listarExecutantes() {
+        return ResponseEntity.ok(unidadeService.listarExecutantes());
+    }
+
     @GetMapping("/{id}")
     public ResponseEntity<UnidadeViewDTO> buscarPorId(@PathVariable Long id) {
         return ResponseEntity.ok(unidadeService.buscarPorId(id));

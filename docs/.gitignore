@@ -1,0 +1,10 @@
+# Estado local do Obsidian (nao versionar)
+.obsidian/workspace.json
+.obsidian/workspace-mobile.json
+.obsidian/cache
+_anexos/
+
+# Notas DERIVADAS dos documentos da raiz.
+# Regenere com: python docs/_build/gerar_vault.py
+tecnica/
+referencia/

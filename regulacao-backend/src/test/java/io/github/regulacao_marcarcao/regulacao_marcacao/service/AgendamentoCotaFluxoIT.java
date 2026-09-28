@@ -270,4 +270,88 @@ class AgendamentoCotaFluxoIT {
                 orfa.getId(), dtoAgendamento(), cpf))
                 .doesNotThrowAnyException();
     }
+
+    /**
+     * DIAGNOSTICO: cancelar um agendamento com 2+ especialidades (ex.: um painel de
+     * laboratorio) reproduz o 409 relatado em producao?
+     *
+     * Os testes acima so cobrem 1 especialidade por agendamento.
+     * {@code estornarCotasDoAgendamento} itera uma lista de
+     * {@code SolicitacaoEspecialidade} chamando, para cada uma,
+     * {@code se.getEspecialidadeSolicitada()} (LAZY) antes de {@code estornarUtilizacao}
+     * — que consome {@code devolverVaga}, anotado
+     * {@code @Modifying(clearAutomatically = true)}. Esse clear desanexa TODA a
+     * persistence context, inclusive as demais {@code SolicitacaoEspecialidade} da
+     * lista cujo proxy de especialidade ainda nao foi tocado — exatamente o padrao ja
+     * documentado (e corrigido) em {@code CotaUnidadeService#incrementarUtilizacao},
+     * so que aqui, no caminho de cancelamento, ainda sem correcao.
+     */
+    @Test
+    @DisplayName("DIAGNOSTICO: cancelar agendamento com 2 especialidades (painel)")
+    void cancelarAgendamentoComDuasEspecialidades() {
+        Especialidade hemograma = new Especialidade();
+        hemograma.setCodigo("HEMOGRAMA" + sufixo);
+        hemograma.setNome("Hemograma" + sufixo);
+        hemograma.setCategoria(ItemCategoria.EXAME_OU_PROCEDIMENTO);
+        hemograma.setAtivo(true);
+        hemograma.setVagas(0);
+        hemograma = especialidadeRepository.saveAndFlush(hemograma);
+
+        CotaUnidade cotaCardio = criarCota(5);
+        CotaUnidade cotaHemograma = new CotaUnidade();
+        cotaHemograma.setUnidade(unidade);
+        cotaHemograma.setEspecialidade(hemograma);
+        cotaHemograma.setTipoPeriodo(TipoPeriodoCota.MENSAL);
+        cotaHemograma.setPeriodo(periodo);
+        cotaHemograma.setQuantidadeTotal(5);
+        cotaHemograma.setQuantidadeUtilizada(0);
+        cotaHemograma.setAtivo(true);
+        cotaHemograma = cotaRepository.saveAndFlush(cotaHemograma);
+
+        String cpf = operadorDaUnidade.getCpf();
+
+        Solicitacao s = new Solicitacao();
+        s.setNomePaciente("Paciente painel" + sufixo);
+        s.setCpfPaciente(cpfUnico());
+        s.setCns("700" + String.format("%012d", 99));
+        s.setNomePai("Pai");
+        s.setNomeMae("Mae");
+        s.setEndereco("Rua");
+        s.setUnidade(unidade);
+
+        SolicitacaoEspecialidade se1 = new SolicitacaoEspecialidade();
+        se1.setSolicitacao(s);
+        se1.setEspecialidadeSolicitada(cardiologia);
+        se1.setEspecialidadeCodigoLegacy(cardiologia.getCodigo());
+        se1.setStatus(StatusDaMarcacao.AGUARDANDO);
+        se1.setPrioridade(PrioridadeDaMarcacaoEnum.NORMAL);
+
+        SolicitacaoEspecialidade se2 = new SolicitacaoEspecialidade();
+        se2.setSolicitacao(s);
+        se2.setEspecialidadeSolicitada(hemograma);
+        se2.setEspecialidadeCodigoLegacy(hemograma.getCodigo());
+        se2.setStatus(StatusDaMarcacao.AGUARDANDO);
+        se2.setPrioridade(PrioridadeDaMarcacaoEnum.NORMAL);
+
+        List<SolicitacaoEspecialidade> especs = new ArrayList<>();
+        especs.add(se1);
+        especs.add(se2);
+        s.setEspecialidades(especs);
+        s = solicitacaoRepository.saveAndFlush(s);
+
+        MultiAgendamentoCreateDTO dto = new MultiAgendamentoCreateDTO(
+                List.of(cardiologia.getCodigo(), hemograma.getCodigo()),
+                data, null, null, TurnoEnum.MANHA, "painel no teste");
+
+        var agendamento = agendamentoService.criarAgendamentoParaMultiplosExames(s.getId(), dto, cpf);
+        assertThat(utilizada(cotaCardio.getId())).isEqualTo(1);
+        assertThat(utilizada(cotaHemograma.getId())).isEqualTo(1);
+
+        assertThatCode(() -> agendamentoService.deleteAgendamento(agendamento.id(), cpf))
+                .as("cancelar um agendamento com 2 especialidades nao deveria falhar")
+                .doesNotThrowAnyException();
+
+        assertThat(utilizada(cotaCardio.getId())).isZero();
+        assertThat(utilizada(cotaHemograma.getId())).isZero();
+    }
 }

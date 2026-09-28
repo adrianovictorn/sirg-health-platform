@@ -1,3 +1,10 @@
+---
+tags:
+  - sirg/diagrama
+  - sirg/dominio
+gerado: manual
+---
+
 # Diagrama — Módulo de Federação (Pactos entre Municípios)
 
 Cobre a rede de municípios cooperantes, os pactos de compartilhamento de filas e o sistema de notificações.
@@ -177,3 +184,13 @@ Município A (origem)            RabbitMQ               Município B (membro do 
 | Tabela | Entidades | Colunas |
 |---|---|---|
 | `pacto_membros` | Pacto ↔ Municipio | `pacto_id`, `municipio_id` |
+
+---
+
+## Ver também
+
+- [[Mapa - Domínio]]
+- [[Infraestrutura]]
+- [[10 - Padrões e Arquitetura]]
+
+Volta para [[Início]].

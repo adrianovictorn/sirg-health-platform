@@ -194,31 +194,31 @@ public interface SolicitacaoEspecialidadeRepository extends JpaRepository<Solici
                     JOIN solicitacao_especialidade se ON se.solicitacao_id = s.id
                     JOIN especialidade e ON e.id = se.especialidade_id
                     JOIN grupo_relatorio gr ON gr.id = e.grupo_relatorio_id
-                    JOIN agendamento_solicitacao ag ON ag.id = se.agendamento_id 
-                    WHERE (gr.codigo = :grupo) and (se.status = 'AGENDADO') and (ag.local_agendamento_id = 3 AND ag.data_agendada = :data) 
+                    JOIN agendamento_solicitacao ag ON ag.id = se.agendamento_id
+                    WHERE (gr.codigo = :grupo) and (se.status = 'AGENDADO') and (s.unidade_id = :unidadeId AND ag.data_agendada = :data)
                     GROUP BY
                         s.id,
-                        s.nome_paciente, 
-                        s.cpf_paciente, 
+                        s.nome_paciente,
+                        s.cpf_paciente,
                         s.cns,
-                        s.datanascimento, 
+                        s.datanascimento,
                         s.usf_origem
 
                     """, nativeQuery = true)
-            Page<PainelEspecialidadeProjection> listarPacientesAgendadosPorDataEGrupoELocal(@Param("grupo")String grupo, @Param("data") LocalDate data, Pageable pageable);
+            Page<PainelEspecialidadeProjection> listarPacientesAgendadosPorDataEGrupoELocal(@Param("grupo")String grupo, @Param("data") LocalDate data, @Param("unidadeId") Long unidadeId, Pageable pageable);
 
 
             @Query(value = """
-                SELECT 
+                SELECT
                     count (DISTINCT s.id)
-                FROM solicitacao s 
+                FROM solicitacao s
                 JOIN solicitacao_especialidade se ON se.solicitacao_id = s.id
                 JOIN especialidade e ON e.id = se.especialidade_id
                 JOIN grupo_relatorio gr ON gr.id = e.grupo_relatorio_id
-                JOIN agendamento_solicitacao ag ON ag.id = se.agendamento_id 
-                WHERE (gr.codigo = :grupo) and (se.status = 'AGENDADO') and (ag.local_agendamento_id = 3 AND ag.data_agendada = :data) 
-                """, nativeQuery = true)    
-            long totalPacientesAgendadosPorGrupoELocal(@Param("grupo") String grupo, @Param("data") LocalDate data);
+                JOIN agendamento_solicitacao ag ON ag.id = se.agendamento_id
+                WHERE (gr.codigo = :grupo) and (se.status = 'AGENDADO') and (s.unidade_id = :unidadeId AND ag.data_agendada = :data)
+                """, nativeQuery = true)
+            long totalPacientesAgendadosPorGrupoELocal(@Param("grupo") String grupo, @Param("data") LocalDate data, @Param("unidadeId") Long unidadeId);
 
 
             @Query(value = """

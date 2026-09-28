@@ -34,6 +34,16 @@ public class Profissional {
     @Column(name = "nome", nullable = false, length = 200)
     private String nome;
 
+    /**
+     * CPF sem mascara (V88). Chave de deduplicacao da importacao do CNES: e por
+     * ele que se decide entre criar profissional novo ou so acrescentar vinculo.
+     *
+     * <p>Nulo nos profissionais cadastrados antes da V88 — exigir o campo agora
+     * travaria a edicao de todos eles. UNIQUE parcial (WHERE NOT NULL) no banco.
+     */
+    @Column(name = "cpf", length = 11, unique = true)
+    private String cpf;
+
     @Column(name = "conselho", length = 20)
     private String conselho;
 
@@ -46,6 +56,17 @@ public class Profissional {
     @Column(name = "telefone", length = 20)
     private String telefone;
 
+    /**
+     * Unidade unica do profissional.
+     *
+     * @deprecated desde a V88, substituido por {@link ProfissionalVinculo}, que
+     *             permite N estabelecimentos com CBO proprio em cada um. A coluna
+     *             continua populada e as telas atuais ainda leem dela; a V88
+     *             copiou cada valor para um vinculo (cbo nulo, origem MANUAL).
+     *             Remover so depois de migrar os pontos de leitura — apagar junto
+     *             com a criacao do vinculo quebraria as telas em producao.
+     */
+    @Deprecated
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "unidade_id", nullable = true)
     private Unidade unidade;

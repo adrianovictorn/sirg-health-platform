@@ -5,6 +5,8 @@ import java.util.List;
 
 import org.springframework.data.domain.Page;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -81,21 +83,31 @@ public class SolicitacaoEspecialidadeController {
     }
 
     @GetMapping("/listar/pacientes/por/grupo")
+    @PreAuthorize("hasAnyRole('ADMIN', 'ADMIN_UNIDADE', 'USER', 'RECEPCAO', 'ENFERMEIRO', 'MEDICO')")
     public ResponseEntity<Page<PainelEspecialidadeProjection>> listarPacientesAgendadosPorDataEGrupoELocal(
         @RequestParam(defaultValue = "0", name = "page") int page,
         @RequestParam(defaultValue = "10", name =  "size") int size,
         @RequestParam(required = true, name = "grupo") String grupo,
-        @RequestParam(required = true, name =  "data") LocalDate data
+        @RequestParam(required = true, name =  "data") LocalDate data,
+        // Obrigatorio so para o ADMIN global (o backend resolve a unidade de
+        // lotacao de qualquer outro perfil e ignora este parametro nesse caso).
+        @RequestParam(required = false, name = "unidadeId") Long unidadeId,
+        Authentication authentication
     ){
-        return ResponseEntity.ok(service.listarPacientesAgendadosPorGrupo(page, size, grupo, data));
+        String callerCpf = authentication != null ? authentication.getName() : null;
+        return ResponseEntity.ok(service.listarPacientesAgendadosPorGrupo(page, size, grupo, data, unidadeId, callerCpf));
     }
 
      @GetMapping("/contar/pacientes/por/grupo")
+     @PreAuthorize("hasAnyRole('ADMIN', 'ADMIN_UNIDADE', 'GESTOR', 'USER', 'RECEPCAO', 'ENFERMEIRO', 'MEDICO')")
     public ResponseEntity<Long> contarPacientesAgendadosPorDataEGrupoELocal(
         @RequestParam(required = true, name = "grupo") String grupo,
-        @RequestParam(required = true, name =  "data") LocalDate data
+        @RequestParam(required = true, name =  "data") LocalDate data,
+        @RequestParam(required = false, name = "unidadeId") Long unidadeId,
+        Authentication authentication
     ){
-        return ResponseEntity.ok(service.contarPacientesAgendadosPorDataEGrupo(grupo, data));
+        String callerCpf = authentication != null ? authentication.getName() : null;
+        return ResponseEntity.ok(service.contarPacientesAgendadosPorDataEGrupo(grupo, data, unidadeId, callerCpf));
     }
 
      @PatchMapping  ("{id}/realizado")

@@ -7,6 +7,7 @@ import io.github.regulacao_marcarcao.regulacao_marcacao.entity.Profissional;
 public record ProfissionalViewDTO(
         Long id,
         String nome,
+        String cpf,
         String conselho,
         String numeroRegistro,
         String especialidadeAtuacao,
@@ -21,6 +22,7 @@ public record ProfissionalViewDTO(
         return new ProfissionalViewDTO(
                 p.getId(),
                 p.getNome(),
+                p.getCpf(),
                 p.getConselho(),
                 p.getNumeroRegistro(),
                 p.getEspecialidadeAtuacao(),

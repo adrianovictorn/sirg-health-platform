@@ -1,5 +1,7 @@
 package io.github.regulacao_marcarcao.regulacao_marcacao.dto.usuariosDTO;
 
+import java.util.Set;
+
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.enums.Roles;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -24,6 +26,12 @@ public class UserCreateDTO {
 
     @NotNull(message = "O perfil (role) é obrigatório")
     private Roles cargo;
+
+    /**
+     * Perfis adicionais liberados para alternancia. Nulo mantem so o `cargo`,
+     * que e como o formulario antigo (um cargo so) continua funcionando.
+     */
+    private Set<Roles> perfis;
 
     private Long unidadeId;
 }

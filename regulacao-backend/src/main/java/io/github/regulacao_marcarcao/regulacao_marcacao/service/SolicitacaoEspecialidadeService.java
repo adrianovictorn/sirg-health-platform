@@ -28,6 +28,7 @@ public class SolicitacaoEspecialidadeService {
     
     private final AgendamentoSolicitacaoRepository agendamentoRepository;
     private final SolicitacaoEspecialidadeRepository especialidadeRepository;
+    private final UnidadeAcessoService unidadeAcessoService;
 
     public SolicitacaoEspecialidadeViewDTO atualizarStatusEspecialidade(EspecialidadeUpdateDTO dto, Long id){
         SolicitacaoEspecialidade especialidade = especialidadeRepository.findById(id).orElseThrow(() -> new RuntimeException("Especialidade não encontrada!"));
@@ -115,13 +116,36 @@ public class SolicitacaoEspecialidadeService {
         return viewDTOs;
     }
 
-    public Page<PainelEspecialidadeProjection> listarPacientesAgendadosPorGrupo(int page, int size, String grupo, LocalDate data){
-        Pageable pagina = PageRequest.of(page, size);
-        return especialidadeRepository.listarPacientesAgendadosPorDataEGrupoELocal(grupo, data, pagina);
+    /**
+     * Resolve a unidade cuja agenda sera consultada.
+     *
+     * Ate a v1.6 a "agenda do hospital" era uma unica linha fixa de
+     * {@code local_agendamento} (id=3) — sem relacao nenhuma com {@code Unidade}, e
+     * visivel para qualquer usuario autenticado. Agora cada Unidade tem sua propria
+     * agenda: um operador restrito (Usuario Padrao/ADMIN_UNIDADE com unidade de
+     * lotacao) so ve a propria, e so o ADMIN global escolhe qual ver — por isso o
+     * parametro so e aceito quando vem dele; de qualquer outro, e ignorado a favor
+     * da unidade de lotacao. Sem unidade nenhuma (operador restrito sem lotacao, ou
+     * ADMIN sem escolher), a consulta e recusada em vez de devolver a agenda de
+     * outra unidade por engano.
+     */
+    private Long resolverUnidadeDaAgenda(Long unidadeIdParam, String callerCpf) {
+        Long unidadeId = unidadeAcessoService.resolverUnidadeAlvo(callerCpf, unidadeIdParam);
+        if (unidadeId == null) {
+            throw new IllegalArgumentException("Selecione uma unidade para ver a agenda do dia.");
+        }
+        return unidadeId;
     }
 
-    public long contarPacientesAgendadosPorDataEGrupo(String grupo, LocalDate data){
-        return especialidadeRepository.totalPacientesAgendadosPorGrupoELocal(grupo, data);
+    public Page<PainelEspecialidadeProjection> listarPacientesAgendadosPorGrupo(int page, int size, String grupo, LocalDate data, Long unidadeId, String callerCpf){
+        Long unidadeResolvida = resolverUnidadeDaAgenda(unidadeId, callerCpf);
+        Pageable pagina = PageRequest.of(page, size);
+        return especialidadeRepository.listarPacientesAgendadosPorDataEGrupoELocal(grupo, data, unidadeResolvida, pagina);
+    }
+
+    public long contarPacientesAgendadosPorDataEGrupo(String grupo, LocalDate data, Long unidadeId, String callerCpf){
+        Long unidadeResolvida = resolverUnidadeDaAgenda(unidadeId, callerCpf);
+        return especialidadeRepository.totalPacientesAgendadosPorGrupoELocal(grupo, data, unidadeResolvida);
     }
 
 

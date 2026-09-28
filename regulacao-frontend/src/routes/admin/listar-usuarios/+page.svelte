@@ -2,6 +2,7 @@
     import { getApi, putApi, patchApi } from "$lib/api";
     import RoleBasedMenu from "$lib/RoleBasedMenu.svelte";
     import ModalEditarUsuarios from "$lib/ModalEditarUsuarios.svelte";
+  import { ROTULO_PERFIL } from '$lib/menuConfig.js';
     import UserMenu from "$lib/UserMenu.svelte";
 
     import { onMount } from "svelte";
@@ -128,7 +129,13 @@ onMount( () => {
                   {/if}
                 </div>
                 <p class="text-gray-600 text-sm"><strong>CPF:</strong> {users.cpf}</p>
-                <p class="text-gray-600 text-sm"><strong>Cargo:</strong> {users.role}</p>
+                <p class="text-gray-600 text-sm"><strong>Perfil:</strong> {ROTULO_PERFIL[users.role] ?? users.role}</p>
+                {#if (users.perfis ?? []).length > 1}
+                  <p class="text-gray-600 text-sm">
+                    <strong>Também pode atuar como:</strong>
+                    {users.perfis.filter((p) => p !== users.role).map((p) => ROTULO_PERFIL[p] ?? p).join(', ')}
+                  </p>
+                {/if}
                 {#if users.unidadeNome}
                   <p class="text-gray-600 text-sm"><strong>Unidade:</strong> {users.unidadeNome}</p>
                 {/if}

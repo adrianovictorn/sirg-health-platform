@@ -20,6 +20,7 @@
     cidadeId: number | null;
     cidadeNome: string | null;
     enumValue?: string | null;
+    cnes?: string | null;
   }
 
   interface LocalDraft {
@@ -29,9 +30,40 @@
     cidadeId: string;
   }
 
-  let novoNomeLocal = $state('');
-  let novoEndereco = $state('');
-  let novoNumero = $state('');
+  interface NovoLocalForm {
+    nomeLocal: string;
+    endereco: string;
+    numero: string;
+    // Campos do estabelecimento (V91) — só no cadastro; a edição inline da
+    // tabela abaixo não os expõe (editar CNES exige recriar o registro).
+    cnes: string;
+    cnpj: string;
+    razaoSocial: string;
+    nomeFantasia: string;
+    bairro: string;
+    cep: string;
+    telefone: string;
+    email: string;
+    importadoDoCnes: boolean;
+  }
+
+  const NOVO_LOCAL_VAZIO: NovoLocalForm = {
+    nomeLocal: '',
+    endereco: '',
+    numero: '',
+    cnes: '',
+    cnpj: '',
+    razaoSocial: '',
+    nomeFantasia: '',
+    bairro: '',
+    cep: '',
+    telefone: '',
+    email: '',
+    importadoDoCnes: false
+  };
+
+  let novoLocal = $state<NovoLocalForm>({ ...NOVO_LOCAL_VAZIO });
+  let buscandoCnes = $state(false);
   let cidadesExistentes = $state<Cidade[]>([]);
   let cidadeId = $state<string>('');
   let locais = $state<LocalAgendamento[]>([]);
@@ -52,7 +84,10 @@
   
   const locaisFiltrados = $derived(
     termoBuscaLocal.trim()
-    ? locais.filter((l) => l.nomeLocal.toLocaleLowerCase().includes(termoBuscaLocal.toLocaleLowerCase()))
+    ? locais.filter((l) =>
+        l.nomeLocal.toLocaleLowerCase().includes(termoBuscaLocal.toLocaleLowerCase()) ||
+        (l.cnes != null && l.cnes === termoBuscaLocal.trim())
+      )
     : locais
   );
   
@@ -146,6 +181,51 @@
     }
   }
 
+  async function buscarPorCnesNovoLocal() {
+    const cnes = novoLocal.cnes.trim();
+    if (!cnes) {
+      erro = 'Informe o número do CNES antes de buscar.';
+      return;
+    }
+    buscandoCnes = true;
+    erro = '';
+    try {
+      const res = await getApi(`cnes/estabelecimentos/${encodeURIComponent(cnes)}`);
+      if (res.status === 404) {
+        erro = 'CNES não encontrado — confira o número.';
+        return;
+      }
+      if (!res.ok) {
+        const corpo = await res.json().catch(() => ({}));
+        erro = corpo.message ?? 'Serviço do CNES indisponível no momento. O cadastro manual continua disponível.';
+        return;
+      }
+      const dados = await res.json();
+
+      // Este endpoint só sabe dizer se o CNES já é uma Unidade — Local de
+      // Atendimento tem sua própria checagem de duplicidade, feita pelo
+      // backend no momento de cadastrar (findByCnes em LocalAgendamento).
+      novoLocal = {
+        ...novoLocal,
+        endereco: dados.endereco || novoLocal.endereco,
+        numero: dados.numero || novoLocal.numero,
+        cnpj: dados.cnpj || novoLocal.cnpj,
+        razaoSocial: dados.razaoSocial || novoLocal.razaoSocial,
+        nomeFantasia: dados.nomeFantasia || novoLocal.nomeFantasia,
+        bairro: dados.bairro || novoLocal.bairro,
+        cep: dados.cep || novoLocal.cep,
+        telefone: dados.telefone || novoLocal.telefone,
+        email: dados.email || novoLocal.email,
+        importadoDoCnes: true
+      };
+      mensagem = 'Dados do CNES preenchidos. Confira antes de cadastrar.';
+    } catch {
+      erro = 'Erro ao buscar CNES.';
+    } finally {
+      buscandoCnes = false;
+    }
+  }
+
   async function cadastrarLocalAgendamento(event: Event) {
     event.preventDefault();
     mensagem = '';
@@ -159,22 +239,30 @@
     }
 
     const payload = {
-      nomeLocal: novoNomeLocal,
-      endereco: novoEndereco,
-      numero: novoNumero,
-      cidadeId: cidadeSelecionadaId
+      nomeLocal: novoLocal.nomeLocal,
+      endereco: novoLocal.endereco,
+      numero: novoLocal.numero,
+      cidadeId: cidadeSelecionadaId,
+      cnes: novoLocal.cnes || null,
+      cnpj: novoLocal.cnpj || null,
+      razaoSocial: novoLocal.razaoSocial || null,
+      nomeFantasia: novoLocal.nomeFantasia || null,
+      bairro: novoLocal.bairro || null,
+      cep: novoLocal.cep || null,
+      telefone: novoLocal.telefone || null,
+      email: novoLocal.email || null,
+      importadoDoCnes: novoLocal.importadoDoCnes
     };
 
     try {
       const res = await postApi('local/agendamento/cadastrar', payload);
       if (!res.ok) {
-        throw new Error('Erro ao cadastrar o local de agendamento.');
+        const corpo = await res.json().catch(() => ({}));
+        throw new Error(corpo.message ?? 'Erro ao cadastrar o local de agendamento.');
       }
 
       mensagem = 'Local cadastrado com sucesso!';
-      novoNomeLocal = '';
-      novoEndereco = '';
-      novoNumero = '';
+      novoLocal = { ...NOVO_LOCAL_VAZIO };
       cidadeId = '';
 
       await carregarLocaisAgendamento();
@@ -218,11 +306,35 @@
 
           <form class="space-y-4" on:submit={cadastrarLocalAgendamento}>
             <div class="flex flex-col space-y-1">
+              <label class="text-sm font-medium text-gray-700" for="localCnes">CNES</label>
+              <div class="flex gap-2">
+                <input
+                  id="localCnes"
+                  type="text"
+                  bind:value={novoLocal.cnes}
+                  class="flex-1 border border-gray-300 rounded-lg p-2 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+                <button
+                  type="button"
+                  on:click={buscarPorCnesNovoLocal}
+                  disabled={buscandoCnes}
+                  class="px-3 rounded-lg bg-sky-50 text-sky-700 hover:bg-sky-100 text-xs font-medium transition-colors disabled:opacity-50 whitespace-nowrap"
+                >
+                  {buscandoCnes ? 'Buscando...' : 'Buscar CNES'}
+                </button>
+              </div>
+              <p class="text-xs text-gray-500">
+                Busca os dados do estabelecimento na base do CNES e preenche os campos abaixo —
+                confira antes de cadastrar, nada é gravado automaticamente.
+              </p>
+            </div>
+
+            <div class="flex flex-col space-y-1">
               <label class="text-sm font-medium text-gray-700" for="nomeLocal">Nome do Local</label>
               <input
                 id="nomeLocal"
                 type="text"
-                bind:value={novoNomeLocal}
+                bind:value={novoLocal.nomeLocal}
                 required
                 placeholder="Hospital, clínica, etc."
                 class="border border-gray-300 rounded-lg p-2 focus:outline-none focus:ring-2 focus:ring-emerald-500"
@@ -234,20 +346,93 @@
               <input
                 id="endereco"
                 type="text"
-                bind:value={novoEndereco}
+                bind:value={novoLocal.endereco}
                 placeholder="Rua, bairro..."
                 class="border border-gray-300 rounded-lg p-2 focus:outline-none focus:ring-2 focus:ring-emerald-500"
               />
             </div>
 
+            <div class="grid grid-cols-2 gap-3">
+              <div class="flex flex-col space-y-1">
+                <label class="text-sm font-medium text-gray-700" for="numero">Número</label>
+                <input
+                  id="numero"
+                  type="text"
+                  bind:value={novoLocal.numero}
+                  class="border border-gray-300 rounded-lg p-2 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+              <div class="flex flex-col space-y-1">
+                <label class="text-sm font-medium text-gray-700" for="localBairro">Bairro</label>
+                <input
+                  id="localBairro"
+                  type="text"
+                  bind:value={novoLocal.bairro}
+                  class="border border-gray-300 rounded-lg p-2 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-3">
+              <div class="flex flex-col space-y-1">
+                <label class="text-sm font-medium text-gray-700" for="localCep">CEP</label>
+                <input
+                  id="localCep"
+                  type="text"
+                  bind:value={novoLocal.cep}
+                  class="border border-gray-300 rounded-lg p-2 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+              <div class="flex flex-col space-y-1">
+                <label class="text-sm font-medium text-gray-700" for="localCnpj">CNPJ</label>
+                <input
+                  id="localCnpj"
+                  type="text"
+                  bind:value={novoLocal.cnpj}
+                  class="border border-gray-300 rounded-lg p-2 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+            </div>
+
             <div class="flex flex-col space-y-1">
-              <label class="text-sm font-medium text-gray-700" for="numero">Número</label>
+              <label class="text-sm font-medium text-gray-700" for="localRazaoSocial">Razão Social</label>
               <input
-                id="numero"
+                id="localRazaoSocial"
                 type="text"
-                bind:value={novoNumero}
+                bind:value={novoLocal.razaoSocial}
                 class="border border-gray-300 rounded-lg p-2 focus:outline-none focus:ring-2 focus:ring-emerald-500"
               />
+            </div>
+
+            <div class="flex flex-col space-y-1">
+              <label class="text-sm font-medium text-gray-700" for="localNomeFantasia">Nome Fantasia</label>
+              <input
+                id="localNomeFantasia"
+                type="text"
+                bind:value={novoLocal.nomeFantasia}
+                class="border border-gray-300 rounded-lg p-2 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              />
+            </div>
+
+            <div class="grid grid-cols-2 gap-3">
+              <div class="flex flex-col space-y-1">
+                <label class="text-sm font-medium text-gray-700" for="localTelefone">Telefone</label>
+                <input
+                  id="localTelefone"
+                  type="text"
+                  bind:value={novoLocal.telefone}
+                  class="border border-gray-300 rounded-lg p-2 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+              <div class="flex flex-col space-y-1">
+                <label class="text-sm font-medium text-gray-700" for="localEmail">Email</label>
+                <input
+                  id="localEmail"
+                  type="text"
+                  bind:value={novoLocal.email}
+                  class="border border-gray-300 rounded-lg p-2 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
             </div>
 
             <div class="flex flex-col space-y-1">
@@ -295,7 +480,7 @@
               <input
                 type="text"
                 bind:value={termoBuscaLocal}
-                placeholder="Buscar pelo nome do local..."
+                placeholder="Buscar pelo nome ou pelo CNES (código exato)..."
                 class="w-full border border-gray-300 rounded-lg p-2 focus:outline-none focus:ring-2 focus:ring-emerald-500"
               />
             </div>

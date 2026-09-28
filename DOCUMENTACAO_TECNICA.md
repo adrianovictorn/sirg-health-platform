@@ -153,7 +153,8 @@ Regula-o/
 | `cpf` | `String` | `cpf` | UNIQUE, NOT NULL, length=15 |
 | `nome` | `String` | `nome` | NOT NULL |
 | `password` | `String` | `senha` | NOT NULL (BCrypt) |
-| `role` | `Roles` (enum) | `cargo` | NOT NULL |
+| `role` | `Roles` (enum) | `cargo` | NOT NULL — perfil **principal** (o do login) |
+| `perfis` | `Set<Roles>` | `usuario_perfis.perfil` | @ElementCollection EAGER (V85) — perfis **concedidos** |
 | `fotoPerfil` | `String` | `foto_perfil` | nullable, URL relativa |
 | `ativo` | `boolean` | `ativo` | NOT NULL, default=true |
 
@@ -162,6 +163,63 @@ Regula-o/
 - `isEnabled()` → retorna `ativo`
 - `isAccountNonLocked()` → retorna `ativo`
 - `isAccountNonExpired()`, `isCredentialsNonExpired()` → sempre `true`
+- `getAuthorities()` → `ROLE_<principal>`. **Não** é o que vale na requisição quando
+  há perfil ativo no token — ver §3.1.1.
+
+### 3.1.1 Múltiplos perfis e alternância (v1.7)
+
+Um usuário pode ter vários perfis liberados e alternar entre eles. A alternância
+**não soma acessos**: vale um perfil de cada vez, e é o perfil em uso que define
+tanto as permissões quanto o escopo de unidade.
+
+| Conceito | Onde vive | Para que serve |
+|---|---|---|
+| Perfil **principal** | `usuarios.cargo` | O do login; fallback para token sem claim |
+| Perfis **concedidos** | `usuario_perfis` | O que a pessoa *pode* assumir |
+| Perfil **ativo** | claim `perfilAtivo` do JWT | O que vale **nesta** requisição |
+
+**Fluxo da troca:** `POST /api/users/me/perfil` `{ "perfil": "GESTOR" }` →
+`UserService.trocarPerfilAtivo` confere se está concedido → devolve um JWT novo
+emitido com aquele perfil. Nada é gravado: sair e entrar de novo volta ao
+principal, e a troca vale por sessão, não para todos os dispositivos.
+
+**Por que a conferência é na requisição e não na emissão:** o
+`JwtAuthenticationFilter` refaz a checagem do `perfilAtivo` contra
+`usuario_perfis` a cada request. Assim, retirar um perfil de alguém tem efeito
+**imediato** — o token que a pessoa já tem na mão para de valer para aquele
+perfil e cai no principal, sem esperar as 2h de expiração.
+
+**Escopo de unidade acompanha o perfil ativo:** `UnidadeAcessoService` resolve o
+perfil efetivo a partir das authorities da requisição (reconferidas contra os
+perfis concedidos) em vez de ler `usuarios.cargo`. Sem isso, quem tem ADMIN e
+ADMIN_UNIDADE continuaria global ao alternar para ADMIN_UNIDADE, e a alternância
+seria decorativa. Fora de requisição autenticada (testes, chamadas internas),
+cai no principal — o comportamento anterior.
+
+**Compatibilidade:** `usuarios.cargo` **não foi removida**. Token emitido antes
+da v1.7 não tem o claim e cai no principal; usuário sem linha em `usuario_perfis`
+(base não migrada) também — `getPerfisConcedidos()` garante que o principal
+sempre está no conjunto, então ninguém fica sem acesso.
+
+### 3.1.2 Perfil GESTOR (v1.7)
+
+Acompanhamento de indicadores, relatórios e desempenho das unidades. **Não monta
+cota nem configura agenda** — só leitura, e só de agregados.
+
+| Acesso | Endpoint | Observação |
+|---|---|---|
+| ✅ Indicadores | `/api/fechamento/**` | Já passava: a classe usa `!hasRole('ADMIN_UNIDADE')` |
+| ✅ Resumo do dashboard | `GET /solicitacoes/resumo-dashboard` | Agregado |
+| ✅ Relatório por profissional | `/api/relatorios/profissional/**` | Era `ADMIN`, virou `ADMIN, GESTOR` |
+| ✅ Cotas da unidade (ver) | `GET /cotas/unidade/{id}/periodo/{p}` | Só leitura |
+| ✅ Contagem por grupo/data | `GET /especialidades/contar/pacientes/por/grupo` | Agregado |
+| ❌ Lista de pacientes da agenda | `GET /especialidades/listar/pacientes/por/grupo` | Expõe nome/CPF/CNS — fora de propósito para métrica |
+| ❌ Criar/alterar/excluir cota | `POST/PUT/DELETE /cotas/**` | "não montará cota" |
+| ❌ Gestão de usuários, cadastros, agendamento | — | Continua `ADMIN` |
+
+**Escopo:** GESTOR é **global** mesmo tendo unidade de lotação — o papel é
+comparar unidades, e restringi-lo à lotação esvaziaria isso. É a única exceção,
+junto com ADMIN, à regra de "tem unidade ⇒ restrito".
 
 ---
 
@@ -384,7 +442,23 @@ Classificação Internacional de Doenças. Vinculada a Solicitacoes via `@ManyTo
 | `telefone` | `String` | optional, max 20 |
 | `endereco` | `String` | optional, max 300 |
 | `ativo` | `boolean` | default=true |
+| `tipo` | `TipoUnidadeEnum` | **V86** — `SOLICITANTE`, `EXECUTANTE`, `AMBOS`; NOT NULL, default `AMBOS` |
+| `cnpj` | `String` | V86, do CNES, max 14 |
+| `razaoSocial` | `String` | V86, do CNES, max 255 |
+| `nomeFantasia` | `String` | V86, do CNES, max 255 |
+| `numero` | `String` | V86, do CNES, max 20 |
+| `bairro` | `String` | V86, do CNES, max 150 |
+| `cep` | `String` | V86, do CNES, max 8 |
+| `email` | `String` | V86, do CNES, max 150 |
+| `sincronizadoCnesEm` | `LocalDateTime` | V86 — quando os dados vieram da API; nulo = cadastro manual |
+| `grupoRelatorio` | `GrupoRelatorio` | V82, @ManyToOne nullable — grupo de cota coletiva |
 | `criadoEm` | `LocalDateTime` | @CreationTimestamp |
+
+**`unidade` é o cadastro único de estabelecimento.** A V86 estendeu a tabela em vez de criar
+uma entidade de "prestador": cotas, filas, dashboards, relatórios e o escopo de acesso por
+unidade (§10.0) já filtram por `unidade_id`, e uma entidade paralela obrigaria a duplicar toda
+essa lógica. O que separa USF de prestador é a coluna `tipo` — toda unidade existente virou
+`AMBOS` na migração, então nada mudou de comportamento em produção.
 
 ---
 
@@ -524,6 +598,55 @@ nenhuma unidade é agrupada automaticamente pela migração.
 
 ---
 
+### 3.15c Agenda do Dia por Unidade (v1.6)
+
+`GET /api/especialidades/listar/pacientes/por/grupo` e `.../contar/pacientes/por/grupo`
+(consumidos por `/agendas/[grupo]` e pelos cartões de `/dashboard/procedimentos*`)
+listam os pacientes agendados de um Grupo de Relatório numa data. Até a v1.6 o filtro de
+local era `agendamento_solicitacao.local_agendamento_id = 3` — uma linha **fixa** de
+`local_agendamento` (a tabela de destinos **externos** de referência: Hospital Roberto
+Santos, Policlínica Reconvale etc., §"LocalAgendamento" — sem relação nenhuma com
+`Unidade`). Era a mesma lista para qualquer usuário autenticado, de qualquer unidade, e
+os dois endpoints não tinham `@PreAuthorize` nenhum.
+
+**Agora o filtro é `solicitacao.unidade_id`** — a mesma `Unidade` de `/admin/unidades`,
+já usada em cotas e no perfil `ADMIN_UNIDADE`. Resolução em
+`SolicitacaoEspecialidadeService#resolverUnidadeDaAgenda`, que delega a
+`UnidadeAcessoService#resolverUnidadeAlvo` (o mesmo método que `createSolicitacao` já usa
+para não deixar um operador restrito gravar em nome de outra unidade):
+
+| Perfil do chamador | Parâmetro `unidadeId` da requisição | Unidade usada |
+|---|---|---|
+| `ADMIN` (global) | obrigatório | a informada; sem ela, `IllegalArgumentException` → 400 "Selecione uma unidade" |
+| `ADMIN_UNIDADE` / `USER` com unidade de lotação | ignorado se ausente; se informado e **diferente** da própria, `AccessDeniedException` → 403 | a de lotação, sempre |
+| Qualquer perfil **sem** unidade de lotação (legado, ainda não migrado) | aceito | comportamento histórico: acesso global, como antes desta versão |
+
+Os dois endpoints ganharam `@PreAuthorize("hasAnyRole('ADMIN','ADMIN_UNIDADE','USER',
+'RECEPCAO','ENFERMEIRO','MEDICO')")` — **`PACIENTE` e `COORD_TRANSPORTE` ficam de fora**.
+A lista traz nome, CPF, CNS e data de nascimento de **todos** os pacientes do dia da
+unidade: dado operacional, não o do próprio paciente logado. `PACIENTE` foi removido
+também das `roles` do grupo dinâmico `agendasHospital` em `menuConfig.js`, para não
+oferecer um link que agora dá 403.
+
+**Frontend:** `/agendas/[grupo]/+page.svelte` e as 3 páginas de
+`/dashboard/procedimentos*` buscam `GET /users/me` (`role`, `unidadeId`) no `onMount`.
+Perfil `ADMIN` recebe um `<select>` de unidades (`GET /unidades/ativas`) e precisa
+escolher uma para a consulta disparar; qualquer outro perfil usa `unidadeId` do próprio
+perfil, sem escolha. Sem unidade resolvida (ADMIN sem escolher, ou operador sem unidade
+de lotação vinculada), a tela mostra um aviso em vez de consultar — nunca envia a
+requisição sem `unidadeId`.
+
+> **Consequência a conhecer:** um `USER` (Usuário Padrão) sem `unidade` vinculada perde o
+> acesso à Agenda do Dia até que um `ADMIN` vincule a unidade em
+> `/admin/cadastrar-usuario` (edição) — o campo já existe no formulário, só não vinha
+> sendo preenchido para esse perfil. Ver aviso de deploy no `CHANGELOG.md`.
+
+Testes: `AgendaPorUnidadeIT` (5, PostgreSQL real) — unidade vê só os próprios pacientes,
+não vê outra trocando o parâmetro, ADMIN escolhe livremente, ADMIN sem escolher é
+recusado, solicitação sem agendamento não aparece.
+
+---
+
 ### 3.16 Profissional
 
 **Tabela:** `profissional`  
@@ -537,10 +660,77 @@ Profissional de saúde solicitante vinculado a uma unidade.
 | `numeroRegistro` | `String` | Número no conselho, max 50 |
 | `especialidadeAtuacao` | `String` | Texto livre, max 200 |
 | `telefone` | `String` | max 20 |
-| `unidade` | `Unidade` | @ManyToOne nullable |
+| `cpf` | `String` | **V88** — 11 dígitos sem máscara, UNIQUE parcial (`WHERE NOT NULL`), nullable |
+| `unidade` | `Unidade` | @ManyToOne nullable — **@Deprecated (V88)**, ver abaixo |
 | `ativo` | `boolean` | default=true |
 | `criadoEm` | `LocalDateTime` | @CreationTimestamp |
 | `atualizadoEm` | `LocalDateTime` | @UpdateTimestamp |
+
+**`cpf` é a chave de deduplicação da importação do CNES.** É por ele que se decide entre criar
+profissional novo e apenas acrescentar vínculo a quem já existe. Nullable porque os
+profissionais cadastrados antes da V88 não têm o dado, e exigir o campo travaria a edição de
+todos eles.
+
+> **`unidade` está deprecado desde a V88.** O campo é um `@ManyToOne` único, e a realidade é
+> outra: o mesmo profissional atende na policlínica, no hospital e numa USF, com CBO
+> possivelmente diferente em cada lugar. Quem descreve isso é `ProfissionalVinculo` (§3.16c). A
+> coluna **continua populada** e as telas atuais ainda leem dela; a V88 copiou cada valor para um
+> vínculo (`cbo` nulo, `origem = MANUAL`). Remover só depois de migrar os pontos de leitura —
+> apagar junto com a criação do vínculo quebraria as telas em produção.
+
+---
+
+### 3.16b Cbo
+
+**Tabela:** `cbo` (V87)
+Ocupação do profissional no padrão CBO 2002.
+
+| Campo | Tipo Java | Notas |
+|---|---|---|
+| `id` | `Long` | PK |
+| `codigo` | `String` | UNIQUE, 6 dígitos (ex.: `225125` = médico clínico) |
+| `descricao` | `String` | NOT NULL, max 255 |
+| `ativo` | `boolean` | default=true |
+| `criadoEm` | `LocalDateTime` | @CreationTimestamp |
+
+**A tabela nasceu vazia, sem seed.** Semear códigos à mão seria digitá-los, e um CBO errado é
+pior que ausente: entra em silêncio no vínculo e passa a rotular o profissional com a ocupação
+de outra pessoa, sem nada que acuse o erro. A carga vem de duas fontes com dado confiável: o
+*upsert* da importação do CNES (código e descrição vindos do DATASUS) e `POST /api/cbos`, para
+cadastro avulso. O *upsert* **não sobrescreve** a descrição de um CBO existente — se o
+administrador ajustou o texto, o arquivo não desfaz o ajuste; o que identifica a ocupação é o
+código.
+
+---
+
+### 3.16c ProfissionalVinculo
+
+**Tabela:** `profissional_vinculo` (V88)
+Onde o profissional atua, e em que ocupação. É o que a abertura de agenda consulta para filtrar
+o combo de profissionais do estabelecimento executante escolhido.
+
+| Campo | Tipo Java | Notas |
+|---|---|---|
+| `id` | `Long` | PK |
+| `profissional` | `Profissional` | @ManyToOne NOT NULL, FK `ON DELETE CASCADE` |
+| `unidade` | `Unidade` | @ManyToOne NOT NULL, FK `ON DELETE RESTRICT` — o executante |
+| `cbo` | `Cbo` | @ManyToOne nullable, FK `ON DELETE RESTRICT` |
+| `ativo` | `boolean` | default=true |
+| `origem` | `OrigemVinculoEnum` | `MANUAL` ou `IMPORTACAO_CNES`, CHECK no banco |
+| `criadoEm` | `LocalDateTime` | @CreationTimestamp |
+
+**Unicidade da tripla (profissional, unidade, cbo)**, garantida pelo índice
+`uk_vinculo_profissional_unidade_cbo`, que usa `COALESCE(cbo_id, -1)` — como a V84. No Postgres
+dois `NULL` são distintos, então um UNIQUE comum deixaria passar N vínculos duplicados sem CBO,
+que é justamente o caso dos vínculos herdados da coluna antiga.
+
+**Consequência no código:** verificar se o vínculo existe exige *duas* consultas
+(`findBy...AndCboId` e `findBy...AndCboIsNull`), porque `cbo_id = NULL` nunca casa em SQL. Sem a
+segunda, cada reimportação tentaria criar de novo o vínculo sem CBO e cairia no índice único.
+
+**`origem` existe para a reimportação:** vínculo importado pode ser atualizado pelo arquivo
+seguinte, enquanto vínculo digitado à mão representa decisão da coordenação e não é sobrescrito
+em silêncio.
 
 ---
 
@@ -548,13 +738,15 @@ Profissional de saúde solicitante vinculado a uma unidade.
 
 | Enum | Valores |
 |---|---|
-| `Roles` | `ADMIN, ADMIN_UNIDADE, USER, PACIENTE, ENFERMEIRO, MEDICO, RECEPCAO, COORD_TRANSPORTE` |
+| `Roles` | `ADMIN, ADMIN_UNIDADE, GESTOR, USER, PACIENTE, ENFERMEIRO, MEDICO, RECEPCAO, COORD_TRANSPORTE` |
 | `StatusDaMarcacao` | `AGUARDANDO, AGENDADO, FALTOU, CANCELADO, REALIZADO, RETORNO, RETORNO_POLICLINICA, GEL` |
 | `StatusAgendamento` | `AGENDADO, CANCELADO, PENDENTE, CONFIRMADO, REALIZADO, GEL` |
 | `ItemCategoria` | `ESPECIALIDADE_MEDICA, EXAME_OU_PROCEDIMENTO` |
 | `PrioridadeDaMarcacaoEnum` | `NORMAL, URGENTE, ...` |
 | `TurnoEnum` | `MANHA, TARDE` |
 | `TipoPeriodoCota` | `MENSAL, DATA` |
+| `TipoUnidadeEnum` | `SOLICITANTE, EXECUTANTE, AMBOS` (V86) — papel da unidade; tem `executa()` e `solicita()` |
+| `OrigemVinculoEnum` | `MANUAL, IMPORTACAO_CNES` (V88) — de onde veio o vínculo do profissional |
 | `UsfEnum` | Siglas das USFs cadastradas |
 | `TipoVeiculoEnum` | Tipos de veículos sanitários |
 | `LocalDeAgendamentoEnum` | Locais de atendimento (enum legado) |
@@ -608,7 +800,20 @@ Os DTOs são registros imutáveis (`record` Java) organizados por subpacote de d
 | `UnidadeCreateDTO` / `UnidadeUpdateDTO` | Cadastro/edição, incluindo o vínculo ao grupo de cota (`grupoRelatorioId`) |
 | `UnidadeViewDTO` | Retorno completo com o grupo vinculado |
 | `UnidadeSimpleViewDTO` | Listas (id, nome, codigo) |
-| `ProfissionalCreateDTO` / `ProfissionalViewDTO` | Profissionais solicitantes |
+| `ProfissionalCreateDTO` / `ProfissionalViewDTO` | Profissionais solicitantes (com `cpf` desde a V88) |
+| `ProfissionalVinculoCreateDTO` / `ProfissionalVinculoViewDTO` | Vínculo profissional × executante × CBO (V88) |
+| `CboCreateDTO` / `CboViewDTO` | Ocupações CBO (V87) |
+
+### 4.2d CNES (`dto/cnes`)
+
+| DTO | Uso |
+|---|---|
+| `CnesEstabelecimentoDTO` | Resposta da API do DATASUS, já mapeada para os campos de `Unidade` |
+| `CnesProfissionalLinhaDTO` | Uma linha do CSV de profissionais, normalizada. **É o mesmo objeto nas duas pontas**: sai na prévia com `situacao`/`detalhe` e volta na confirmação com o que o operador marcou |
+| `SituacaoLinhaImportacaoEnum` | `NOVO_PROFISSIONAL`, `NOVO_VINCULO`, `JA_EXISTE`, `SEM_UNIDADE`, `INVALIDA` |
+| `CnesImportacaoPreviaDTO` | O que o arquivo contém, para conferência — nada gravado ainda |
+| `CnesImportacaoConfirmarDTO` | As linhas marcadas + `unidadeIdPadrao`, para quando o arquivo não traz CNES reconhecível |
+| `CnesImportacaoResultadoDTO` | O que foi gravado, separando criado de reaproveitado |
 
 ### 4.3 Especialidades
 
@@ -834,6 +1039,8 @@ Próxima requisição do usuário desativado:
 | `unidade` | V68 | Unidades de Saúde |
 | `cota_unidade` | V70 | Cotas por unidade (geral ou por especialidade) |
 | `profissional` | V71 | Profissionais solicitantes |
+| `cbo` | V87 | Ocupações (CBO 2002). Criada **vazia**: a carga vem da importação do CNES ou de cadastro avulso |
+| `profissional_vinculo` | V88 | Profissional × estabelecimento executante × CBO |
 
 
 **Colunas adicionadas em tabelas existentes:**
@@ -844,6 +1051,10 @@ Próxima requisição do usuário desativado:
 - `unidade.grupo_relatorio_id` (V82) — FK, nullable — grupo de unidades para cota coletiva
 - `cota_unidade.grupo_unidades_id` (V82/V84) — FK, nullable — **titular** grupo de unidades
 - `cota_unidade.grupo_especialidades_id` (V84) — FK, nullable — **escopo** grupo de especialidades
+- `usuario_perfis` (V85) — tabela dos perfis concedidos (`@ElementCollection` de `User.perfis`)
+- `unidade.tipo` (V86) — NOT NULL default `AMBOS`, CHECK `ck_unidade_tipo` — papel da unidade
+- `unidade.cnpj` / `razao_social` / `nome_fantasia` / `numero` / `bairro` / `cep` / `email` / `sincronizado_cnes_em` (V86) — nullable, preenchidos pela API do CNES
+- `profissional.cpf` (V88) — nullable, UNIQUE parcial (`WHERE cpf IS NOT NULL`)
 
 ### 6.3 Histórico de Migrações Notáveis
 
@@ -876,6 +1087,10 @@ Próxima requisição do usuário desativado:
 | V82 | `unidade.grupo_relatorio_id`; cota por grupo em `cota_unidade` (titular exclusivo) |
 | V83 | `ADMIN_UNIDADE` na constraint `usuarios_cargo_check` |
 | V84 | `cota_unidade.grupo_especialidades_id` (escopo por grupo); rename `grupo_relatorio_id` → `grupo_unidades_id`; CHECK de escopo; índices únicos consolidados |
+| V85 | Perfil `GESTOR` na constraint de cargo + tabela `usuario_perfis` (múltiplos perfis) |
+| V86 | `unidade.tipo` (`SOLICITANTE`/`EXECUTANTE`/`AMBOS`, default `AMBOS`) + dados cadastrais do CNES; índice `ix_unidade_tipo_ativo` |
+| V87 | Tabela `cbo`, **sem seed** — ver §3.16b |
+| V88 | `profissional.cpf` (UNIQUE parcial) + tabela `profissional_vinculo`; backfill dos vínculos a partir de `profissional.unidade_id` |
 
 > **Limite do backfill (V73/V76/V77):** só é possível vincular a unidade quando
 > `usf_origem` está preenchido **e** casa com alguma unidade cadastrada. O que sobra é
@@ -1064,6 +1279,57 @@ trocar o id na chamada direta não dá acesso a outra unidade.
 | PUT | `/profissionais/{id}` | RECEPCAO/ADMIN | Atualiza profissional |
 | PATCH | `/profissionais/{id}/status` | RECEPCAO/ADMIN | Ativa/Desativa |
 | DELETE | `/profissionais/{id}` | ADMIN | Remove profissional |
+| GET | `/profissionais/{id}/vinculos` | Autenticado | Vínculos do profissional (executante + CBO) |
+| GET | `/profissionais/executante/{unidadeId}/ativos` | Autenticado | **Quem atende neste executante** — combo da abertura de agenda. Lê o vínculo, não o campo `unidade` deprecado |
+| POST | `/profissionais/{id}/vinculos` | ADMIN/GESTOR | Cria vínculo (409 se a tripla já existe) |
+| PATCH | `/profissionais/vinculos/{vinculoId}/status` | ADMIN/GESTOR | Ativa/Desativa vínculo |
+| DELETE | `/profissionais/vinculos/{vinculoId}` | ADMIN/GESTOR | Remove vínculo — serve para desfazer importação no estabelecimento errado |
+| POST | `/profissionais/importar-cnes` | ADMIN/GESTOR | *multipart* `arquivo` — lê o CSV e **devolve a prévia sem gravar nada** |
+| POST | `/profissionais/importar-cnes/confirmar` | ADMIN/GESTOR | Grava as linhas marcadas. Idempotente |
+
+---
+
+### 7.10e CBOs (`/cbos`)
+
+| Método | Endpoint | Role Mínima | Descrição |
+|---|---|---|---|
+| GET | `/cbos?apenasAtivos=true` | Autenticado | Lista para os combos |
+| POST | `/cbos` | ADMIN/GESTOR | Cadastra ocupação (código de 6 dígitos validado) |
+| PATCH | `/cbos/{id}/status` | ADMIN/GESTOR | Ativa/Desativa |
+| DELETE | `/cbos/{id}` | ADMIN | Exclui — 409 se houver vínculo usando |
+
+---
+
+### 7.10f CNES — consulta ao DATASUS (`/cnes`)
+
+| Método | Endpoint | Role Mínima | Descrição |
+|---|---|---|---|
+| GET | `/cnes/estabelecimentos/{cnes}` | ADMIN/GESTOR | Busca por código CNES — preenche a tela de cadastro inteira |
+| GET | `/cnes/estabelecimentos?municipio=&limite=&offset=` | ADMIN/GESTOR | Autocomplete do município (sem `municipio`, usa `app.cnes.codigo-municipio`) |
+
+Somente leitura: nada aqui grava no banco — o operador confere o que veio e salva pela rota de
+unidades. A chamada sai **do backend**, nunca do browser: assim o CORS do DATASUS não entra na
+conta e os erros chegam à tela no mesmo formato dos demais.
+
+**Três armadilhas da API, verificadas em 25/09/2026:**
+
+1. **O código IBGE do município tem 6 dígitos**, sem o verificador — São Felipe é `292910`, não
+   `2929107`. Passar 7 dígitos devolve **lista vazia com HTTP 200**, uma falha silenciosa; por
+   isso `CnesService` normaliza antes de chamar.
+2. **O CNPJ vive em dois campos:** consultório privado preenche `numero_cnpj`; unidade pública
+   preenche `numero_cnpj_entidade` (CNPJ da prefeitura mantenedora). Ler só um devolve nulo em
+   metade dos casos.
+3. **CNES inexistente responde 404**, e isso virou `EntityNotFoundException` → 404 na tela
+   ("confira o número"), separado de `ServicoExternoIndisponivelException` → 503 ("DATASUS fora
+   do ar, siga no cadastro manual"). Sem a distinção, quem digitava um CNES errado lia "serviço
+   indisponível" e ficava tentando de novo em vez de corrigir o número.
+
+**Não existe endpoint público de profissionais.** Testadas e todas 404 em 25/09/2026:
+`/cnes/profissionais`, `/cnes/vinculos`, `/cnes/equipes`, `/cnes/ocupacoes`, as variantes com
+`/v1/` e o sub-recurso `/cnes/estabelecimentos/{cnes}/profissionais`. Por isso a entrada de
+profissionais é por arquivo (§7.10d), alimentada pela *Extração de dados de profissional* do
+portal do CNES. O webservice SOAP exige credencial que a SMS precisa solicitar ao DATASUS; se
+ela vier, troca-se só o adaptador que alimenta a lista — a tela não muda.
 
 ---
 

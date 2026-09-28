@@ -245,7 +245,8 @@
         const detalhes = Object.values(erros).join(', ');
         alert(`Não foi possível salvar. Preencha os campos obrigatórios: ${detalhes}`);
     } else {
-        alert('Erro ao atualizar paciente.');
+        const erro = await res.json().catch(() => ({}));
+        alert(erro.message || 'Erro ao atualizar paciente.');
     }
 }
 

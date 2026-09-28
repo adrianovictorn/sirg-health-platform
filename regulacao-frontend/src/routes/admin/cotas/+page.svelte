@@ -1,43 +1,35 @@
 <script>
   import { onMount } from 'svelte';
-  import { getApi, postApi, putApi } from '$lib/api.js';
-  import RoleBasedMenu from '$lib/RoleBasedMenu.svelte';
-  import UserMenu from '$lib/UserMenu.svelte';
+  import { goto } from '$app/navigation';
+  import { getApi } from '$lib/api.js';
+  import Content from '$lib/Content.svelte';
   import { toast } from 'svelte-sonner';
+  import { formatarPeriodoCota, agruparCotasPorAgenda, periodoCobertoPorGrupo } from '$lib/cotas.js';
+  import GrupoToggleButton from '$lib/GrupoToggleButton.svelte';
+  import GrupoEspecialidadesPainel from '$lib/GrupoEspecialidadesPainel.svelte';
 
-  let cotas = [];
-  let unidades = [];
-  let grupos = [];
-  let especialidades = [];
-  let loading = true;
-  let showModal = false;
-  let editando = null;
+  let cotas = $state([]);
+  let unidades = $state([]);
+  let grupos = $state([]);
+  let agendasPorId = $state({});
+  let loading = $state(true);
 
-  let filtroUnidade = '';
-  let periodoAtual = new Date().toISOString().slice(0, 7);
-  let hojeISO = new Date().toISOString().slice(0, 10);
+  let filtroUnidade = $state('');
 
-  // A cota tem duas dimensões independentes:
-  //   TITULAR — de quem é: uma unidade OU um grupo de unidades (pool compartilhado).
-  //   ESCOPO  — o que limita: uma especialidade, OU um grupo de especialidades
-  //             (saldo único entre todas elas), OU nada (cota geral).
-  // O backend recusa titular ausente/duplicado e escopo duplicado.
-  let form = {
-    titular: 'UNIDADE',
-    escopo: 'ESPECIALIDADE',
-    grupoUnidadesId: null,
-    grupoEspecialidadesId: null,
-    unidadeId: null,
-    especialidadeId: null,
-    tipoPeriodo: 'MENSAL',
-    periodo: periodoAtual,
-    dataEspecifica: hojeISO,
-    quantidadeTotal: 0
-  };
-  let formEditar = { quantidadeTotal: 0, ativo: true };
+  // Quais cotas de grupo estão com o painel de especialidades expandido.
+  let gruposAbertos = $state({});
+  function alternarGrupo(cotaId) {
+    gruposAbertos = { ...gruposAbertos, [cotaId]: !gruposAbertos[cotaId] };
+  }
+
+  // Quais agendas estão com o grupo de cotas (ocorrência x unidade) expandido.
+  let agendasAbertas = $state({});
+  function alternarAgenda(agendaId) {
+    agendasAbertas = { ...agendasAbertas, [agendaId]: !agendasAbertas[agendaId] };
+  }
 
   onMount(async () => {
-    await Promise.all([carregarUnidades(), carregarEspecialidades(), carregarGrupos()]);
+    await Promise.all([carregarUnidades(), carregarGrupos(), carregarAgendas()]);
     await carregarCotas();
   });
 
@@ -57,7 +49,9 @@
     try {
       const res = await getApi('unidades/ativas');
       unidades = await res.json();
-    } catch {}
+    } catch {
+      /* ignora - combo fica vazio */
+    }
   }
 
   async function carregarGrupos() {
@@ -66,348 +60,286 @@
       // aponta para o grupo via unidade.grupoRelatorioId).
       const res = await getApi('grupo-relatorio/listar');
       grupos = res.ok ? await res.json() : [];
-    } catch {}
+    } catch {
+      /* ignora - combo fica vazio */
+    }
   }
 
-  async function carregarEspecialidades() {
+  async function carregarAgendas() {
     try {
-      const res = await getApi('catalog/especialidades/listar');
-      especialidades = await res.json();
-    } catch {}
+      // Só usada para o resumo (executante/profissional) das cotas de origem
+      // AGENDA agrupadas abaixo — falha aqui degrada pro fallback "Agenda #id",
+      // não quebra a tela.
+      const res = await getApi('agendas');
+      const lista = res.ok ? await res.json() : [];
+      agendasPorId = Object.fromEntries(lista.map((a) => [a.id, a]));
+    } catch {
+      /* ignora - grupo cai no fallback "Agenda #id" */
+    }
   }
 
   // Ao filtrar por unidade, mostra também as cotas do grupo a que ela pertence:
   // elas limitam essa unidade tanto quanto as cotas próprias.
-  $: grupoDaUnidadeFiltrada = filtroUnidade
-    ? (unidades.find(u => u.id === Number(filtroUnidade))?.grupoRelatorioId ?? null)
-    : null;
+  const grupoDaUnidadeFiltrada = $derived(
+    filtroUnidade ? (unidades.find((u) => u.id === Number(filtroUnidade))?.grupoRelatorioId ?? null) : null
+  );
 
-  $: cotasFiltradas = filtroUnidade
-    ? cotas.filter(c => c.unidadeId === Number(filtroUnidade)
-        || (grupoDaUnidadeFiltrada && c.grupoUnidadesId === grupoDaUnidadeFiltrada))
-    : cotas;
+  const cotasFiltradas = $derived(
+    filtroUnidade
+      ? cotas.filter(
+          (c) =>
+            c.unidadeId === Number(filtroUnidade) ||
+            (grupoDaUnidadeFiltrada && c.grupoUnidadesId === grupoDaUnidadeFiltrada)
+        )
+      : cotas
+  );
 
-  function formatarPeriodo(c) {
-    if (c.tipoPeriodo === 'DATA') return c.dataEspecifica ?? '-';
-    return c.periodo ?? '-';
-  }
+  // Uma cota de agenda recorrente materializa uma linha por ocorrência x
+  // unidade solicitante — sem agrupar, uma agenda semanal de um mês vira
+  // dezenas de linhas soltas na tabela. Aqui elas viram uma linha-resumo por
+  // agenda, na posição em que a primeira delas apareceria na lista original;
+  // cotas manuais continuam uma linha cada, sem nenhuma mudança de comportamento.
+  const linhasExibidas = $derived(construirLinhas(cotasFiltradas));
 
-  function abrirModalNova() {
-    editando = null;
-    form = {
-      titular: 'UNIDADE',
-      escopo: 'ESPECIALIDADE',
-      grupoUnidadesId: null,
-      grupoEspecialidadesId: null,
-      unidadeId: null,
-      especialidadeId: null,
-      tipoPeriodo: 'MENSAL',
-      periodo: periodoAtual,
-      dataEspecifica: hojeISO,
-      quantidadeTotal: 0
-    };
-    showModal = true;
-  }
-
-  function abrirModalEditar(c) {
-    editando = c;
-    formEditar = { quantidadeTotal: c.quantidadeTotal, ativo: c.ativo };
-    showModal = true;
-  }
-
-  async function salvar() {
-    try {
-      if (editando) {
-        await putApi(`cotas/${editando.id}`, formEditar);
-        toast.success('Cota atualizada.');
+  function construirLinhas(lista) {
+    const { porAgenda } = agruparCotasPorAgenda(lista);
+    const vistos = new Set();
+    const linhas = [];
+    for (const c of lista) {
+      if (c.origem === 'AGENDA' && c.agendaId != null) {
+        if (vistos.has(c.agendaId)) continue;
+        vistos.add(c.agendaId);
+        linhas.push({ tipo: 'agenda', agendaId: c.agendaId, cotas: porAgenda.get(c.agendaId) });
       } else {
-        const porGrupoUnidades = form.titular === 'GRUPO';
-        if (porGrupoUnidades && !form.grupoUnidadesId) { toast.error('Selecione o grupo de unidades.'); return; }
-        if (!porGrupoUnidades && !form.unidadeId) { toast.error('Selecione a unidade.'); return; }
-
-        const porGrupoEsp = form.escopo === 'GRUPO_ESPECIALIDADES';
-        if (porGrupoEsp && !form.grupoEspecialidadesId) { toast.error('Selecione o grupo de especialidades.'); return; }
-
-        const payload = {
-          unidadeId: porGrupoUnidades ? null : Number(form.unidadeId),
-          grupoUnidadesId: porGrupoUnidades ? Number(form.grupoUnidadesId) : null,
-          especialidadeId: (!porGrupoEsp && form.especialidadeId) ? Number(form.especialidadeId) : null,
-          grupoEspecialidadesId: porGrupoEsp ? Number(form.grupoEspecialidadesId) : null,
-          tipoPeriodo: form.tipoPeriodo,
-          periodo: form.tipoPeriodo === 'MENSAL' ? form.periodo : null,
-          dataEspecifica: form.tipoPeriodo === 'DATA' ? form.dataEspecifica : null,
-          quantidadeTotal: Number(form.quantidadeTotal)
-        };
-        const res = await postApi('cotas', payload);
-        if (!res.ok) {
-          const erro = await res.json().catch(() => ({}));
-          toast.error(erro.message ?? 'Erro ao criar cota.');
-          return;
-        }
-        toast.success('Cota criada.');
+        linhas.push({ tipo: 'manual', cota: c });
       }
-      showModal = false;
-      await carregarCotas();
-    } catch {
-      toast.error('Erro ao salvar cota.');
     }
+    return linhas;
+  }
+
+  function resumoGrupo(cotasDoGrupo) {
+    const unidadesDistintas = new Set(cotasDoGrupo.map((c) => c.unidadeId)).size;
+    return {
+      quantidadeTotal: cotasDoGrupo.reduce((soma, c) => soma + c.quantidadeTotal, 0),
+      quantidadeUtilizada: cotasDoGrupo.reduce((soma, c) => soma + c.quantidadeUtilizada, 0),
+      saldoDisponivel: cotasDoGrupo.reduce((soma, c) => soma + c.saldoDisponivel, 0),
+      unidadesDistintas,
+      periodo: periodoCobertoPorGrupo(cotasDoGrupo)
+    };
   }
 </script>
 
-<div class="flex min-h-screen bg-slate-950">
-  <RoleBasedMenu activePage="/admin/cotas" />
-
-  <div class="flex-1 flex flex-col">
-    <header class="flex items-center justify-between px-6 py-4 border-b border-slate-800 bg-slate-900">
-      <h1 class="text-lg font-semibold text-white">Cotas por Unidade</h1>
-      <UserMenu />
-    </header>
-
-    <main class="p-6 space-y-4">
-      <div class="flex items-center justify-between gap-4">
-        <div class="flex items-center gap-3">
-          <select bind:value={filtroUnidade}
-            class="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-emerald-500">
-            <option value="">Todas as unidades</option>
-            {#each unidades as u}
-              <option value={u.id}>{u.nome}</option>
-            {/each}
-          </select>
-        </div>
-        <button on:click={abrirModalNova}
-          class="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium transition-colors">
-          + Nova Cota
-        </button>
-      </div>
-
-      {#if loading}
-        <p class="text-slate-400 text-sm">Carregando...</p>
+{#snippet linhaCota(c)}
+  <tr class="hover:bg-gray-50 transition-colors">
+    <td class="px-4 py-3 font-medium text-gray-900">
+      {#if c.grupoUnidadesId}
+        <span class="px-2 py-0.5 rounded text-xs font-medium bg-emerald-100 text-emerald-700">Grupo</span>
+        <span class="ml-2">{c.grupoUnidadesNome}</span>
       {:else}
-        <div class="overflow-x-auto rounded-xl border border-slate-800">
-          <table class="w-full text-sm text-slate-300">
-            <thead class="bg-slate-800 text-slate-400 uppercase text-xs">
-              <tr>
-                <th class="px-4 py-3 text-left">Titular</th>
-                <th class="px-4 py-3 text-left">Especialidade</th>
-                <th class="px-4 py-3 text-left">Tipo</th>
-                <th class="px-4 py-3 text-left">Período / Data</th>
-                <th class="px-4 py-3 text-right">Total</th>
-                <th class="px-4 py-3 text-right">Utilizado</th>
-                <th class="px-4 py-3 text-right">Saldo</th>
-                <th class="px-4 py-3 text-left">Status</th>
-                <th class="px-4 py-3 text-left">Ações</th>
-              </tr>
-            </thead>
-            <tbody class="divide-y divide-slate-800">
-              {#each cotasFiltradas as c}
-                <tr class="hover:bg-slate-800/40 transition-colors">
-                  <td class="px-4 py-3 font-medium text-white">
-                    {#if c.grupoUnidadesId}
-                      <span class="px-2 py-0.5 rounded text-xs font-medium bg-emerald-500/20 text-emerald-300">Grupo</span>
-                      <span class="ml-2">{c.grupoUnidadesNome}</span>
-                    {:else}
-                      {c.unidadeNome}
-                    {/if}
+        {c.unidadeNome}
+      {/if}
+    </td>
+    <td class="px-4 py-3">
+      {#if c.grupoEspecialidadesId}
+        <span class="px-2 py-0.5 rounded text-xs font-medium bg-sky-100 text-sky-700">Grupo</span>
+        <span class="ml-2">{c.grupoEspecialidadesNome}</span>
+        <GrupoToggleButton
+          grupo={grupos.find((g) => g.id === c.grupoEspecialidadesId)}
+          aberto={!!gruposAbertos[c.id]}
+          onToggle={() => alternarGrupo(c.id)}
+        />
+      {:else if c.especialidadeNome}
+        {c.especialidadeNome}
+      {:else}
+        <span class="text-gray-400">Geral (todas)</span>
+      {/if}
+    </td>
+    <td class="px-4 py-3">
+      <span
+        class="px-2 py-0.5 rounded text-xs font-medium {c.tipoPeriodo === 'DATA'
+          ? 'bg-blue-100 text-blue-700'
+          : 'bg-gray-200 text-gray-600'}"
+      >
+        {c.tipoPeriodo === 'DATA' ? 'Por Data' : 'Mensal'}
+      </span>
+    </td>
+    <td class="px-4 py-3">{formatarPeriodoCota(c)}</td>
+    <td class="px-4 py-3 text-right">{c.quantidadeTotal}</td>
+    <td class="px-4 py-3 text-right">{c.quantidadeUtilizada}</td>
+    <td class="px-4 py-3 text-right font-semibold {c.saldoDisponivel <= 0 ? 'text-red-600' : 'text-emerald-600'}">
+      {c.saldoDisponivel}
+    </td>
+    <td class="px-4 py-3">
+      <span
+        class="px-2 py-0.5 rounded-full text-xs font-medium {c.ativo
+          ? 'bg-emerald-100 text-emerald-700'
+          : 'bg-red-100 text-red-700'}"
+      >
+        {c.ativo ? 'Ativa' : 'Inativa'}
+      </span>
+    </td>
+    <td class="px-4 py-3">
+      {#if c.origem === 'AGENDA'}
+        <span class="px-2 py-0.5 rounded text-xs font-medium bg-violet-100 text-violet-700">Agenda</span>
+      {:else}
+        <span class="px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-500">Manual</span>
+      {/if}
+    </td>
+    <td class="px-4 py-3">
+      {#if c.origem === 'AGENDA'}
+        <button
+          onclick={() => goto(`/liberacao-agenda/${c.agendaId}`)}
+          class="px-3 py-1 rounded bg-violet-50 text-violet-700 hover:bg-violet-100 text-xs transition-colors"
+        >
+          Ver agenda
+        </button>
+      {:else}
+        <button
+          onclick={() => goto(`/admin/cotas/${c.id}/editar`)}
+          class="px-3 py-1 rounded bg-blue-50 text-blue-700 hover:bg-blue-100 text-xs transition-colors"
+        >
+          Editar
+        </button>
+      {/if}
+    </td>
+  </tr>
+{/snippet}
+
+<Content titleH1="Cotas por Unidade" page="/admin/cotas">
+  <main class="p-6 space-y-4">
+    <div class="flex items-center justify-between gap-4">
+      <div class="flex items-center gap-3">
+        <select
+          bind:value={filtroUnidade}
+          class="bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+        >
+          <option value="">Todas as unidades</option>
+          {#each unidades as u (u.id)}
+            <option value={u.id}>{u.nome}</option>
+          {/each}
+        </select>
+      </div>
+      <button
+        onclick={() => goto('/admin/cotas/nova')}
+        class="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium transition-colors"
+      >
+        + Nova Cota
+      </button>
+    </div>
+
+    {#if loading}
+      <p class="text-gray-500 text-sm">Carregando...</p>
+    {:else}
+      <div class="overflow-x-auto rounded-xl border border-gray-200 bg-white">
+        <table class="w-full text-sm text-gray-700">
+          <thead class="bg-gray-50 text-gray-500 uppercase text-xs">
+            <tr>
+              <th class="px-4 py-3 text-left">Titular</th>
+              <th class="px-4 py-3 text-left">Especialidade</th>
+              <th class="px-4 py-3 text-left">Tipo</th>
+              <th class="px-4 py-3 text-left">Período / Data</th>
+              <th class="px-4 py-3 text-right">Total</th>
+              <th class="px-4 py-3 text-right">Utilizado</th>
+              <th class="px-4 py-3 text-right">Saldo</th>
+              <th class="px-4 py-3 text-left">Status</th>
+              <th class="px-4 py-3 text-left">Origem</th>
+              <th class="px-4 py-3 text-left">Ações</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-200">
+            {#each linhasExibidas as linha (linha.tipo === 'agenda' ? `agenda-${linha.agendaId}` : `cota-${linha.cota.id}`)}
+              {#if linha.tipo === 'manual'}
+                {@render linhaCota(linha.cota)}
+              {:else}
+                {@const agendaInfo = agendasPorId[linha.agendaId]}
+                {@const resumo = resumoGrupo(linha.cotas)}
+                <tr class="hover:bg-gray-50 transition-colors bg-violet-50/30">
+                  <td class="px-4 py-3 font-medium text-gray-900" colspan="2">
+                    <button
+                      type="button"
+                      onclick={() => alternarAgenda(linha.agendaId)}
+                      class="inline-flex items-center gap-1.5 text-left"
+                      aria-expanded={!!agendasAbertas[linha.agendaId]}
+                    >
+                      <svg
+                        class="w-3.5 h-3.5 text-violet-500 transition-transform duration-150 {agendasAbertas[
+                          linha.agendaId
+                        ]
+                          ? 'rotate-180'
+                          : ''}"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                        stroke-width="2.5"
+                      >
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
+                      </svg>
+                      <span class="flex flex-col">
+                        {#if agendaInfo}
+                          <span>{agendaInfo.estabelecimentoExecutanteNome} — {agendaInfo.profissionalNome}</span>
+                        {:else}
+                          <span>Agenda #{linha.agendaId}</span>
+                        {/if}
+                        <span class="text-xs font-normal text-gray-500">
+                          {linha.cotas.length} cota{linha.cotas.length === 1 ? '' : 's'} · {resumo.unidadesDistintas} unidade{resumo.unidadesDistintas ===
+                          1
+                            ? ''
+                            : 's'}
+                        </span>
+                      </span>
+                    </button>
                   </td>
                   <td class="px-4 py-3">
-                    {#if c.grupoEspecialidadesId}
-                      <span class="px-2 py-0.5 rounded text-xs font-medium bg-sky-500/20 text-sky-300">Grupo</span>
-                      <span class="ml-2">{c.grupoEspecialidadesNome}</span>
-                    {:else if c.especialidadeNome}
-                      {c.especialidadeNome}
-                    {:else}
-                      <span class="text-slate-500">Geral (todas)</span>
-                    {/if}
+                    <span class="px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-700">Por Data</span>
+                  </td>
+                  <td class="px-4 py-3">{resumo.periodo}</td>
+                  <td class="px-4 py-3 text-right">{resumo.quantidadeTotal}</td>
+                  <td class="px-4 py-3 text-right">{resumo.quantidadeUtilizada}</td>
+                  <td
+                    class="px-4 py-3 text-right font-semibold {resumo.saldoDisponivel <= 0
+                      ? 'text-red-600'
+                      : 'text-emerald-600'}"
+                  >
+                    {resumo.saldoDisponivel}
                   </td>
                   <td class="px-4 py-3">
-                    <span class="px-2 py-0.5 rounded text-xs font-medium {c.tipoPeriodo === 'DATA' ? 'bg-blue-500/20 text-blue-300' : 'bg-slate-600/40 text-slate-300'}">
-                      {c.tipoPeriodo === 'DATA' ? 'Por Data' : 'Mensal'}
+                    <span
+                      class="px-2 py-0.5 rounded-full text-xs font-medium {agendaInfo?.ativo ?? true
+                        ? 'bg-emerald-100 text-emerald-700'
+                        : 'bg-red-100 text-red-700'}"
+                    >
+                      {agendaInfo?.ativo ?? true ? 'Ativa' : 'Inativa'}
                     </span>
                   </td>
-                  <td class="px-4 py-3">{formatarPeriodo(c)}</td>
-                  <td class="px-4 py-3 text-right">{c.quantidadeTotal}</td>
-                  <td class="px-4 py-3 text-right">{c.quantidadeUtilizada}</td>
-                  <td class="px-4 py-3 text-right font-semibold {c.saldoDisponivel <= 0 ? 'text-red-400' : 'text-emerald-400'}">
-                    {c.saldoDisponivel}
+                  <td class="px-4 py-3">
+                    <span class="px-2 py-0.5 rounded text-xs font-medium bg-violet-100 text-violet-700">Agenda</span>
                   </td>
                   <td class="px-4 py-3">
-                    <span class="px-2 py-0.5 rounded-full text-xs font-medium {c.ativo ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'}">
-                      {c.ativo ? 'Ativa' : 'Inativa'}
-                    </span>
-                  </td>
-                  <td class="px-4 py-3">
-                    <button on:click={() => abrirModalEditar(c)}
-                      class="px-3 py-1 rounded bg-blue-600/20 text-blue-400 hover:bg-blue-600/40 text-xs transition-colors">
-                      Editar
+                    <button
+                      onclick={() => goto(`/liberacao-agenda/${linha.agendaId}`)}
+                      class="px-3 py-1 rounded bg-violet-50 text-violet-700 hover:bg-violet-100 text-xs transition-colors"
+                    >
+                      Ver agenda
                     </button>
                   </td>
                 </tr>
-              {/each}
-            </tbody>
-          </table>
-        </div>
-      {/if}
-    </main>
-  </div>
-</div>
-
-{#if showModal}
-  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
-    <div class="bg-slate-900 border border-slate-700 rounded-2xl p-6 w-full max-w-md shadow-2xl space-y-4">
-      <h2 class="text-white font-semibold text-base">{editando ? 'Editar Cota' : 'Nova Cota'}</h2>
-
-      {#if editando}
-        <div class="space-y-3">
-          <p class="text-slate-400 text-sm">
-            <span class="text-white font-medium">{editando.grupoUnidadesNome ?? editando.unidadeNome}</span>
-            {editando.grupoEspecialidadesNome ? ` · Grupo ${editando.grupoEspecialidadesNome}` : (editando.especialidadeNome ? ` · ${editando.especialidadeNome}` : ' · Geral')}
-            · <span class="text-slate-300">{formatarPeriodo(editando)}</span>
-          </p>
-          <div>
-            <label class="block text-xs text-slate-400 mb-1">Quantidade Total</label>
-            <input type="number" min="0" bind:value={formEditar.quantidadeTotal}
-              class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-emerald-500" />
-          </div>
-          <div class="flex items-center gap-2">
-            <input type="checkbox" id="ativoEdit" bind:checked={formEditar.ativo} class="accent-emerald-500" />
-            <label for="ativoEdit" class="text-sm text-slate-300">Cota ativa</label>
-          </div>
-        </div>
-      {:else}
-        <div class="space-y-3">
-          <div>
-            <label class="block text-xs text-slate-400 mb-1">Titular da cota *</label>
-            <div class="flex gap-4">
-              <label class="flex items-center gap-2 text-sm text-slate-300 cursor-pointer">
-                <input type="radio" bind:group={form.titular} value="UNIDADE" class="accent-emerald-500" />
-                Unidade
-              </label>
-              <label class="flex items-center gap-2 text-sm text-slate-300 cursor-pointer">
-                <input type="radio" bind:group={form.titular} value="GRUPO" class="accent-emerald-500" />
-                Grupo
-              </label>
-            </div>
-          </div>
-
-          {#if form.titular === 'UNIDADE'}
-            <div>
-              <label class="block text-xs text-slate-400 mb-1">Unidade *</label>
-              <select bind:value={form.unidadeId}
-                class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-emerald-500">
-                <option value={null}>Selecionar unidade...</option>
-                {#each unidades as u}
-                  <option value={u.id}>{u.nome}</option>
-                {/each}
-              </select>
-            </div>
-          {:else}
-            <div>
-              <label class="block text-xs text-slate-400 mb-1">Grupo de Unidades *</label>
-              <select bind:value={form.grupoUnidadesId}
-                class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-emerald-500">
-                <option value={null}>Selecionar grupo...</option>
-                {#each grupos as g}
-                  <option value={g.id}>{g.nome}</option>
-                {/each}
-              </select>
-              <p class="text-xs text-slate-500 mt-1">
-                Saldo compartilhado entre as unidades do grupo — consumido por ordem de chegada.
-              </p>
-            </div>
-          {/if}
-          <div>
-            <label class="block text-xs text-slate-400 mb-1">O que a cota limita *</label>
-            <div class="flex flex-wrap gap-4">
-              <label class="flex items-center gap-2 text-sm text-slate-300 cursor-pointer">
-                <input type="radio" bind:group={form.escopo} value="ESPECIALIDADE" class="accent-emerald-500" />
-                Uma especialidade
-              </label>
-              <label class="flex items-center gap-2 text-sm text-slate-300 cursor-pointer">
-                <input type="radio" bind:group={form.escopo} value="GRUPO_ESPECIALIDADES" class="accent-emerald-500" />
-                Um grupo de especialidades
-              </label>
-              <label class="flex items-center gap-2 text-sm text-slate-300 cursor-pointer">
-                <input type="radio" bind:group={form.escopo} value="GERAL" class="accent-emerald-500" />
-                Todas (cota geral)
-              </label>
-            </div>
-          </div>
-
-          {#if form.escopo === 'ESPECIALIDADE'}
-            <div>
-              <label class="block text-xs text-slate-400 mb-1">Especialidade</label>
-              <select bind:value={form.especialidadeId}
-                class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-emerald-500">
-                <option value={null}>Selecionar especialidade...</option>
-                {#each especialidades as e}
-                  <option value={e.id}>{e.nome}</option>
-                {/each}
-              </select>
-            </div>
-          {:else if form.escopo === 'GRUPO_ESPECIALIDADES'}
-            <div>
-              <label class="block text-xs text-slate-400 mb-1">Grupo de Especialidades *</label>
-              <select bind:value={form.grupoEspecialidadesId}
-                class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-emerald-500">
-                <option value={null}>Selecionar grupo...</option>
-                {#each grupos as g}
-                  <option value={g.id}>{g.nome}</option>
-                {/each}
-              </select>
-              <p class="text-xs text-slate-500 mt-1">
-                Evita cadastrar uma cota por especialidade. O saldo é <strong>único e
-                compartilhado</strong> entre todas as especialidades do grupo.
-              </p>
-            </div>
-          {:else}
-            <p class="text-xs text-slate-500">
-              A cota valerá para qualquer especialidade deste titular.
-            </p>
-          {/if}
-          <div>
-            <label class="block text-xs text-slate-400 mb-1">Tipo de Controle *</label>
-            <div class="flex gap-4">
-              <label class="flex items-center gap-2 text-sm text-slate-300 cursor-pointer">
-                <input type="radio" bind:group={form.tipoPeriodo} value="MENSAL" class="accent-emerald-500" />
-                Mensal
-              </label>
-              <label class="flex items-center gap-2 text-sm text-slate-300 cursor-pointer">
-                <input type="radio" bind:group={form.tipoPeriodo} value="DATA" class="accent-emerald-500" />
-                Por Data Específica
-              </label>
-            </div>
-          </div>
-          {#if form.tipoPeriodo === 'MENSAL'}
-            <div>
-              <label class="block text-xs text-slate-400 mb-1">Período (YYYY-MM) *</label>
-              <input type="month" bind:value={form.periodo}
-                class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-emerald-500" />
-            </div>
-          {:else}
-            <div>
-              <label class="block text-xs text-slate-400 mb-1">Data Específica *</label>
-              <input type="date" bind:value={form.dataEspecifica}
-                class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-emerald-500" />
-            </div>
-          {/if}
-          <div>
-            <label class="block text-xs text-slate-400 mb-1">Quantidade Total *</label>
-            <input type="number" min="0" bind:value={form.quantidadeTotal}
-              class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-emerald-500" />
-          </div>
-        </div>
-      {/if}
-
-      <div class="flex justify-end gap-3 pt-2">
-        <button on:click={() => showModal = false}
-          class="px-4 py-2 rounded-lg bg-slate-700 text-slate-300 text-sm hover:bg-slate-600 transition-colors">
-          Cancelar
-        </button>
-        <button on:click={salvar}
-          class="px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm hover:bg-emerald-500 transition-colors">
-          Salvar
-        </button>
+                {#if agendasAbertas[linha.agendaId]}
+                  {#each linha.cotas as c (c.id)}
+                    {@render linhaCota(c)}
+                  {/each}
+                {/if}
+              {/if}
+              {#if linha.tipo === 'manual' && linha.cota.grupoEspecialidadesId && gruposAbertos[linha.cota.id]}
+                <tr>
+                  <td colspan="10" class="px-4 pb-4 pt-0">
+                    <GrupoEspecialidadesPainel grupo={grupos.find((g) => g.id === linha.cota.grupoEspecialidadesId)} />
+                  </td>
+                </tr>
+              {/if}
+            {/each}
+          </tbody>
+        </table>
       </div>
-    </div>
-  </div>
-{/if}
+    {/if}
+  </main>
+</Content>

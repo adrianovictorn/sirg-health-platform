@@ -1,5 +1,6 @@
 <script>
   import { getApi } from '$lib/api';
+  import { ROTULO_PERFIL } from '$lib/menuConfig.js';
   import { onMount } from 'svelte';
 
   export let usuario;
@@ -11,8 +12,12 @@
   let cpf = '';
   let password = '';
   let role = '';
+  // Perfis ADICIONAIS liberados para alternância (o principal entra sozinho).
+  let perfisExtras = [];
   let unidadeId = null;
   let unidades = [];
+
+  const PERFIS = Object.entries(ROTULO_PERFIL);
 
   onMount(async () => {
     const res = await getApi('unidades/ativas');
@@ -24,6 +29,8 @@
     cpf = usuario?.cpf ?? '';
     password = '';
     role = usuario?.role ?? '';
+    // A lista que vem do backend inclui o principal; aqui só editamos os extras.
+    perfisExtras = (usuario?.perfis ?? []).filter((p) => p !== usuario?.role);
     unidadeId = usuario?.unidadeId ?? null;
   }
 </script>
@@ -70,14 +77,23 @@
         <div>
           <label for="edit-role" class="block text-xs font-medium text-gray-600 mb-1">Cargo</label>
           <select id="edit-role" bind:value={role} class="border border-gray-300 rounded-md p-2 w-full focus:ring-emerald-500 focus:border-emerald-500">
-            <option value="ADMIN">Administrador</option>
-            <option value="ADMIN_UNIDADE">Administrador da Unidade</option>
-            <option value="USER">Usuário Padrão</option>
-            <option value="ENFERMEIRO">Enfermeiro</option>
-            <option value="MEDICO">Médico</option>
-            <option value="RECEPCAO">Recepcionista</option>
-            <option value="COORD_TRANSPORTE">Coordenador(a) de Transporte</option>
+            {#each PERFIS as [valor, rotulo] (valor)}
+              <option value={valor}>{rotulo}</option>
+            {/each}
           </select>
+        </div>
+        <div>
+          <span class="block text-xs font-medium text-gray-600 mb-1">Perfis adicionais</span>
+          <div class="grid grid-cols-2 gap-1.5 border border-gray-200 rounded-md p-2 max-h-36 overflow-auto">
+            {#each PERFIS as [valor, rotulo] (valor)}
+              {#if valor !== role}
+                <label class="flex items-center gap-1.5 text-xs text-gray-700">
+                  <input type="checkbox" value={valor} bind:group={perfisExtras} class="rounded border-gray-300 text-emerald-600 focus:ring-emerald-500" />
+                  {rotulo}
+                </label>
+              {/if}
+            {/each}
+          </div>
         </div>
         <div>
           <label for="edit-unidade" class="block text-xs font-medium text-gray-600 mb-1">Unidade de Saúde</label>
@@ -101,7 +117,7 @@
         <button
           type="button"
           class="px-4 py-2 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium transition-colors"
-          on:click={() => onSave({ id: usuario.id, nome, cpf, password, role, unidadeId })}
+          on:click={() => onSave({ id: usuario.id, nome, cpf, password, role, perfis: [role, ...perfisExtras], unidadeId })}
         >
           Salvar
         </button>

@@ -2,6 +2,7 @@ package io.github.regulacao_marcarcao.regulacao_marcacao.repository;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Optional;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
@@ -21,6 +22,12 @@ public interface CotaUnidadeRepository extends JpaRepository<CotaUnidade, Long> 
     List<CotaUnidade> findByGrupoUnidadesId(Long grupoUnidadesId);
 
     List<CotaUnidade> findByGrupoEspecialidadesId(Long grupoEspecialidadesId);
+
+    /** R10: cotas geradas por uma ocorrencia, para cancelar/estornar. */
+    List<CotaUnidade> findByAgendaOcorrenciaId(Long agendaOcorrenciaId);
+
+    /** R1: a cota de uma unidade especifica dentro de uma ocorrencia, para remanejar vagas. */
+    Optional<CotaUnidade> findByAgendaOcorrenciaIdAndUnidadeId(Long agendaOcorrenciaId, Long unidadeId);
 
     // -----------------------------------------------------------------------
     // Cotas aplicaveis a um atendimento

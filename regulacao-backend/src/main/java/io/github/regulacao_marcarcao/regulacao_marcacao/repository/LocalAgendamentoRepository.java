@@ -12,4 +12,7 @@ public interface LocalAgendamentoRepository extends JpaRepository<LocalAgendamen
     Optional<LocalAgendamento> findByEnumValue(String enumValue);
 
     List<LocalAgendamento> findByCidade_Id(Long cidadeId);
+
+    /** Chave de dedupe da busca por CNES (V91) — indice unico parcial no banco. */
+    Optional<LocalAgendamento> findByCnes(String cnes);
 }

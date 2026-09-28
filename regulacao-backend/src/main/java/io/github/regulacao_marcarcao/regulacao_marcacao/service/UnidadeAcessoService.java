@@ -1,6 +1,9 @@
 package io.github.regulacao_marcarcao.regulacao_marcacao.service;
 
 import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -62,22 +65,65 @@ public class UnidadeAcessoService {
     }
 
     public UnidadeContexto contextoDe(User user) {
-        if (user == null || user.getRole() == null) {
+        if (user == null) {
             return UnidadeContexto.GLOBAL;
         }
-        if (user.getRole() == Roles.ADMIN) {
+        Roles perfil = perfilEfetivo(user);
+        if (perfil == null) {
+            return UnidadeContexto.GLOBAL;
+        }
+        if (perfil == Roles.ADMIN) {
+            return UnidadeContexto.GLOBAL;
+        }
+        // GESTOR acompanha o desempenho COMPARANDO unidades, então é global por
+        // definição — inclusive quando tem unidade de lotação, que para ele é só
+        // lotação administrativa e não deve estreitar o que ele enxerga.
+        if (perfil == Roles.GESTOR) {
             return UnidadeContexto.GLOBAL;
         }
         if (user.getUnidade() != null) {
             return new UnidadeContexto(user.getUnidade().getId());
         }
         // ADMIN_UNIDADE sem unidade de lotação não pode cair no caminho global.
-        if (user.getRole() == Roles.ADMIN_UNIDADE) {
+        if (perfil == Roles.ADMIN_UNIDADE) {
             throw new AccessDeniedException(
                     "Usuário com perfil de Administrador da Unidade não possui unidade de lotação vinculada. "
                             + "Solicite ao administrador do sistema o vínculo da sua unidade.");
         }
         return UnidadeContexto.GLOBAL;
+    }
+
+    /**
+     * Perfil que vale para esta requisição.
+     *
+     * Com a alternância de perfis (v1.7), o escopo tem que seguir o perfil que a
+     * pessoa está USANDO agora, não o principal gravado em `usuarios.cargo`: quem
+     * tem ADMIN e ADMIN_UNIDADE e alterna para ADMIN_UNIDADE precisa ficar
+     * restrito à própria unidade de verdade, senão a alternância seria decorativa.
+     *
+     * O perfil ativo chega pelas autoridades que o {@code JwtAuthenticationFilter}
+     * montou a partir do token. Ainda assim é reconferido contra os perfis
+     * concedidos — nunca se confia só no que veio na requisição.
+     *
+     * Fora de uma requisição autenticada (testes, chamadas internas), cai no
+     * perfil principal, que é o comportamento anterior a esta versão.
+     */
+    private Roles perfilEfetivo(User user) {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth != null && auth.getAuthorities() != null) {
+            for (GrantedAuthority autoridade : auth.getAuthorities()) {
+                String nome = autoridade.getAuthority();
+                if (nome != null && nome.startsWith("ROLE_")) {
+                    nome = nome.substring("ROLE_".length());
+                }
+                for (Roles concedido : user.getPerfisConcedidos()) {
+                    if (concedido.name().equals(nome)) {
+                        return concedido;
+                    }
+                }
+            }
+        }
+        return user.getRole();
     }
 
     /** True quando o chamador não está sujeito a filtro/cota por unidade. */

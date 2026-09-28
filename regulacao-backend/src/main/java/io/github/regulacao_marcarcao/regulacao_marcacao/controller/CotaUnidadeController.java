@@ -1,7 +1,9 @@
 package io.github.regulacao_marcarcao.regulacao_marcacao.controller;
 
+import java.time.LocalDate;
 import java.util.List;
 
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -52,6 +54,12 @@ public class CotaUnidadeController {
         return ResponseEntity.ok(cotaService.listarTodas());
     }
 
+    @GetMapping("/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<CotaUnidadeViewDTO> buscarPorId(@PathVariable Long id) {
+        return ResponseEntity.ok(cotaService.buscarPorId(id));
+    }
+
     @GetMapping("/unidade/{unidadeId}")
     public ResponseEntity<List<CotaUnidadeViewDTO>> listarPorUnidade(
             @PathVariable Long unidadeId,
@@ -61,7 +69,7 @@ public class CotaUnidadeController {
     }
 
     @GetMapping("/grupo-unidades/{grupoUnidadesId}")
-    @PreAuthorize("hasAnyRole('ADMIN', 'ADMIN_UNIDADE')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'ADMIN_UNIDADE', 'GESTOR')")
     public ResponseEntity<List<CotaUnidadeViewDTO>> listarPorGrupo(@PathVariable Long grupoUnidadesId) {
         return ResponseEntity.ok(cotaService.listarPorGrupo(grupoUnidadesId));
     }
@@ -83,6 +91,16 @@ public class CotaUnidadeController {
             Authentication authentication) {
         exigirAcesso(authentication, unidadeId);
         return ResponseEntity.ok(cotaService.consultarSaldo(unidadeId, especialidadeId, periodo));
+    }
+
+    @GetMapping("/saldo-data")
+    public ResponseEntity<CotaUnidadeSaldoDTO> consultarSaldoPorData(
+            @RequestParam Long unidadeId,
+            @RequestParam(required = false) Long especialidadeId,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate data,
+            Authentication authentication) {
+        exigirAcesso(authentication, unidadeId);
+        return ResponseEntity.ok(cotaService.consultarSaldoPorData(unidadeId, especialidadeId, data));
     }
 
     @PutMapping("/{id}")

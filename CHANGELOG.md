@@ -1,5 +1,178 @@
 # Changelog — SIRG (Sistema de Regulação)
 
+## [1.7] — 2026-09-25
+
+### Novidades
+
+- **Cadastro de estabelecimento executante, com dados vindos do CNES.**
+  `unidade` ganhou `tipo` (`SOLICITANTE` / `EXECUTANTE` / `AMBOS`) e os campos cadastrais do
+  CNES (CNPJ, razao social, nome fantasia, bairro, CEP, numero, e-mail). O backend consulta
+  `apidadosabertos.saude.gov.br/cnes/estabelecimentos/{cnes}` e devolve a ficha pronta; o
+  operador confere e salva.
+
+  **Estendeu `unidade` em vez de criar entidade de prestador.** Cota, fila, dashboard, relatorio
+  e escopo de acesso por unidade ja filtram por `unidade_id` — uma tabela paralela obrigaria a
+  duplicar essa logica inteira. Toda unidade existente virou `AMBOS` na V86, entao nada mudou de
+  comportamento; restringir depois, unidade a unidade, e seguro.
+
+  **404 nao e 503.** CNES inexistente responde 404 no DATASUS e virou 404 na tela ("confira o
+  numero"), separado de instabilidade do servico, que vira 503 com o cadastro manual seguindo
+  disponivel. Sem a distincao, quem digitava o numero errado lia "servico indisponivel" e ficava
+  tentando de novo.
+
+  **O codigo IBGE do municipio tem 6 digitos** na API, sem o verificador: Sao Felipe e `292910`,
+  nao `2929107`. Passar 7 devolve lista vazia com HTTP 200 — falha silenciosa, por isso a
+  normalizacao mora no `CnesService` e nao na tela. O CNPJ tambem vem em dois campos
+  (`numero_cnpj` no privado, `numero_cnpj_entidade` na unidade publica); ler so um devolve nulo
+  em metade dos casos.
+
+- **Profissional com CPF e multiplos vinculos (executante x CBO).**
+  O campo unico `profissional.unidade` nao descrevia a realidade: o mesmo medico atende na
+  policlinica, no hospital e numa USF, com ocupacao possivelmente diferente em cada lugar. Agora
+  existe `profissional_vinculo` (profissional x unidade x CBO), e
+  `GET /api/profissionais/executante/{id}/ativos` responde "quem atende aqui" — a consulta que a
+  abertura de agenda vai usar.
+
+  `profissional.unidade` **continua populado** e marcado como `@Deprecated`: a V88 copiou cada
+  valor para um vinculo (CBO nulo, origem `MANUAL`) e as telas atuais seguem lendo do campo
+  antigo. Remover junto com a criacao do vinculo quebraria producao.
+
+  A tabela `cbo` nasceu **vazia, sem seed**. Digitar codigos a mao entrega dado que ninguem
+  confere: CBO errado rotula o profissional com a ocupacao de outra pessoa e nada acusa o erro.
+  A carga vem do proprio arquivo do DATASUS (upsert por codigo) ou de cadastro avulso.
+
+- **Importacao de profissionais do CNES por arquivo, em duas etapas.**
+  `POST /api/profissionais/importar-cnes` le o CSV da *Extracao de dados de profissional* do
+  portal do CNES e **devolve o que encontrou sem gravar nada**, com a situacao de cada linha
+  (`NOVO_PROFISSIONAL`, `NOVO_VINCULO`, `JA_EXISTE`, `SEM_UNIDADE`, `INVALIDA`).
+  `POST /api/profissionais/importar-cnes/confirmar` grava so as linhas marcadas, reconferindo
+  tudo — a previa informa a tela, nao autoriza a gravacao.
+
+  **Por arquivo porque nao existe API.** Todas as rotas de profissional do DATASUS respondem 404
+  (`/cnes/profissionais`, `/cnes/vinculos`, `/cnes/equipes`, `/cnes/ocupacoes` e o sub-recurso do
+  estabelecimento); os servicos internos de `cnes.datasus.gov.br` responderam 503. O SOAP exige
+  credencial que a SMS precisa solicitar ao DATASUS.
+
+  **A importacao e idempotente:** subir o mesmo arquivo duas vezes nao duplica profissional
+  (dedupe por CPF) nem vinculo (dedupe pela tripla). Isso importa porque a coordenacao reimporta
+  o arquivo inteiro quando muda uma linha.
+
+  **Linha ruim nao derruba o lote:** ela e pulada com aviso nominal ("Linha 37 ignorada: CPF com
+  3 digitos"). Abortar as 400 linhas por causa de uma obrigaria a coordenacao a editar o CSV para
+  conseguir importar as outras 399.
+
+  O leitor e deliberadamente tolerante, porque o arquivo nao tem contrato: descobre o separador,
+  casa as colunas por lista de apelidos (`CO_CPF`, `CPF`, `NU_CPF`...), decodifica ISO-8859-1 ou
+  UTF-8 conforme os bytes, pula o preambulo do portal e **repoe zeros a esquerda** de CPF, CNES e
+  CBO — quem abre o CSV no Excel para conferir perde esses zeros, e sem repor o CPF `01234567890`
+  viraria um profissional novo a cada importacao.
+
+  **A reposicao para em 3 zeros.** Ela conserta o dano do Excel; alem disso, fabricaria dado:
+  um CPF truncado em `123` viraria `00000000123`, passaria na validacao de formato e criaria
+  profissional com documento inventado. Acima do limite o valor segue cru e a previa recusa a
+  linha mostrando o que estava no arquivo.
+
+- **Novo perfil GESTOR.**
+  Acompanha indicadores, relatorios e desempenho das unidades. **Nao monta cota nem
+  configura agenda** — leitura, e so de agregados. Ve: Indicadores, Dashboard global,
+  Relatorios, Solicitacoes por Profissional, saldo de cota da unidade e contagem de
+  atendimentos por grupo/data.
+
+  **Fora de proposito, e por isso negado:** a lista de pacientes da agenda
+  (`/especialidades/listar/pacientes/por/grupo`) expoe nome, CPF e CNS de todos os
+  pacientes do dia. Metrica de desempenho nao precisa de PII, entao o GESTOR recebeu a
+  contagem (agregada) e nao a listagem.
+
+  GESTOR e **global** mesmo tendo unidade de lotacao — o papel e comparar unidades, e
+  restringi-lo a propria lotacao esvaziaria isso. E a unica excecao, junto com ADMIN, a
+  regra de "tem unidade ⇒ restrito".
+
+- **Multiplos perfis por usuario, com alternancia.**
+  Um usuario pode ter varios perfis liberados e trocar entre eles pelo menu do usuario.
+  A alternancia **nao soma acessos**: vale um perfil de cada vez, e o perfil em uso
+  define tanto as permissoes quanto o escopo de unidade.
+
+  | Conceito | Onde vive | Papel |
+  |---|---|---|
+  | Principal | `usuarios.cargo` | O do login; fallback de token sem claim |
+  | Concedidos | `usuario_perfis` (nova) | O que a pessoa *pode* assumir |
+  | Ativo | claim `perfilAtivo` do JWT | O que vale **nesta** requisicao |
+
+  `POST /api/users/me/perfil` confere se o perfil esta concedido e devolve um token novo.
+  Nada e gravado: sair e entrar volta ao principal, e a troca vale por sessao — nao
+  muda o perfil nos outros dispositivos da pessoa.
+
+  **A conferencia acontece na requisicao, nao na emissao:** o `JwtAuthenticationFilter`
+  revalida o `perfilAtivo` contra `usuario_perfis` a cada request. Retirar um perfil de
+  alguem tem efeito **imediato** — o token que ja esta na mao da pessoa para de valer
+  para aquele perfil e cai no principal, sem esperar as 2h de expiracao.
+
+  **O escopo de unidade passou a seguir o perfil ativo.** `UnidadeAcessoService` lia
+  `usuarios.cargo`; agora resolve o perfil efetivo pelas authorities da requisicao
+  (reconferidas contra os perfis concedidos). Sem isso, quem tem ADMIN e ADMIN_UNIDADE
+  continuaria global ao alternar para ADMIN_UNIDADE e a alternancia seria decorativa.
+
+- **Rotulos de perfil em um lugar so** (`ROTULO_PERFIL`, no `menuConfig.js`).
+  O cadastro de usuario, o modal de edicao e a listagem repetiam a mesma lista de cargos
+  em tres lugares, e ja estavam fora de sincronia: `ADMIN_UNIDADE` faltava no modal de
+  edicao, entao editar um administrador de unidade pelo modal trocava o cargo dele sem
+  querer. Agora os tres leem a mesma fonte.
+
+### Correções
+
+- **Upload acima do limite virava erro generico.** `MaxUploadSizeExceededException` nao tinha
+  handler: o corpo padrao do Spring nao traz `message` (`server.error.include-message=never`),
+  entao quem subia um CSV grande lia uma falha sem causa. Agora e 400 dizendo o limite (5MB) e o
+  que fazer (exportar um recorte por estabelecimento).
+
+- **Listas por cargo ignoravam perfil secundario.** `listarRoleMedico`,
+  `listarRoleEnfermeiro` e afins comparavam so `usuarios.cargo`. Com multiplos perfis,
+  quem tem MEDICO como perfil secundario nao apareceria na lista de medicos; passaram a
+  considerar os perfis concedidos.
+
+### Banco de dados
+
+- **V86** — `unidade.tipo` (default `AMBOS`, com CHECK) + dados cadastrais do CNES; indice
+  `ix_unidade_tipo_ativo` para o combo de executantes.
+- **V87** — tabela `cbo` (codigo unico de 6 digitos), sem seed.
+- **V88** — `profissional.cpf` com UNIQUE **parcial** (`WHERE cpf IS NOT NULL`, para os cadastros
+  antigos sem CPF conviverem) + tabela `profissional_vinculo`, com unicidade da tripla via
+  `COALESCE(cbo_id, -1)`: no Postgres dois `NULL` sao distintos, e sem o COALESCE o indice
+  deixaria passar N vinculos duplicados sem CBO. O backfill copia `profissional.unidade_id` para
+  vinculo (CBO nulo, origem `MANUAL`) e usa `NOT EXISTS`, entao e reaplicavel.
+
+  Consequencia no codigo: conferir se o vinculo existe exige **duas** consultas (`...AndCboId` e
+  `...AndCboIsNull`), porque `cbo_id = NULL` nunca casa em SQL.
+
+**Validacao (V1 -> V88 em banco limpo, Postgres 17.2):** as 88 migracoes aplicam do zero, o
+contexto Spring sobe com `ddl-auto=validate` contra o schema resultante, e os comportamentos
+foram conferidos em SQL — backfill idempotente, vinculo duplicado sem CBO recusado pelo indice
+COALESCE, CPF repetido recusado, dois profissionais sem CPF aceitos, RESTRICT barrando exclusao
+de unidade e de CBO em uso, CASCADE levando os vinculos do profissional excluido.
+
+| Migration | Descrição |
+|---|---|
+| V85 | `GESTOR` na constraint `usuarios_cargo_check`; tabela `usuario_perfis` + backfill |
+
+**Seguranca em producao:** V85 e **aditiva**. `usuarios.cargo` nao e removida nem
+alterada; a constraint so **amplia** a lista de valores aceitos (nenhuma linha existente
+pode violar). O backfill insere em `usuario_perfis` exatamente o cargo que cada usuario
+ja tem, com `ON CONFLICT DO NOTHING` — rodar de novo nao duplica nada. Sem o backfill um
+usuario ficaria sem perfil concedido; ainda assim `getPerfisConcedidos()` garante o
+principal no conjunto, entao mesmo uma base nao migrada mantem o acesso.
+
+### Testes
+
+**82 testes** no total (eram 72), todos passando contra PostgreSQL real.
+
+| Suite | Qtd | O que cobre |
+|---|---|---|
+| `PerfilMultiploIT` | 10 | **PostgreSQL real**: escopo global do GESTOR, troca para perfil concedido/negado, perfil revogado perdendo efeito no token ja emitido, token antigo sem claim, usuario legado sem `usuario_perfis`, escopo seguindo o perfil ativo, exigencia de lotacao para ADMIN_UNIDADE secundario |
+
+`UnidadeAcessoServiceTest` (9) passa sem alteracao — e a suite que cobre a resolucao de
+escopo por unidade, justamente o ponto mexido para o perfil ativo valer. Nenhuma das
+outras 8 suites precisou de ajuste.
+
 ## [1.6] — 2026-09-24
 
 ### Novidades
@@ -181,6 +354,32 @@ Script de verificação pré-deploy (somente leitura) em
   > grupos da lista antiga que nao estiverem marcados deixam de aparecer — marque-os em
   > `/cadastrar/grupo-relatorio` antes de subir.
 
+- **Agenda do Dia passa a ser por Unidade, nao mais uma unica agenda fixa do "hospital".**
+  `especialidades/listar|contar/pacientes/por/grupo` filtravam por
+  `agendamento_solicitacao.local_agendamento_id = 3` — uma linha fixa de
+  `local_agendamento` (tabela de **destinos externos** de referencia: Hospital Roberto
+  Santos, Policlinica Reconvale...), sem relacao nenhuma com `Unidade`. Todo usuario
+  autenticado via a mesma lista, de qualquer unidade, com **zero controle de acesso** (os
+  dois endpoints nao tinham `@PreAuthorize`). Agora o filtro e `solicitacao.unidade_id`: a
+  mesma `Unidade` ja usada em cotas e no perfil `ADMIN_UNIDADE`. Usuario Padrao e demais
+  perfis restritos veem so a propria unidade de lotacao, automaticamente — sem escolha, e
+  sem como ver ou alterar a de outra unidade trocando o parametro (`UnidadeAcessoService`
+  recusa com 403). Só o ADMIN global tem um seletor de unidade nas telas
+  `/agendas/[grupo]` e `/dashboard/procedimentos*`, para ver ou modificar a agenda de
+  qualquer unidade; sem escolher uma, a consulta e recusada com 400 em vez de devolver
+  tudo misturado.
+
+  `PACIENTE` saiu do menu "Agendas" e do `@PreAuthorize` dos dois endpoints: essa agenda
+  lista nome/CPF/CNS de **todos** os pacientes do dia da unidade — dado operacional, nao
+  o do proprio paciente logado. Antes, qualquer conta com perfil Paciente enxergava essa
+  lista inteira.
+
+  > **Atencao no deploy:** contas com perfil Usuario Padrao **sem** Unidade de Saude
+  > vinculada (campo ja existente em `/admin/cadastrar-usuario`, so nao vinha sendo usado
+  > por esse perfil) passam a ver uma mensagem pedindo para vincular a unidade, em vez da
+  > agenda. Verifique/atribua a unidade de cada Usuario Padrao em `/admin/listar-usuarios`
+  > antes de subir, ou o operador fica temporariamente sem a tela ate o vinculo ser feito.
+
 - **Data da Coleta na agenda do hospital.**
   A projecao `PainelEspecialidadeProjection` e a consulta de pacientes agendados por
   grupo passam a trazer a data de coleta, agregada por paciente (DISTINCT, no mesmo
@@ -204,7 +403,7 @@ Script de verificação pré-deploy (somente leitura) em
 
 ### Testes
 
-**58 testes**, em quatro niveis:
+**72 testes**, em quatro niveis:
 
 | Suite | Qtd | O que cobre |
 |---|---|---|
@@ -213,7 +412,8 @@ Script de verificação pré-deploy (somente leitura) em
 | `UnidadeAcessoServiceTest` | 9 | Segregacao por unidade, `ADMIN_UNIDADE` sem lotacao, acesso cruzado |
 | `SolicitacaoAcessoLegadoTest` | 6 | Registros antigos: orfaos acessiveis/editaveis, edicao sem os campos novos |
 | `CotaUnidadeIntegracaoIT` | 15 | **PostgreSQL real**: JPQL de consumo/estorno, cota por grupo de especialidades, CHECKs de titular e escopo, saldo |
-| `AgendamentoCotaFluxoIT` | 5 | **PostgreSQL real**, fluxo de /agendar: unidade estoura a cota no 6o agendamento, cancelamento devolve a vaga, ADMIN global isento, legado sem unidade |
+| `AgendamentoCotaFluxoIT` | 6 | **PostgreSQL real**, fluxo de /agendar: unidade estoura a cota no 6o agendamento, cancelamento devolve a vaga (inclusive com 2 especialidades no mesmo agendamento — diagnostico do 409 relatado em producao, nao reproduziu), ADMIN global isento, legado sem unidade |
+| `AgendaPorUnidadeIT` | 5 | **PostgreSQL real**: agenda do dia filtrada por `solicitacao.unidade_id` — cada unidade ve so os proprios pacientes, operador restrito nao ve outra unidade nem trocando o parametro, ADMIN escolhe a unidade e e recusado sem escolher, paciente so aparece com agendamento (nao so AGUARDANDO) |
 | `CotaRollbackIT` | 1 | **PostgreSQL real, fora da transacao do teste**: prova que o consumo parcial e desfeito quando outra cota incidente esta esgotada |
 
 Os `*IT` exigem banco no ar e sao `@Transactional` (rollback ao fim, nao sujam a base).

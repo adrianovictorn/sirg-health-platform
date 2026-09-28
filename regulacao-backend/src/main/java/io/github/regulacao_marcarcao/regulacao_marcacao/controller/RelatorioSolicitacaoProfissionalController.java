@@ -30,7 +30,7 @@ public class RelatorioSolicitacaoProfissionalController {
     private final RelatorioProfissionalExcelService excelService;
 
     @GetMapping("/detalhado")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'GESTOR')")
     public ResponseEntity<Page<ProfissionalSolicitacaoDetalheProjection>> listarDetalhado(
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate inicio,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fim,
@@ -43,7 +43,7 @@ public class RelatorioSolicitacaoProfissionalController {
     }
 
     @GetMapping("/quantitativo")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'GESTOR')")
     public ResponseEntity<List<ProfissionalQuantitativoProjection>> listarQuantitativo(
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate inicio,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fim,
@@ -52,7 +52,7 @@ public class RelatorioSolicitacaoProfissionalController {
     }
 
     @GetMapping("/detalhado/excel")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'GESTOR')")
     public ResponseEntity<byte[]> exportarDetalhadoExcel(
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate inicio,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fim,
@@ -68,7 +68,7 @@ public class RelatorioSolicitacaoProfissionalController {
     }
 
     @GetMapping("/quantitativo/excel")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'GESTOR')")
     public ResponseEntity<byte[]> exportarQuantitativoExcel(
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate inicio,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fim,

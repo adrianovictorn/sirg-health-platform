@@ -1,3 +1,10 @@
+---
+tags:
+  - sirg/diagrama
+  - sirg/seguranca
+gerado: manual
+---
+
 # Diagrama — Módulo de Usuários e Autenticação
 
 Cobre a entidade `User`, suas roles, o ciclo de vida de autenticação JWT e os controles de segurança.
@@ -15,6 +22,7 @@ classDiagram
         +Roles role        [coluna: cargo]
         +String fotoPerfil [URL relativa, nullable]
         +boolean ativo     [default: true]
+        +Unidade unidade   [ManyToOne LAZY, unidade_id nullable]
         ──────────────────────────────
         +getUsername() String       → retorna cpf
         +getPassword() String       → retorna password
@@ -28,6 +36,8 @@ classDiagram
     class Roles {
         <<enum>>
         ADMIN
+        ADMIN_UNIDADE
+        GESTOR
         USER
         PACIENTE
         ENFERMEIRO
@@ -177,18 +187,19 @@ SecurityConfiguration.securityFilterChain()
    └─ Verifica role do usuário se necessário (@PreAuthorize)
 ```
 
-## Menus por role (frontend)
+## Menu por role (frontend)
+
+Desde a v1.5 existe **um único** componente de menu. Os quatro antigos
+(`Menu.svelte` … `Menu4.svelte`) foram removidos.
 
 ```
-Roles          → Componente de menu
-─────────────────────────────────────
-ADMIN          → Menu.svelte        (acesso total)
-RECEPCAO       → Menu3.svelte       (clínico)
-ENFERMEIRO     → Menu3.svelte       (clínico)
-MEDICO         → Menu3.svelte       (clínico)
-COORD_TRANSPORTE → Menu4.svelte     (transporte)
-USER / PACIENTE  → Menu2.svelte     (básico)
+lib/RoleBasedMenu.svelte   → renderiza a árvore
+lib/menuConfig.js          → a árvore: cada item declara suas `roles`
 ```
+
+Para dar ou tirar acesso a uma tela, edita-se a lista `roles` do item em
+`menuConfig.js` — nenhum `.svelte` é tocado. Um item pode apontar para destinos
+diferentes por perfil via `hrefByRole`. Estrutura completa em [[08 - Frontend]].
 
 ## Regras de negócio desta camada
 
@@ -202,3 +213,13 @@ USER / PACIENTE  → Menu2.svelte     (básico)
 | Foto de perfil é armazenada no filesystem, a URL é salva em `User.fotoPerfil` | `FileStorageService` + `WebConfiguration` resource handler |
 | Token expira em 2 horas (GMT-3) | `TokenService.genExpirationDate()` |
 | CPF deve ser único no sistema | `@Column(unique=true)` + `@UniqueCPF` (bean validation custom) |
+
+---
+
+## Ver também
+
+- [[Mapa - Segurança e Acesso]]
+- [[09 - Segurança]]
+- [[10 - Padrões e Arquitetura]]
+
+Volta para [[Início]].

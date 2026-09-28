@@ -5,6 +5,7 @@ import java.time.LocalDateTime;
 
 import org.hibernate.annotations.CreationTimestamp;
 
+import io.github.regulacao_marcarcao.regulacao_marcacao.entity.enums.OrigemCotaEnum;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.enums.TipoPeriodoCota;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -93,6 +94,19 @@ public class CotaUnidade {
     @CreationTimestamp
     @Column(name = "criado_em", nullable = false, updatable = false)
     private LocalDateTime criadoEm;
+
+    // ------------------------------------------------------------------
+    // ORIGEM — quem gerou esta cota (V90).
+    // AGENDA nao e editavel na tela de cotas; edita-se a agenda de origem.
+    // ------------------------------------------------------------------
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "agenda_ocorrencia_id", nullable = true)
+    private AgendaOcorrencia agendaOcorrencia;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "origem", nullable = false, length = 20)
+    private OrigemCotaEnum origem = OrigemCotaEnum.MANUAL;
 
     @Version
     private Long version;

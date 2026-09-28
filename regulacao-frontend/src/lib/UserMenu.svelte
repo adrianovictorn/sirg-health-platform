@@ -1,7 +1,8 @@
 <script>
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
-  import { user, token, profilePicture, refreshProfilePicture } from '$lib/stores/auth.js';
+  import { user, token, profilePicture, perfisDisponiveis, refreshUsuarioAtual } from '$lib/stores/auth.js';
+  import { ROTULO_PERFIL } from '$lib/menuConfig.js';
   import { fadeScale } from '$lib/transitions.js'; // 1. Importe a nova transição
 
   let isOpen = false;
@@ -10,11 +11,13 @@
   let notifLoading = false;
   let unreadCount = 0;
   let modalDismissed = false;
+  let trocarPerfilOpen = false;
 
   $: updateNotifs = notifications.filter(n => n.tipo === 'ATUALIZACAO_SISTEMA');
   $: showUpdateModal = !modalDismissed && updateNotifs.length > 0;
   import { listarNaoLidas, marcarComoLida, marcarTodasComoLidas } from '$lib/notificationsApi.js';
   import SistemaUpdateModal from '$lib/SistemaUpdateModal.svelte';
+  import TrocarPerfilModal from '$lib/TrocarPerfilModal.svelte';
   let node;
 
   function logout() {
@@ -35,7 +38,7 @@
     document.addEventListener('click', handleClickOutside, true);
     // carrega notificações na montagem
     carregarNotificacoes();
-    refreshProfilePicture();
+    refreshUsuarioAtual();
     // polling leve a cada 15s para atualizar badge
     intervalId = setInterval(async () => {
       try {
@@ -68,6 +71,10 @@
 
 {#if showUpdateModal}
   <SistemaUpdateModal notifications={updateNotifs} onDismiss={() => (modalDismissed = true)} />
+{/if}
+
+{#if trocarPerfilOpen}
+  <TrocarPerfilModal onClose={() => (trocarPerfilOpen = false)} />
 {/if}
 
 {#if $user}
@@ -138,7 +145,20 @@
           <div class="px-4 py-3 border-b border-gray-200">
             <p class="text-sm text-gray-500">Logado como</p>
             <p class="text-sm font-medium text-gray-800 truncate">{$user.nome}</p>
+            <p class="text-xs text-emerald-700 font-medium mt-0.5">{ROTULO_PERFIL[$user.role] ?? $user.role}</p>
           </div>
+
+          <!-- Só aparece para quem tem mais de um perfil liberado. -->
+          {#if $perfisDisponiveis.length > 1}
+            <button
+              type="button"
+              on:click={() => { isOpen = false; trocarPerfilOpen = true; }}
+              class="w-full text-left flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
+            >
+              <svg class="w-5 h-5 mr-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4M16 17H4m0 0l4 4m-4-4l4-4" /></svg>
+              Trocar Perfil
+            </button>
+          {/if}
           <a href="/perfil" class="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors">
             <svg class="w-5 h-5 mr-3 text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
             Meu Perfil

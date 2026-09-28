@@ -1,3 +1,10 @@
+---
+tags:
+  - sirg/diagrama
+  - sirg/dominio
+gerado: manual
+---
+
 # Diagrama — Módulo de Solicitações
 
 Cobre o fluxo central do sistema: desde o cadastro de um paciente até o agendamento de suas especialidades.
@@ -151,3 +158,14 @@ classDiagram
 | Tabela | Entidades | Colunas |
 |---|---|---|
 | `solicitacao_cid` | Solicitacao ↔ CID | `solicitacao_id`, `cid_id` |
+
+---
+
+## Ver também
+
+- [[Mapa - Domínio]]
+- [[03 - Entidades e Classes de Domínio]]
+- [[05 - Fluxos do Sistema]]
+- [[diagrama-transporte]]
+
+Volta para [[Início]].

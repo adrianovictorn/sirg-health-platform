@@ -1,8 +1,11 @@
 package io.github.regulacao_marcarcao.regulacao_marcacao.service;
 
 import java.io.IOException;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
@@ -26,6 +29,7 @@ public class UserService {
     private final PasswordEncoder passwordEncoder;
     private final FileStorageService fileStorageService;
     private final UnidadeRepository unidadeRepository;
+    private final TokenService tokenService;
 
     public UserViewDTO criarUsuario(UserCreateDTO dto) {
         userRepository.findByCpf(dto.getCpf()).ifPresent(user -> {
@@ -37,9 +41,10 @@ public class UserService {
         novoUsuario.setNome(dto.getNome());
         novoUsuario.setPassword(passwordEncoder.encode(dto.getPassword()));
         novoUsuario.setRole(dto.getCargo());
+        novoUsuario.setPerfis(montarPerfis(dto.getCargo(), dto.getPerfis()));
         novoUsuario.setAtivo(true);
 
-        exigirUnidadeParaAdminDeUnidade(dto.getCargo(), dto.getUnidadeId());
+        exigirUnidadeParaPerfisDeUnidade(novoUsuario.getPerfisConcedidos(), dto.getUnidadeId());
 
         if (dto.getUnidadeId() != null) {
             Unidade unidade = unidadeRepository.findById(dto.getUnidadeId())
@@ -49,6 +54,43 @@ public class UserService {
 
         User usuarioSalvo = userRepository.save(novoUsuario);
         return UserViewDTO.from(usuarioSalvo);
+    }
+
+    /**
+     * Troca o perfil ativo e devolve um token novo já emitido com ele.
+     *
+     * Nada é gravado: o perfil ativo vive no token. O perfil principal
+     * (`usuarios.cargo`) continua sendo o do login, então sair e entrar de novo
+     * devolve a pessoa ao ponto de partida — e a troca vale por sessão, não
+     * para todos os dispositivos de uma vez.
+     */
+    public String trocarPerfilAtivo(String cpf, Roles perfilDesejado) {
+        User usuario = userRepository.findByCpf(cpf)
+                .orElseThrow(() -> new EntityNotFoundException("Usuário não encontrado"));
+
+        if (!usuario.podeAssumir(perfilDesejado)) {
+            throw new AccessDeniedException(
+                    "Seu usuário não tem o perfil " + perfilDesejado + " liberado.");
+        }
+
+        return tokenService.generateToken(usuario, perfilDesejado);
+    }
+
+    /**
+     * Conjunto final de perfis concedidos: os escolhidos no formulário mais o
+     * principal, que entra sempre. Sem isso daria para cadastrar alguém cujo
+     * perfil de login não está entre os perfis liberados — a pessoa entraria
+     * com um perfil que o sistema consideraria revogado a cada requisição.
+     */
+    private Set<Roles> montarPerfis(Roles principal, Set<Roles> escolhidos) {
+        Set<Roles> perfis = new LinkedHashSet<>();
+        if (principal != null) {
+            perfis.add(principal);
+        }
+        if (escolhidos != null) {
+            perfis.addAll(escolhidos);
+        }
+        return perfis;
     }
 
     public UserViewDTO buscarPorCpf(String cpf) {
@@ -65,31 +107,31 @@ public class UserService {
 
     public List<UserViewDTO> listarAdministradores() {
         return userRepository.findAll().stream()
-            .filter(user -> user.getRole() == Roles.ADMIN)
+            .filter(user -> user.podeAssumir(Roles.ADMIN))
             .map(UserViewDTO::from).toList();
     }
 
     public List<UserViewDTO> listarRoleUsers() {
         return userRepository.findAll().stream()
-            .filter(user -> user.getRole() == Roles.USER)
+            .filter(user -> user.podeAssumir(Roles.USER))
             .map(UserViewDTO::from).toList();
     }
 
     public List<UserViewDTO> listarRoleEnfermeiro() {
         return userRepository.findAll().stream()
-            .filter(users -> users.getRole() == Roles.ENFERMEIRO)
+            .filter(users -> users.podeAssumir(Roles.ENFERMEIRO))
             .map(UserViewDTO::from).toList();
     }
 
     public List<UserViewDTO> listarRoleMedico() {
         return userRepository.findAll().stream()
-            .filter(medico -> medico.getRole() == Roles.MEDICO)
+            .filter(medico -> medico.podeAssumir(Roles.MEDICO))
             .map(UserViewDTO::from).toList();
     }
 
     public List<UserViewDTO> listarRoleRecepcionista() {
         return userRepository.findAll().stream()
-            .filter(recepcao -> recepcao.getRole() == Roles.RECEPCAO)
+            .filter(recepcao -> recepcao.podeAssumir(Roles.RECEPCAO))
             .map(UserViewDTO::from).toList();
     }
 
@@ -105,8 +147,9 @@ public class UserService {
             usuarioExistente.setPassword(passwordEncoder.encode(user.password()));
         }
         usuarioExistente.setRole(user.role());
+        usuarioExistente.setPerfis(montarPerfis(user.role(), user.perfis()));
 
-        exigirUnidadeParaAdminDeUnidade(user.role(), user.unidadeId());
+        exigirUnidadeParaPerfisDeUnidade(usuarioExistente.getPerfisConcedidos(), user.unidadeId());
 
         if (user.unidadeId() != null) {
             Unidade unidade = unidadeRepository.findById(user.unidadeId())
@@ -185,8 +228,14 @@ public class UserService {
      * que recebe 403 em qualquer operação, então a exigência é validada aqui, no
      * momento do cadastro, em vez de falhar depois no uso.
      */
-    private void exigirUnidadeParaAdminDeUnidade(Roles cargo, Long unidadeId) {
-        if (cargo == Roles.ADMIN_UNIDADE && unidadeId == null) {
+    /**
+     * A exigência de unidade vale para o CONJUNTO de perfis, não só para o
+     * principal: quem tem ADMIN_UNIDADE como perfil secundário também precisa da
+     * lotação, senão ao alternar para ele o acesso seria negado
+     * ({@code UnidadeAcessoService} recusa ADMIN_UNIDADE sem unidade).
+     */
+    private void exigirUnidadeParaPerfisDeUnidade(Set<Roles> perfis, Long unidadeId) {
+        if (perfis != null && perfis.contains(Roles.ADMIN_UNIDADE) && unidadeId == null) {
             throw new IllegalArgumentException(
                     "O perfil Administrador da Unidade exige uma unidade de lotação vinculada.");
         }

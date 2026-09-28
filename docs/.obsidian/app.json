@@ -1,0 +1,16 @@
+{
+  "showInlineTitle": true,
+  "promptDelete": false,
+  "alwaysUpdateLinks": true,
+  "newLinkFormat": "shortest",
+  "useMarkdownLinks": false,
+  "attachmentFolderPath": "_anexos",
+  "readableLineLength": true,
+  "defaultViewMode": "preview",
+  "livePreview": true,
+  "showLineNumber": false,
+  "strictLineBreaks": false,
+  "userIgnoreFilters": [
+    "_build/"
+  ]
+}

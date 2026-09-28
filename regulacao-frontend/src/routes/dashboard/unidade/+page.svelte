@@ -7,6 +7,9 @@
   import { getApi } from '$lib/api.js';
   import RoleBasedMenu from '$lib/RoleBasedMenu.svelte';
   import UserMenu from '$lib/UserMenu.svelte';
+  import GrupoToggleButton from '$lib/GrupoToggleButton.svelte';
+  import GrupoEspecialidadesPainel from '$lib/GrupoEspecialidadesPainel.svelte';
+  import { formatarPeriodoCota, distanciaDeHoje } from '$lib/cotas.js';
 
   let resumo: {
     totalSolicitacoes: number;
@@ -20,11 +23,22 @@
 
   let unidadeId: number | null = null;
   let unidadeNome = '';
-  // Cotas do mês corrente da própria unidade — o dado da unidade que mais muda
-  // o que o usuário consegue fazer hoje. Somente-leitura; a gestão é do ADMIN.
-  let cotasDoMes: any[] = [];
+  // Todas as cotas da unidade (+ do grupo de unidades, a que ela pertencer) —
+  // filtradas e ordenadas abaixo para mostrar as mais próximas, mensais ou por
+  // data específica. Somente-leitura; a gestão é do ADMIN.
+  let cotas: any[] = [];
+  // Grupos de relatório (usado para "abrir" uma cota de grupo e listar quais
+  // especialidades a compõem — mesmo dado já usado em /admin/cotas).
+  let grupos: any[] = [];
   let isLoading = true;
   let error = '';
+
+  // Quais cotas de grupo estão com o painel de especialidades expandido —
+  // mesmo padrão usado em /unidade/cotas e /admin/cotas.
+  let gruposAbertos: Record<number, boolean> = {};
+  function alternarGrupo(cotaId: number) {
+    gruposAbertos = { ...gruposAbertos, [cotaId]: !gruposAbertos[cotaId] };
+  }
 
   onMount(async () => {
     try {
@@ -42,10 +56,26 @@
       unidadeNome = me.unidadeNome ?? 'Minha Unidade';
 
       if (unidadeId) {
-        const periodo = new Date().toISOString().slice(0, 7);
-        const resCotas = await getApi(`cotas/unidade/${unidadeId}/periodo/${periodo}`);
         // A ausência de cotas não é erro: significa unidade sem limite configurado.
-        if (resCotas.ok) cotasDoMes = await resCotas.json();
+        const resCotas = await getApi(`cotas/unidade/${unidadeId}`);
+        const daUnidade = resCotas.ok ? await resCotas.json() : [];
+
+        // A unidade também é limitada pela cota do grupo a que pertence (pool
+        // compartilhado) — mesmo padrão usado em /unidade/cotas.
+        let doGrupo: any[] = [];
+        const resUnidade = await getApi(`unidades/${unidadeId}`);
+        if (resUnidade.ok) {
+          const unidade = await resUnidade.json();
+          if (unidade.grupoRelatorioId) {
+            const resGrupo = await getApi(`cotas/grupo-unidades/${unidade.grupoRelatorioId}`);
+            if (resGrupo.ok) doGrupo = await resGrupo.json();
+          }
+        }
+
+        cotas = [...daUnidade, ...doGrupo];
+
+        const resGrupos = await getApi('grupo-relatorio/listar');
+        if (resGrupos.ok) grupos = await resGrupos.json();
       }
     } catch (e: unknown) {
       error = e instanceof Error ? e.message : String(e);
@@ -60,7 +90,14 @@
   $: concluida = resumo?.totalConcluidas ?? 0;
   $: urgencia = resumo?.totalUrgentes ?? 0;
   $: gel = resumo?.totalGel ?? 0;
-  $: cotasEsgotadas = cotasDoMes.filter((c) => c.ativo && c.saldoDisponivel <= 0);
+
+  // As 5 cotas (de especialidade OU de grupo — mesma regra pras duas) com data
+  // mais próxima de agora, sem filtrar por "ainda em aberto": se a unidade só
+  // tiver cotas de meses passados, essas ainda devem aparecer aqui.
+  $: proximasCotas = [...cotas]
+    .sort((a, b) => distanciaDeHoje(a) - distanciaDeHoje(b))
+    .slice(0, 5);
+  $: cotasEsgotadas = proximasCotas.filter((c) => c.ativo && c.saldoDisponivel <= 0);
   $: pendentesDaMinhaUnidade = (unidadeId && resumo?.pendentesPorUnidade)
     ? (resumo.pendentesPorUnidade[String(unidadeId)] ?? pendentes)
     : pendentes;
@@ -92,7 +129,7 @@
       </header>
 
       <main class="flex-1 p-6 overflow-auto">
-        <div class="max-w-7xl mx-auto space-y-6">
+        <div class="max-w-[1600px] mx-auto space-y-6">
 
           <!-- Visão Geral -->
           <section>
@@ -130,11 +167,11 @@
             </section>
           {/if}
 
-          <!-- Cotas do mês -->
-          {#if cotasDoMes.length > 0}
+          <!-- Próximas cotas -->
+          {#if proximasCotas.length > 0}
             <section>
               <div class="flex items-baseline justify-between mb-3">
-                <h2 class="text-xs font-semibold text-gray-700 uppercase tracking-widest">Cotas do Mês</h2>
+                <h2 class="text-xs font-semibold text-gray-700 uppercase tracking-widest">Próximas Cotas</h2>
                 <a href="/unidade/cotas" class="text-xs text-emerald-800 hover:underline">ver todas</a>
               </div>
 
@@ -147,18 +184,36 @@
               {/if}
 
               <div class="bg-white rounded-xl shadow-sm border border-gray-100 divide-y divide-gray-100">
-                {#each cotasDoMes as c (c.id)}
-                  <div class="flex items-center justify-between gap-4 px-4 py-3">
-                    <span class="text-sm text-gray-800 truncate">
-                      <!-- Cota por grupo de especialidades: mostra o nome do grupo.
-                           Sem escopo nenhum e que e "Cota geral (todas)". -->
-                      {c.grupoEspecialidadesNome ?? c.especialidadeNome ?? 'Cota geral (todas)'}
-                    </span>
-                    <span class="text-sm font-semibold shrink-0"
-                          class:text-red-600={c.saldoDisponivel <= 0}
-                          class:text-gray-900={c.saldoDisponivel > 0}>
-                      {c.quantidadeUtilizada}/{c.quantidadeTotal}
-                    </span>
+                {#each proximasCotas as c (c.id)}
+                  <div class="px-4 py-3">
+                    <div class="flex flex-wrap items-center gap-x-1.5 gap-y-1">
+                      <span class="text-sm text-gray-800 truncate flex-1 min-w-0">
+                        <!-- Cota por grupo de especialidades: mostra o nome do grupo.
+                             Sem escopo nenhum e que e "Cota geral (todas)". -->
+                        {c.grupoEspecialidadesNome ?? c.especialidadeNome ?? 'Cota geral (todas)'}
+                        <span class="text-gray-400">· {formatarPeriodoCota(c)}</span>
+                      </span>
+                      <span class="text-sm font-semibold shrink-0"
+                            class:text-red-600={c.saldoDisponivel <= 0}
+                            class:text-gray-900={c.saldoDisponivel > 0}>
+                        {c.quantidadeUtilizada}/{c.quantidadeTotal}
+                      </span>
+                      {#if c.grupoEspecialidadesId}
+                        <GrupoToggleButton
+                          grupo={grupos.find((g) => g.id === c.grupoEspecialidadesId)}
+                          aberto={!!gruposAbertos[c.id]}
+                          onToggle={() => alternarGrupo(c.id)}
+                        />
+                      {/if}
+                    </div>
+                    {#if c.grupoEspecialidadesId && gruposAbertos[c.id]}
+                      <div class="mt-2">
+                        <GrupoEspecialidadesPainel
+                          grupo={grupos.find((g) => g.id === c.grupoEspecialidadesId)}
+                          linkVerTudo={`/unidade/cotas?grupo=${c.grupoEspecialidadesId}`}
+                        />
+                      </div>
+                    {/if}
                   </div>
                 {/each}
               </div>

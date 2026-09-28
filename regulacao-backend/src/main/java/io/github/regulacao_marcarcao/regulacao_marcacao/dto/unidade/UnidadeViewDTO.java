@@ -14,7 +14,17 @@ public record UnidadeViewDTO(
         Long grupoRelatorioId,
         String grupoRelatorioNome,
         boolean ativo,
-        LocalDateTime criadoEm) {
+        LocalDateTime criadoEm,
+        // Campos do estabelecimento (V86)
+        String tipo,
+        String cnpj,
+        String razaoSocial,
+        String nomeFantasia,
+        String numero,
+        String bairro,
+        String cep,
+        String email,
+        LocalDateTime sincronizadoCnesEm) {
 
     public static UnidadeViewDTO from(Unidade u) {
         return new UnidadeViewDTO(
@@ -27,6 +37,15 @@ public record UnidadeViewDTO(
                 u.getGrupoRelatorio() != null ? u.getGrupoRelatorio().getId() : null,
                 u.getGrupoRelatorio() != null ? u.getGrupoRelatorio().getNome() : null,
                 u.isAtivo(),
-                u.getCriadoEm());
+                u.getCriadoEm(),
+                u.getTipo() != null ? u.getTipo().name() : null,
+                u.getCnpj(),
+                u.getRazaoSocial(),
+                u.getNomeFantasia(),
+                u.getNumero(),
+                u.getBairro(),
+                u.getCep(),
+                u.getEmail(),
+                u.getSincronizadoCnesEm());
     }
 }

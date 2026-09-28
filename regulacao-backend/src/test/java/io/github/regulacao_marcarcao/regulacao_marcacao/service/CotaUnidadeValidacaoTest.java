@@ -1,5 +1,6 @@
 package io.github.regulacao_marcarcao.regulacao_marcacao.service;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
@@ -23,6 +24,9 @@ import org.mockito.quality.Strictness;
 
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.cota.CotaUnidadeCreateDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.cota.CotaUnidadeUpdateDTO;
+import io.github.regulacao_marcarcao.regulacao_marcacao.dto.cota.CotaUnidadeViewDTO;
+import io.github.regulacao_marcarcao.regulacao_marcacao.entity.Agenda;
+import io.github.regulacao_marcarcao.regulacao_marcacao.entity.AgendaOcorrencia;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.CotaUnidade;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.Especialidade;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.GrupoRelatorio;
@@ -263,9 +267,31 @@ class CotaUnidadeValidacaoTest {
         cota.setAtivo(true);
         when(cotaRepository.findById(100L)).thenReturn(Optional.of(cota));
 
-        assertThatThrownBy(() -> service.atualizar(100L, new CotaUnidadeUpdateDTO(2, true)))
+        var dto = new CotaUnidadeUpdateDTO(UNIDADE_ID, null, null, null, TipoPeriodoCota.MENSAL, PERIODO, null, 2, true);
+        assertThatThrownBy(() -> service.atualizar(100L, dto))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("ja utilizado");
+
+        verify(cotaRepository, never()).save(any(CotaUnidade.class));
+    }
+
+    @Test
+    @DisplayName("Cota gerada por agenda recusa edicao direta")
+    void cotaDeAgendaRecusaEdicaoDireta() {
+        CotaUnidade cota = new CotaUnidade();
+        cota.setId(200L);
+        cota.setUnidade(unidade);
+        cota.setQuantidadeTotal(5);
+        cota.setQuantidadeUtilizada(0);
+        cota.setAtivo(true);
+        cota.setOrigem(io.github.regulacao_marcarcao.regulacao_marcacao.entity.enums.OrigemCotaEnum.AGENDA);
+        when(cotaRepository.findById(200L)).thenReturn(Optional.of(cota));
+
+        var dto = new CotaUnidadeUpdateDTO(UNIDADE_ID, null, null, null, TipoPeriodoCota.MENSAL, PERIODO, null, 10, true);
+
+        assertThatThrownBy(() -> service.atualizar(200L, dto))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("agenda de origem");
 
         verify(cotaRepository, never()).save(any(CotaUnidade.class));
     }
@@ -277,5 +303,135 @@ class CotaUnidadeValidacaoTest {
         service.estornarUtilizacao(UNIDADE_ID, HEMOGRAMA_ID, null);
 
         verify(cotaRepository, never()).devolverVaga(any());
+    }
+
+    @Test
+    @DisplayName("Atualizacao troca titular e escopo com sucesso (substituicao total)")
+    void atualizarTrocaTitularEEscopoComSucesso() {
+        Especialidade hemograma = new Especialidade();
+        hemograma.setId(HEMOGRAMA_ID);
+        hemograma.setNome("Hemograma");
+
+        CotaUnidade cota = new CotaUnidade();
+        cota.setId(300L);
+        cota.setUnidade(unidade);
+        cota.setEspecialidade(hemograma);
+        cota.setTipoPeriodo(TipoPeriodoCota.MENSAL);
+        cota.setPeriodo(PERIODO);
+        cota.setQuantidadeTotal(5);
+        cota.setQuantidadeUtilizada(0);
+        cota.setAtivo(true);
+        when(cotaRepository.findById(300L)).thenReturn(Optional.of(cota));
+        when(cotaRepository.findByGrupoUnidadesId(GRUPO_UNIDADES_ID)).thenReturn(List.of());
+
+        GrupoRelatorio grupoUnidades = new GrupoRelatorio();
+        grupoUnidades.setId(GRUPO_UNIDADES_ID);
+        grupoUnidades.setNome("Unidades do polo");
+        when(grupoRelatorioRepository.findById(GRUPO_UNIDADES_ID)).thenReturn(Optional.of(grupoUnidades));
+
+        // Troca o titular de unidade para grupo de unidades, e o escopo de
+        // "Hemograma" para geral — nada disso era editavel antes da V90.
+        var dto = new CotaUnidadeUpdateDTO(
+                null, GRUPO_UNIDADES_ID, null, null, TipoPeriodoCota.MENSAL, PERIODO, null, 10, true);
+
+        CotaUnidadeViewDTO resultado = service.atualizar(300L, dto);
+
+        assertThat(resultado.unidadeId()).isNull();
+        assertThat(resultado.grupoUnidadesId()).isEqualTo(GRUPO_UNIDADES_ID);
+        assertThat(resultado.especialidadeId()).isNull();
+        assertThat(resultado.quantidadeTotal()).isEqualTo(10);
+    }
+
+    @Test
+    @DisplayName("Atualizacao recusa titular colidindo com outra cota, exceto ela mesma")
+    void atualizarNaoColideComSigoMesma() {
+        Especialidade hemograma = new Especialidade();
+        hemograma.setId(HEMOGRAMA_ID);
+        hemograma.setNome("Hemograma");
+
+        CotaUnidade cota = new CotaUnidade();
+        cota.setId(300L);
+        cota.setUnidade(unidade);
+        cota.setEspecialidade(hemograma);
+        cota.setTipoPeriodo(TipoPeriodoCota.MENSAL);
+        cota.setPeriodo(PERIODO);
+        cota.setQuantidadeTotal(5);
+        cota.setQuantidadeUtilizada(0);
+        cota.setAtivo(true);
+        when(cotaRepository.findById(300L)).thenReturn(Optional.of(cota));
+        // A propria cota (id 300) aparece na busca por titular — precisa ser excluida
+        // da checagem de duplicidade, senao toda edicao "colidiria" consigo mesma.
+        when(cotaRepository.findByUnidadeId(UNIDADE_ID)).thenReturn(List.of(cota));
+
+        var dto = new CotaUnidadeUpdateDTO(
+                UNIDADE_ID, null, HEMOGRAMA_ID, null, TipoPeriodoCota.MENSAL, PERIODO, null, 8, true);
+
+        assertThatCode(() -> service.atualizar(300L, dto)).doesNotThrowAnyException();
+    }
+
+    // ==================================================================
+    // criarParaAgenda (V90) — nao duplica o motor de saldo, reusa a mesma
+    // checagem de duplicidade de criar()/atualizar()
+    // ==================================================================
+
+    @Test
+    @DisplayName("criarParaAgenda recusa colisao com cota ja existente para a mesma data/escopo")
+    void criarParaAgendaRecusaColisaoComCotaExistente() {
+        Especialidade hemograma = new Especialidade();
+        hemograma.setId(HEMOGRAMA_ID);
+        hemograma.setNome("Hemograma");
+
+        LocalDate data = LocalDate.of(2026, 10, 5);
+
+        CotaUnidade existente = new CotaUnidade();
+        existente.setId(1L);
+        existente.setUnidade(unidade);
+        existente.setEspecialidade(hemograma);
+        existente.setTipoPeriodo(TipoPeriodoCota.DATA);
+        existente.setDataEspecifica(data);
+        existente.setQuantidadeTotal(5);
+        existente.setQuantidadeUtilizada(0);
+        existente.setAtivo(true);
+        when(cotaRepository.findByUnidadeId(UNIDADE_ID)).thenReturn(List.of(existente));
+
+        Agenda agenda = new Agenda();
+        agenda.setId(500L);
+        AgendaOcorrencia ocorrencia = new AgendaOcorrencia();
+        ocorrencia.setId(10L);
+        ocorrencia.setAgenda(agenda);
+        ocorrencia.setData(data);
+
+        // A colisao precisa virar erro de negocio (400), nunca o erro cru do
+        // indice unico uk_cota_data (V84) — senao o operador leva um 500 opaco
+        // quando a agenda materializa uma data que ja tinha cota manual.
+        assertThatThrownBy(() -> service.criarParaAgenda(ocorrencia, unidade, hemograma, null, 5))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Ja existe cota");
+
+        verify(cotaRepository, never()).save(any(CotaUnidade.class));
+    }
+
+    @Test
+    @DisplayName("criarParaAgenda cria cota com origem AGENDA e vinculo a ocorrencia")
+    void criarParaAgendaCriaComOrigemAgenda() {
+        LocalDate data = LocalDate.of(2026, 10, 5);
+        when(cotaRepository.findByUnidadeId(UNIDADE_ID)).thenReturn(List.of());
+
+        Agenda agenda = new Agenda();
+        agenda.setId(500L);
+        AgendaOcorrencia ocorrencia = new AgendaOcorrencia();
+        ocorrencia.setId(10L);
+        ocorrencia.setAgenda(agenda);
+        ocorrencia.setData(data);
+
+        CotaUnidade criada = service.criarParaAgenda(ocorrencia, unidade, null, grupoLaboratorio, 7);
+
+        assertThat(criada.getOrigem())
+                .isEqualTo(io.github.regulacao_marcarcao.regulacao_marcacao.entity.enums.OrigemCotaEnum.AGENDA);
+        assertThat(criada.getAgendaOcorrencia()).isEqualTo(ocorrencia);
+        assertThat(criada.getGrupoEspecialidades()).isEqualTo(grupoLaboratorio);
+        assertThat(criada.getQuantidadeTotal()).isEqualTo(7);
+        assertThat(criada.getTipoPeriodo()).isEqualTo(TipoPeriodoCota.DATA);
+        assertThat(criada.getDataEspecifica()).isEqualTo(data);
     }
 }

@@ -2,6 +2,7 @@
   import { goto } from '$app/navigation';
   import { postApi, getApi } from '$lib/api.js';
   import RoleBasedMenu from '$lib/RoleBasedMenu.svelte';
+  import { ROTULO_PERFIL } from '$lib/menuConfig.js';
   import UserMenu from '$lib/UserMenu.svelte';
   import { onMount } from 'svelte';
 
@@ -11,7 +12,12 @@
   let password = '';
   let passwordConfirm = '';
   let cargo = 'USER';
+  // Perfis ADICIONAIS liberados para alternância. O principal (`cargo`) entra
+  // sozinho no backend, então não precisa ser marcado aqui.
+  let perfisExtras: string[] = [];
   let unidadeId: number | null = null;
+
+  const PERFIS = Object.entries(ROTULO_PERFIL);
   let unidades: { id: number; nome: string }[] = [];
 
   let isLoading = false;
@@ -41,6 +47,7 @@
       cpf: cpf.replace(/\D/g, ''),
       password,
       cargo,
+      perfis: [cargo, ...perfisExtras],
       unidadeId
     };
 
@@ -73,6 +80,7 @@
     password = '';
     passwordConfirm = '';
     cargo = 'USER';
+    perfisExtras = [];
     unidadeId = null;
   }
 
@@ -136,15 +144,29 @@
           <div>
             <label for="role" class="block text-sm font-medium text-gray-700 mb-1">Perfil de Acesso</label>
             <select id="role" bind:value={cargo} class="w-full border border-gray-300 rounded-lg p-2">
-              <option value="ADMIN">Administrador</option>
-              <option value="ADMIN_UNIDADE">Administrador da Unidade</option>
-              <option value="USER">Usuário Padrão</option>
-              <option value="RECEPCAO">Recepcionista</option>
-              <option value="ENFERMEIRO">Enfermeiro</option>
-              <option value="MEDICO">Medico</option>
-              <option value="PACIENTE">Paciente</option>
-              <option value="COORD_TRANSPORTE">Coordenador(a) de Transporte</option>
+              {#each PERFIS as [valor, rotulo] (valor)}
+                <option value={valor}>{rotulo}</option>
+              {/each}
             </select>
+            <p class="text-xs text-gray-500 mt-1">É com este perfil que a pessoa entra no sistema.</p>
+          </div>
+
+          <div>
+            <span class="block text-sm font-medium text-gray-700 mb-1">Perfis adicionais (opcional)</span>
+            <p class="text-xs text-gray-500 mb-2">
+              Marque outros perfis que esta pessoa poderá assumir. Ela alterna entre eles
+              pelo menu do usuário, um de cada vez — nunca com os acessos somados.
+            </p>
+            <div class="grid grid-cols-2 gap-2 border border-gray-200 rounded-lg p-3">
+              {#each PERFIS as [valor, rotulo] (valor)}
+                {#if valor !== cargo}
+                  <label class="flex items-center gap-2 text-sm text-gray-700">
+                    <input type="checkbox" value={valor} bind:group={perfisExtras} class="rounded border-gray-300 text-emerald-700 focus:ring-emerald-600" />
+                    {rotulo}
+                  </label>
+                {/if}
+              {/each}
+            </div>
           </div>
 
           <div>

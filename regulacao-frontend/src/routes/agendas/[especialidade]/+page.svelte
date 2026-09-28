@@ -33,7 +33,49 @@
         restante: number
     }
 
+    type UnidadeOpcao = { id: number, nome: string }
+
     const grupo = $derived(() => page.params.especialidade)
+
+    /**
+     * Agenda do dia por Unidade (v1.6): cada Unidade tem sua propria agenda —
+     * antes ela era uma unica lista fixa (todo mundo via os mesmos pacientes,
+     * independente da unidade). Usuario Padrao/perfis restritos usam a propria
+     * unidade de lotacao, sem escolha. So o ADMIN global tem o seletor abaixo,
+     * porque so ele pode ver/alterar a agenda de outras unidades.
+     */
+    let carregandoPerfil = $state(true)
+    let meRole = $state<string | null>(null)
+    let minhaUnidadeId = $state<number | null>(null)
+    let minhaUnidadeNome = $state('')
+    let unidadesParaAdmin = $state<UnidadeOpcao[]>([])
+    let unidadeEscolhidaPeloAdmin = $state<number | null>(null)
+
+    const ehAdmin = $derived(() => meRole === 'ADMIN')
+    const unidadeIdEfetiva = $derived(() => ehAdmin() ? unidadeEscolhidaPeloAdmin : minhaUnidadeId)
+
+    async function carregarPerfilEUnidades() {
+        try {
+            const resMe = await getApi('users/me')
+            if (resMe.ok) {
+                const me = await resMe.json()
+                meRole = me.role ?? null
+                minhaUnidadeId = me.unidadeId ?? null
+                minhaUnidadeNome = me.unidadeNome ?? ''
+            }
+            if (meRole === 'ADMIN') {
+                const resUnidades = await getApi('unidades/ativas')
+                if (resUnidades.ok) {
+                    unidadesParaAdmin = await resUnidades.json()
+                }
+            }
+        } catch (error) {
+            // Falha aqui nao pode travar a pagina — o bloco de "selecione uma
+            // unidade" cobre o caso de perfil/unidade indisponivel.
+        } finally {
+            carregandoPerfil = false
+        }
+    }
 
     /**
      * A Data da Coleta só faz sentido onde há coleta de material — na prática, os
@@ -56,11 +98,21 @@
     
 
     async function  listarPacientesAgendadosPorDataEGrupoELocal(grupo: string, data: string) {
+        const unidadeId = unidadeIdEfetiva()
+        if (!unidadeId) {
+            // ADMIN sem unidade escolhida, ou operador sem unidade de lotacao:
+            // nao ha unidade para consultar. O bloco de aviso na tela cobre isto.
+            pacientes = []
+            pageData = null
+            return
+        }
+
         const params = new URLSearchParams()
         params.append("page", String(pageIndex))
         params.append("size", String(pageSize))
         params.append("grupo", grupo)
         params.append("data", data)
+        params.append("unidadeId", String(unidadeId))
 
         const vagasParams = new URLSearchParams()
         vagasParams.append("data", data)
@@ -183,15 +235,16 @@
 
 
     onMount(() => {
-        const g =grupo()
-        const d = data()
-        listarPacientesAgendadosPorDataEGrupoELocal(g,d)
+        // Nao busca a listagem aqui: o $effect abaixo dispara sozinho assim que
+        // carregandoPerfil vira false (ou a unidade do ADMIN e escolhida).
+        carregarPerfilEUnidades()
     })
 
     $effect(() => {
         const g = grupo()
         const d = data()
-        if(!g) return
+        const u = unidadeIdEfetiva()
+        if(!g || carregandoPerfil) return
 
         listarPacientesAgendadosPorDataEGrupoELocal(g,d)
     })
@@ -204,7 +257,31 @@
 <Content titleH1={`Lista de Pacientes - ${grupo()}`} page="">
 
     <main class="flex-1 p-6 overflow-auto">
-            {#if carregando}
+            {#if !carregandoPerfil && ehAdmin()}
+                <div class="mb-4 p-4 rounded-lg bg-white border border-gray-200 flex items-center gap-3">
+                    <label for="unidade-select" class="text-sm font-semibold text-gray-700">Unidade:</label>
+                    <select id="unidade-select" bind:value={unidadeEscolhidaPeloAdmin} class="border-gray-300 rounded-md text-sm p-1.5">
+                        <option value={null}>— Selecione uma unidade —</option>
+                        {#each unidadesParaAdmin as u (u.id)}
+                            <option value={u.id}>{u.nome}</option>
+                        {/each}
+                    </select>
+                </div>
+            {/if}
+
+            {#if carregandoPerfil}
+                <p class="text-center text-gray-500 animate-pulse">Carregando...</p>
+            {:else if !unidadeIdEfetiva()}
+                <div class="text-center p-10 bg-white rounded-lg shadow-sm">
+                    {#if ehAdmin()}
+                        <h2 class="text-xl font-semibold text-gray-700">Selecione uma unidade acima</h2>
+                        <p class="text-gray-500 mt-2">Escolha a unidade para ver a agenda do dia.</p>
+                    {:else}
+                        <h2 class="text-xl font-semibold text-gray-700">Sua conta não está vinculada a uma unidade</h2>
+                        <p class="text-gray-500 mt-2">Fale com o administrador do sistema para vincular sua conta a uma Unidade de Saúde em Admin → Listar Usuários.</p>
+                    {/if}
+                </div>
+            {:else if carregando}
                 <p class="text-center text-gray-500 animate-pulse">Carregando painel...</p>
             {:else}
                 <div class="mb-4 p-4 rounded-lg bg-emerald-50 border border-emerald-200">

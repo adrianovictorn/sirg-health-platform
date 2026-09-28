@@ -12,10 +12,12 @@ import io.github.regulacao_marcarcao.regulacao_marcacao.dto.cota.CotaUnidadeCrea
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.cota.CotaUnidadeSaldoDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.cota.CotaUnidadeUpdateDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.cota.CotaUnidadeViewDTO;
+import io.github.regulacao_marcarcao.regulacao_marcacao.entity.AgendaOcorrencia;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.CotaUnidade;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.Especialidade;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.GrupoRelatorio;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.Unidade;
+import io.github.regulacao_marcarcao.regulacao_marcacao.entity.enums.OrigemCotaEnum;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.enums.TipoPeriodoCota;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.CotaUnidadeRepository;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.EspecialidadeRepository;
@@ -125,7 +127,7 @@ public class CotaUnidadeService {
             cota.setGrupoEspecialidades(grupoEsp);
         }
 
-        exigirCotaInexistente(cota, tipo, dto.periodo(), dto.dataEspecifica());
+        exigirCotaInexistente(cota, tipo, dto.periodo(), dto.dataEspecifica(), null);
 
         cota.setTipoPeriodo(tipo);
         cota.setPeriodo(tipo == TipoPeriodoCota.MENSAL ? dto.periodo() : null);
@@ -134,6 +136,33 @@ public class CotaUnidadeService {
         cota.setQuantidadeUtilizada(0);
         cota.setAtivo(true);
         return CotaUnidadeViewDTO.from(cotaRepository.save(cota));
+    }
+
+    /**
+     * Cota materializada por uma ocorrencia de agenda (V90) — nao passa pelas
+     * validacoes de {@link #criar}, que pressupoe entrada direta do operador
+     * (ex.: "titular exatamente um" ja vem resolvido de quem chama). Nao
+     * duplica o motor de consumo/estorno: a cota gerada usa exatamente os
+     * mesmos {@code consumirVaga}/{@code devolverVaga} de uma cota manual.
+     */
+    @Transactional
+    public CotaUnidade criarParaAgenda(AgendaOcorrencia ocorrencia, Unidade unidadeSolicitante,
+            Especialidade especialidade, GrupoRelatorio grupoEspecialidades, int quantidade) {
+        CotaUnidade cota = new CotaUnidade();
+        cota.setUnidade(unidadeSolicitante);
+        cota.setEspecialidade(especialidade);
+        cota.setGrupoEspecialidades(grupoEspecialidades);
+        cota.setTipoPeriodo(TipoPeriodoCota.DATA);
+        cota.setDataEspecifica(ocorrencia.getData());
+
+        exigirCotaInexistente(cota, TipoPeriodoCota.DATA, null, ocorrencia.getData(), null);
+
+        cota.setQuantidadeTotal(quantidade);
+        cota.setQuantidadeUtilizada(0);
+        cota.setAtivo(true);
+        cota.setOrigem(OrigemCotaEnum.AGENDA);
+        cota.setAgendaOcorrencia(ocorrencia);
+        return cotaRepository.save(cota);
     }
 
     private GrupoRelatorio buscarGrupo(Long id, String rotulo) {
@@ -151,12 +180,14 @@ public class CotaUnidadeService {
      * a prepared statement (ver CHANGELOG 1.4).
      */
     private void exigirCotaInexistente(CotaUnidade nova, TipoPeriodoCota tipo,
-            String periodo, LocalDate data) {
+            String periodo, LocalDate data, Long excluirId) {
         List<CotaUnidade> doTitular = nova.getUnidade() != null
                 ? cotaRepository.findByUnidadeId(nova.getUnidade().getId())
                 : cotaRepository.findByGrupoUnidadesId(nova.getGrupoUnidades().getId());
 
-        boolean jaExiste = doTitular.stream().anyMatch(c ->
+        boolean jaExiste = doTitular.stream()
+                .filter(c -> excluirId == null || !c.getId().equals(excluirId))
+                .anyMatch(c ->
                 c.getTipoPeriodo() == tipo
                 && idOuMenosUm(c.getEspecialidade()) == idOuMenosUm(nova.getEspecialidade())
                 && idOuMenosUm(c.getGrupoEspecialidades()) == idOuMenosUm(nova.getGrupoEspecialidades())
@@ -178,11 +209,49 @@ public class CotaUnidadeService {
         return g != null ? g.getId() : -1L;
     }
 
+    /**
+     * Edicao completa de uma cota MANUAL (V90). Antes so {@code quantidadeTotal}
+     * e {@code ativo} eram editaveis; agora titular, escopo e periodo tambem —
+     * com a mesma validacao de {@link #criar}, porque o DTO e uma substituicao
+     * total (a tela sempre reenvia o registro inteiro).
+     *
+     * <p>Cota gerada por agenda ({@code origem = AGENDA}) recusa este endpoint:
+     * edita-se a agenda de origem, nunca a cota diretamente.
+     */
     @Transactional
     public CotaUnidadeViewDTO atualizar(Long id, CotaUnidadeUpdateDTO dto) {
         CotaUnidade cota = cotaRepository.findById(id)
                 .orElseThrow(() -> new EntityNotFoundException("Cota nao encontrada."));
-        if (dto.quantidadeTotal() < 0) {
+
+        if (cota.getOrigem() == OrigemCotaEnum.AGENDA) {
+            throw new IllegalStateException(
+                    "Esta cota foi gerada por uma agenda — edite a agenda de origem.");
+        }
+
+        TipoPeriodoCota tipo = dto.tipoPeriodo() != null ? dto.tipoPeriodo() : TipoPeriodoCota.MENSAL;
+
+        boolean temUnidade = dto.unidadeId() != null;
+        boolean temGrupoUnidades = dto.grupoUnidadesId() != null;
+        if (temUnidade == temGrupoUnidades) {
+            throw new IllegalArgumentException(
+                    "Informe exatamente um titular para a cota: unidadeId OU grupoUnidadesId.");
+        }
+
+        if (dto.especialidadeId() != null && dto.grupoEspecialidadesId() != null) {
+            throw new IllegalArgumentException(
+                    "Informe apenas um escopo: especialidadeId OU grupoEspecialidadesId "
+                            + "(deixe ambos vazios para cota geral).");
+        }
+
+        if (tipo == TipoPeriodoCota.MENSAL) {
+            if (dto.periodo() == null || !dto.periodo().matches("\\d{4}-\\d{2}")) {
+                throw new IllegalArgumentException("Periodo invalido. Use o formato YYYY-MM (ex: 2026-05).");
+            }
+        } else if (dto.dataEspecifica() == null) {
+            throw new IllegalArgumentException("Data especifica e obrigatoria para cota por data.");
+        }
+
+        if (dto.quantidadeTotal() == null || dto.quantidadeTotal() < 0) {
             throw new IllegalArgumentException("A quantidade total deve ser maior ou igual a zero.");
         }
         if (dto.quantidadeTotal() < cota.getQuantidadeUtilizada()) {
@@ -190,6 +259,39 @@ public class CotaUnidadeService {
                     "A nova quantidade (" + dto.quantidadeTotal() + ") e menor que o total ja utilizado ("
                             + cota.getQuantidadeUtilizada() + "). Cancele agendamentos antes de reduzir a cota.");
         }
+
+        if (temUnidade) {
+            cota.setUnidade(unidadeRepository.findById(dto.unidadeId())
+                    .orElseThrow(() -> new EntityNotFoundException("Unidade nao encontrada.")));
+            cota.setGrupoUnidades(null);
+        } else {
+            cota.setGrupoUnidades(buscarGrupo(dto.grupoUnidadesId(), "Grupo de unidades"));
+            cota.setUnidade(null);
+        }
+
+        if (dto.especialidadeId() != null) {
+            cota.setEspecialidade(especialidadeRepository.findById(dto.especialidadeId())
+                    .orElseThrow(() -> new EntityNotFoundException("Especialidade nao encontrada.")));
+            cota.setGrupoEspecialidades(null);
+        } else if (dto.grupoEspecialidadesId() != null) {
+            GrupoRelatorio grupoEsp = buscarGrupo(dto.grupoEspecialidadesId(), "Grupo de especialidades");
+            if (especialidadeRepository.countByGrupoRelatorioId(grupoEsp.getId()) == 0) {
+                throw new IllegalArgumentException(
+                        "O grupo '" + grupoEsp.getNome() + "' nao possui especialidades vinculadas, "
+                                + "entao uma cota para ele nao limitaria nada.");
+            }
+            cota.setGrupoEspecialidades(grupoEsp);
+            cota.setEspecialidade(null);
+        } else {
+            cota.setEspecialidade(null);
+            cota.setGrupoEspecialidades(null);
+        }
+
+        exigirCotaInexistente(cota, tipo, dto.periodo(), dto.dataEspecifica(), id);
+
+        cota.setTipoPeriodo(tipo);
+        cota.setPeriodo(tipo == TipoPeriodoCota.MENSAL ? dto.periodo() : null);
+        cota.setDataEspecifica(tipo == TipoPeriodoCota.DATA ? dto.dataEspecifica() : null);
         cota.setQuantidadeTotal(dto.quantidadeTotal());
         cota.setAtivo(dto.ativo());
         return CotaUnidadeViewDTO.from(cotaRepository.save(cota));
@@ -315,6 +417,13 @@ public class CotaUnidadeService {
     }
 
     @Transactional(readOnly = true)
+    public CotaUnidadeViewDTO buscarPorId(Long id) {
+        return cotaRepository.findById(id)
+                .map(CotaUnidadeViewDTO::from)
+                .orElseThrow(() -> new EntityNotFoundException("Cota nao encontrada."));
+    }
+
+    @Transactional(readOnly = true)
     public List<CotaUnidadeViewDTO> listarTodas() {
         return cotaRepository.findAll().stream().map(CotaUnidadeViewDTO::from).toList();
     }
@@ -367,6 +476,63 @@ public class CotaUnidadeService {
                 idEscopo,
                 nomeEscopo,
                 periodo,
+                maisRestritiva.getQuantidadeTotal(),
+                maisRestritiva.getQuantidadeUtilizada(),
+                saldo,
+                saldo > 0,
+                !daUnidade);
+    }
+
+    /**
+     * Saldo para uma DATA especifica, em vez do periodo mensal inteiro.
+     *
+     * {@link #consultarSaldo} sempre usa o dia 1 do mes como referencia para
+     * {@link #cotasAplicaveis}, entao uma cota do tipo DATA so "casaria" se fosse
+     * cadastrada para o dia 1 — na pratica nunca, para um agendamento num dia
+     * qualquer. Este metodo roda a mesma consulta com o dia real do agendamento,
+     * sem alterar {@link #consultarSaldo} (usado hoje pela tela de agendamento
+     * para o saldo do mes, que continua exibido).
+     */
+    @Transactional(readOnly = true)
+    public CotaUnidadeSaldoDTO consultarSaldoPorData(Long unidadeId, Long especialidadeId, LocalDate data) {
+        List<CotaUnidade> cotas = cotasAplicaveis(unidadeId, especialidadeId, data);
+        String referencia = data.toString();
+
+        if (cotas.isEmpty()) {
+            Unidade unidade = unidadeRepository.findById(unidadeId)
+                    .orElseThrow(() -> new EntityNotFoundException("Unidade nao encontrada."));
+            Especialidade esp = especialidadeId != null
+                    ? especialidadeRepository.findById(especialidadeId).orElse(null)
+                    : null;
+            return new CotaUnidadeSaldoDTO(
+                    unidade.getId(), unidade.getNome(),
+                    esp != null ? esp.getId() : null,
+                    esp != null ? esp.getNome() : null,
+                    referencia, null, null, null, true, false);
+        }
+
+        CotaUnidade maisRestritiva = cotas.stream()
+                .min(Comparator.comparingInt(c -> c.getQuantidadeTotal() - c.getQuantidadeUtilizada()))
+                .orElseThrow();
+
+        int saldo = maisRestritiva.getQuantidadeTotal() - maisRestritiva.getQuantidadeUtilizada();
+        boolean daUnidade = maisRestritiva.getUnidade() != null;
+
+        Long idEscopo = null;
+        String nomeEscopo = null;
+        if (maisRestritiva.getEspecialidade() != null) {
+            idEscopo = maisRestritiva.getEspecialidade().getId();
+            nomeEscopo = maisRestritiva.getEspecialidade().getNome();
+        } else if (maisRestritiva.getGrupoEspecialidades() != null) {
+            nomeEscopo = "Grupo " + maisRestritiva.getGrupoEspecialidades().getNome();
+        }
+
+        return new CotaUnidadeSaldoDTO(
+                daUnidade ? maisRestritiva.getUnidade().getId() : unidadeId,
+                daUnidade ? maisRestritiva.getUnidade().getNome() : maisRestritiva.getGrupoUnidades().getNome(),
+                idEscopo,
+                nomeEscopo,
+                referencia,
                 maisRestritiva.getQuantidadeTotal(),
                 maisRestritiva.getQuantidadeUtilizada(),
                 saldo,

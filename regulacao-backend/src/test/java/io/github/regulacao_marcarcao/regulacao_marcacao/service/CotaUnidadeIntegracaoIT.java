@@ -307,6 +307,80 @@ class CotaUnidadeIntegracaoIT {
     }
 
     // ==================================================================
+    // Saldo por DATA especifica (ajuste: agendamento so mostrava por mes)
+    // ==================================================================
+
+    @Test
+    @DisplayName("BANCO REAL: saldo por data, so com cota MENSAL configurada, mostra o saldo do mes")
+    void saldoPorDataComSoCotaMensalMostraSaldoDoMes() {
+        criarCotaDaUnidade(5);
+        service.incrementarUtilizacao(unidade.getId(), cardiologia.getId(), data);
+
+        var saldoData = service.consultarSaldoPorData(unidade.getId(), cardiologia.getId(), data);
+
+        assertThat(saldoData.quantidadeTotal()).isEqualTo(5);
+        assertThat(saldoData.quantidadeUtilizada()).isEqualTo(1);
+        assertThat(saldoData.saldoDisponivel()).isEqualTo(4);
+        assertThat(saldoData.disponivel()).isTrue();
+    }
+
+    @Test
+    @DisplayName("BANCO REAL: saldo por data, so com cota DATA configurada, e encontrado")
+    void saldoPorDataComSoCotaDeDataEEncontrado() {
+        CotaUnidade cotaDeData = new CotaUnidade();
+        cotaDeData.setUnidade(unidade);
+        cotaDeData.setEspecialidade(cardiologia);
+        cotaDeData.setTipoPeriodo(TipoPeriodoCota.DATA);
+        cotaDeData.setDataEspecifica(data);
+        cotaDeData.setQuantidadeTotal(3);
+        cotaDeData.setQuantidadeUtilizada(0);
+        cotaDeData.setAtivo(true);
+        cotaRepository.saveAndFlush(cotaDeData);
+
+        var saldoData = service.consultarSaldoPorData(unidade.getId(), cardiologia.getId(), data);
+
+        assertThat(saldoData.quantidadeTotal()).isEqualTo(3);
+        assertThat(saldoData.saldoDisponivel()).isEqualTo(3);
+        assertThat(saldoData.disponivel()).isTrue();
+
+        // A consulta por MES (ja existente) nao enxerga a cota DATA, comportamento
+        // que continua exatamente como antes deste ajuste.
+        var saldoMensal = service.consultarSaldo(unidade.getId(), cardiologia.getId(), periodo);
+        assertThat(saldoMensal.quantidadeTotal()).isNull();
+        assertThat(saldoMensal.disponivel()).isTrue();
+    }
+
+    @Test
+    @DisplayName("BANCO REAL: cota MENSAL e cota DATA incidem juntas no saldo por data")
+    void saldoPorDataComMensalEDataJuntasUsaAMaisRestritiva() {
+        criarCotaDaUnidade(10);
+        CotaUnidade cotaDeData = new CotaUnidade();
+        cotaDeData.setUnidade(unidade);
+        cotaDeData.setEspecialidade(cardiologia);
+        cotaDeData.setTipoPeriodo(TipoPeriodoCota.DATA);
+        cotaDeData.setDataEspecifica(data);
+        cotaDeData.setQuantidadeTotal(2);
+        cotaDeData.setQuantidadeUtilizada(0);
+        cotaDeData.setAtivo(true);
+        cotaRepository.saveAndFlush(cotaDeData);
+
+        var saldoData = service.consultarSaldoPorData(unidade.getId(), cardiologia.getId(), data);
+
+        // A cota DATA (2 vagas) e mais restritiva que a MENSAL (10) e prevalece.
+        assertThat(saldoData.quantidadeTotal()).isEqualTo(2);
+        assertThat(saldoData.saldoDisponivel()).isEqualTo(2);
+
+        // As duas incidem juntas no consumo: esgotar a DATA bloqueia o agendamento
+        // mesmo com saldo mensal de sobra — comportamento do motor, ja coberto por
+        // cotaDeEspecialidadeEDeGrupoIncidemJuntas para outra combinacao de escopos.
+        service.incrementarUtilizacao(unidade.getId(), cardiologia.getId(), data);
+        service.incrementarUtilizacao(unidade.getId(), cardiologia.getId(), data);
+        assertThatThrownBy(() -> service.incrementarUtilizacao(unidade.getId(), cardiologia.getId(), data))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("Cota esgotada");
+    }
+
+    // ==================================================================
     // Cota por GRUPO DE ESPECIALIDADES (V84) no banco real
     // ==================================================================
 

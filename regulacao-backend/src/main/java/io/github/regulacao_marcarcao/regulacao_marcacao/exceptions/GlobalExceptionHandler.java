@@ -3,9 +3,11 @@ package io.github.regulacao_marcarcao.regulacao_marcacao.exceptions;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 
 import jakarta.persistence.EntityNotFoundException;
 
@@ -79,5 +81,47 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(EntityNotFoundException.class)
     public ResponseEntity<Object> handleNaoEncontrado(EntityNotFoundException ex) {
         return erro(HttpStatus.NOT_FOUND, ex.getMessage());
+    }
+
+    /**
+     * Acesso negado pelo escopo de unidade (UnidadeAcessoService) — 403 com
+     * mensagem explicita, nao o corpo generico do Spring.
+     *
+     * Sem este handler a excecao escapava do MVC e caia no
+     * {@code ExceptionTranslationFilter} do Spring Security, que devolve 403 sem o
+     * campo {@code message} (mesma causa do problema ja documentado para
+     * IllegalStateException acima): o bloqueio por unidade acontecia certo, mas a
+     * tela so mostrava um erro generico, sem dizer que o motivo era acesso a dados
+     * de outra unidade.
+     */
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<Object> handleAcessoNegado(AccessDeniedException ex) {
+        return erro(HttpStatus.FORBIDDEN, ex.getMessage());
+    }
+
+    /**
+     * Serviço de terceiro fora do ar — 503, não 500.
+     *
+     * <p>A distinção importa para o operador: 500 sugere defeito do SIRG e leva a
+     * abrir chamado; 503 diz que a consulta ao CNES falhou e que o cadastro manual
+     * segue disponível. A tela usa o status para escolher a mensagem.
+     */
+    @ExceptionHandler(ServicoExternoIndisponivelException.class)
+    public ResponseEntity<Object> handleServicoExterno(ServicoExternoIndisponivelException ex) {
+        return erro(HttpStatus.SERVICE_UNAVAILABLE, ex.getMessage());
+    }
+
+    /**
+     * Upload acima do limite configurado — 400 com a causa, nao 500.
+     *
+     * <p>O limite e 5MB (spring.servlet.multipart.max-file-size). Sem este handler
+     * o erro chegava a tela como falha generica, e quem estava subindo o CSV de
+     * profissionais do CNES nao tinha como saber que o problema era o tamanho.
+     */
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ResponseEntity<Object> handleUploadGrande(MaxUploadSizeExceededException ex) {
+        return erro(HttpStatus.BAD_REQUEST,
+                "O arquivo enviado excede o limite de 5MB. Exporte um recorte menor do CNES"
+                        + " (por estabelecimento, por exemplo).");
     }
 }

@@ -1,8 +1,7 @@
 <script>
   import { onMount } from 'svelte';
   import { getApi, postApi, putApi, patchApi, deleteByIdApi } from '$lib/api.js';
-  import RoleBasedMenu from '$lib/RoleBasedMenu.svelte';
-  import UserMenu from '$lib/UserMenu.svelte';
+  import Content from '$lib/Content.svelte';
   import { toast } from 'svelte-sonner';
 
   let profissionais = [];
@@ -100,113 +99,104 @@
   }
 </script>
 
-<div class="flex min-h-screen bg-slate-950">
-  <RoleBasedMenu activePage="/admin/profissionais" />
+<Content titleH1="Profissionais Solicitantes" page="/admin/profissionais">
+  <main class="p-6 space-y-4">
+    <div class="flex items-center justify-between gap-4">
+      <input
+        bind:value={busca}
+        on:input={carregarProfissionais}
+        placeholder="Buscar por nome..."
+        class="w-64 bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+      />
+      <button on:click={abrirModalNovo}
+        class="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium transition-colors">
+        + Novo Profissional
+      </button>
+    </div>
 
-  <div class="flex-1 flex flex-col">
-    <header class="flex items-center justify-between px-6 py-4 border-b border-slate-800 bg-slate-900">
-      <h1 class="text-lg font-semibold text-white">Profissionais Solicitantes</h1>
-      <UserMenu />
-    </header>
-
-    <main class="p-6 space-y-4">
-      <div class="flex items-center justify-between gap-4">
-        <input
-          bind:value={busca}
-          on:input={carregarProfissionais}
-          placeholder="Buscar por nome..."
-          class="w-64 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-        />
-        <button on:click={abrirModalNovo}
-          class="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium transition-colors">
-          + Novo Profissional
-        </button>
-      </div>
-
-      {#if loading}
-        <p class="text-slate-400 text-sm">Carregando...</p>
-      {:else}
-        <div class="overflow-x-auto rounded-xl border border-slate-800">
-          <table class="w-full text-sm text-slate-300">
-            <thead class="bg-slate-800 text-slate-400 uppercase text-xs">
-              <tr>
-                <th class="px-4 py-3 text-left">Nome</th>
-                <th class="px-4 py-3 text-left">Conselho / Registro</th>
-                <th class="px-4 py-3 text-left">Especialidade</th>
-                <th class="px-4 py-3 text-left">Unidade</th>
-                <th class="px-4 py-3 text-left">Status</th>
-                <th class="px-4 py-3 text-left">Ações</th>
+    {#if loading}
+      <p class="text-gray-500 text-sm">Carregando...</p>
+    {:else}
+      <div class="overflow-x-auto rounded-xl border border-gray-200 bg-white">
+        <table class="w-full text-sm text-gray-700">
+          <thead class="bg-gray-50 text-gray-500 uppercase text-xs">
+            <tr>
+              <th class="px-4 py-3 text-left">Nome</th>
+              <th class="px-4 py-3 text-left">Conselho / Registro</th>
+              <th class="px-4 py-3 text-left">Especialidade</th>
+              <th class="px-4 py-3 text-left">Unidade</th>
+              <th class="px-4 py-3 text-left">Status</th>
+              <th class="px-4 py-3 text-left">Ações</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-200">
+            {#each profissionais as p (p.id)}
+              <tr class="hover:bg-gray-50 transition-colors">
+                <td class="px-4 py-3 font-medium text-gray-900">{p.nome}</td>
+                <td class="px-4 py-3">{p.conselho || '—'} {p.numeroRegistro || ''}</td>
+                <td class="px-4 py-3">{p.especialidadeAtuacao || '—'}</td>
+                <td class="px-4 py-3">{p.unidadeNome || '—'}</td>
+                <td class="px-4 py-3">
+                  <span class="px-2 py-0.5 rounded-full text-xs font-medium {p.ativo ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}">
+                    {p.ativo ? 'Ativo' : 'Inativo'}
+                  </span>
+                </td>
+                <td class="px-4 py-3 flex gap-2">
+                  <button on:click={() => abrirModalEditar(p)}
+                    class="px-3 py-1 rounded bg-blue-50 text-blue-700 hover:bg-blue-100 text-xs transition-colors">
+                    Editar
+                  </button>
+                  <button on:click={() => toggleAtivo(p)}
+                    class="px-3 py-1 rounded text-xs transition-colors {p.ativo ? 'bg-red-50 text-red-700 hover:bg-red-100' : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'}">
+                    {p.ativo ? 'Desativar' : 'Ativar'}
+                  </button>
+                  <button on:click={() => deletar(p)}
+                    class="px-3 py-1 rounded bg-red-50 text-red-700 hover:bg-red-100 text-xs transition-colors">
+                    Excluir
+                  </button>
+                </td>
               </tr>
-            </thead>
-            <tbody class="divide-y divide-slate-800">
-              {#each profissionais as p}
-                <tr class="hover:bg-slate-800/40 transition-colors">
-                  <td class="px-4 py-3 font-medium text-white">{p.nome}</td>
-                  <td class="px-4 py-3">{p.conselho || '—'} {p.numeroRegistro || ''}</td>
-                  <td class="px-4 py-3">{p.especialidadeAtuacao || '—'}</td>
-                  <td class="px-4 py-3">{p.unidadeNome || '—'}</td>
-                  <td class="px-4 py-3">
-                    <span class="px-2 py-0.5 rounded-full text-xs font-medium {p.ativo ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'}">
-                      {p.ativo ? 'Ativo' : 'Inativo'}
-                    </span>
-                  </td>
-                  <td class="px-4 py-3 flex gap-2">
-                    <button on:click={() => abrirModalEditar(p)}
-                      class="px-3 py-1 rounded bg-blue-600/20 text-blue-400 hover:bg-blue-600/40 text-xs transition-colors">
-                      Editar
-                    </button>
-                    <button on:click={() => toggleAtivo(p)}
-                      class="px-3 py-1 rounded text-xs transition-colors {p.ativo ? 'bg-red-600/20 text-red-400 hover:bg-red-600/40' : 'bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600/40'}">
-                      {p.ativo ? 'Desativar' : 'Ativar'}
-                    </button>
-                    <button on:click={() => deletar(p)}
-                      class="px-3 py-1 rounded bg-red-600/20 text-red-400 hover:bg-red-600/40 text-xs transition-colors">
-                      Excluir
-                    </button>
-                  </td>
-                </tr>
-              {/each}
-            </tbody>
-          </table>
-        </div>
-      {/if}
-    </main>
-  </div>
-</div>
+            {/each}
+          </tbody>
+        </table>
+      </div>
+    {/if}
+  </main>
+</Content>
 
 {#if showModal}
   <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
-    <div class="bg-slate-900 border border-slate-700 rounded-2xl p-6 w-full max-w-md shadow-2xl space-y-4">
-      <h2 class="text-white font-semibold text-base">{editando ? 'Editar Profissional' : 'Novo Profissional'}</h2>
+    <div class="bg-white border border-gray-200 rounded-2xl p-6 w-full max-w-md shadow-xl space-y-4">
+      <h2 class="text-gray-900 font-semibold text-base">{editando ? 'Editar Profissional' : 'Novo Profissional'}</h2>
 
       <div class="space-y-3">
         <div>
-          <label class="block text-xs text-slate-400 mb-1">Nome *</label>
-          <input bind:value={form.nome} class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+          <label class="block text-xs text-gray-500 mb-1">Nome *</label>
+          <input bind:value={form.nome} class="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-emerald-500" />
         </div>
         <div class="grid grid-cols-2 gap-3">
           <div>
-            <label class="block text-xs text-slate-400 mb-1">Conselho (CRM, COREN…)</label>
-            <input bind:value={form.conselho} class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+            <label class="block text-xs text-gray-500 mb-1">Conselho (CRM, COREN…)</label>
+            <input bind:value={form.conselho} class="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-emerald-500" />
           </div>
           <div>
-            <label class="block text-xs text-slate-400 mb-1">Nº Registro</label>
-            <input bind:value={form.numeroRegistro} class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+            <label class="block text-xs text-gray-500 mb-1">Nº Registro</label>
+            <input bind:value={form.numeroRegistro} class="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-emerald-500" />
           </div>
         </div>
         <div>
-          <label class="block text-xs text-slate-400 mb-1">Especialidade de Atuação</label>
-          <input bind:value={form.especialidadeAtuacao} class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+          <label class="block text-xs text-gray-500 mb-1">Especialidade de Atuação</label>
+          <input bind:value={form.especialidadeAtuacao} class="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-emerald-500" />
         </div>
         <div>
-          <label class="block text-xs text-slate-400 mb-1">Telefone</label>
-          <input bind:value={form.telefone} class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+          <label class="block text-xs text-gray-500 mb-1">Telefone</label>
+          <input bind:value={form.telefone} class="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-emerald-500" />
         </div>
         <div>
-          <label class="block text-xs text-slate-400 mb-1">Unidade</label>
-          <select bind:value={form.unidadeId} class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-emerald-500">
+          <label class="block text-xs text-gray-500 mb-1">Unidade</label>
+          <select bind:value={form.unidadeId} class="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-emerald-500">
             <option value={null}>— Nenhuma —</option>
-            {#each unidades as u}
+            {#each unidades as u (u.id)}
               <option value={u.id}>{u.nome}</option>
             {/each}
           </select>
@@ -215,7 +205,7 @@
 
       <div class="flex justify-end gap-3 pt-2">
         <button on:click={() => showModal = false}
-          class="px-4 py-2 rounded-lg bg-slate-700 text-slate-300 text-sm hover:bg-slate-600 transition-colors">
+          class="px-4 py-2 rounded-lg bg-gray-100 text-gray-700 text-sm hover:bg-gray-200 transition-colors">
           Cancelar
         </button>
         <button on:click={salvar}

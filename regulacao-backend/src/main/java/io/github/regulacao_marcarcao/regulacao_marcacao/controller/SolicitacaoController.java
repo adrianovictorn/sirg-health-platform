@@ -84,7 +84,7 @@ public class SolicitacaoController {
     }
 
     @GetMapping("/resumo-dashboard")
-    @PreAuthorize("hasAnyRole('ADMIN', 'ADMIN_UNIDADE', 'USER', 'RECEPCAO', 'ENFERMEIRO', 'MEDICO', 'COORD_TRANSPORTE')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'ADMIN_UNIDADE', 'GESTOR', 'USER', 'RECEPCAO', 'ENFERMEIRO', 'MEDICO', 'COORD_TRANSPORTE')")
     public ResponseEntity<DashboardResumoDTO> obterResumoDashboard(Authentication authentication) {
         return ResponseEntity.ok(service.obterResumoDashboard(authentication != null ? authentication.getName() : null));
     }

@@ -17,12 +17,50 @@
         direcionadoHospital: boolean
     }
 
+    type UnidadeOpcao = { id: number, nome: string }
+
     let form = $state<formPacientePorGrupo[]>([])
     let grupos = $state<GrupoViewDTO[]>([])
     let totalPorGrupo = $state<Record<string, number>>({})
     let dataSelecionanda = $state(new Date().toISOString().slice(0,10))
 
     let carregando = $state(false)
+
+    /**
+     * Quantitativo por Unidade (v1.6): antes contava agendamentos de uma unica
+     * "agenda do hospital" fixa, igual para qualquer usuario. Usuario Padrao e
+     * demais perfis restritos usam a propria unidade de lotacao, sem escolha; so
+     * o ADMIN global tem o seletor abaixo, porque so ele pode ver a agenda de
+     * outras unidades.
+     */
+    let carregandoPerfil = $state(true)
+    let meRole = $state<string | null>(null)
+    let minhaUnidadeId = $state<number | null>(null)
+    let unidadesParaAdmin = $state<UnidadeOpcao[]>([])
+    let unidadeEscolhidaPeloAdmin = $state<number | null>(null)
+
+    const ehAdmin = $derived(() => meRole === 'ADMIN')
+    const unidadeIdEfetiva = $derived(() => ehAdmin() ? unidadeEscolhidaPeloAdmin : minhaUnidadeId)
+
+    async function carregarPerfilEUnidades() {
+        try {
+            const resMe = await getApi('users/me')
+            if (resMe.ok) {
+                const me = await resMe.json()
+                meRole = me.role ?? null
+                minhaUnidadeId = me.unidadeId ?? null
+            }
+            if (meRole === 'ADMIN') {
+                const resUnidades = await getApi('unidades/ativas')
+                if (resUnidades.ok) unidadesParaAdmin = await resUnidades.json()
+            }
+        } catch (error) {
+            // Falha aqui nao pode travar a pagina — sem unidade resolvida os
+            // cartoes simplesmente ficam com total 0.
+        } finally {
+            carregandoPerfil = false
+        }
+    }
 
     const dataPorExtenso = $derived(() => {
         const [ano, mes, dia] = dataSelecionanda.split("-").map(Number);
@@ -55,13 +93,23 @@
 
     async function contarPacientesPorGrupo() {
         grupos = await listarGrupos()
+
+        const unidadeId = unidadeIdEfetiva()
+        if (!unidadeId) {
+            // ADMIN sem unidade escolhida, ou operador sem unidade de lotacao:
+            // mantem os cartoes com total 0 em vez de consultar sem filtro.
+            totalPorGrupo = {}
+            return
+        }
+
         const novo: Record<string, number> = {};
-        
+
         try{
            for (const gr of grupos) {
                const params = new URLSearchParams()
                params.append("grupo",gr.codigo)
                params.append("data", dataSelecionanda)
+               params.append("unidadeId", String(unidadeId))
 
                const res = await getApi(`especialidades/contar/pacientes/por/grupo?${params.toString()}`)
                 if (!res.ok) throw new Error(`Erro ao contar grupo ${gr.codigo}`);
@@ -70,21 +118,23 @@
            }
 
            totalPorGrupo = novo
-           
+
        }catch(error){
         throw new Error ("Erro ao conectar ao servidor !")
        }
     }
-    
 
-    onMount(() => {
-        listarGrupos()
+
+    onMount(async () => {
+        await carregarPerfilEUnidades()
         contarPacientesPorGrupo()
-        
     })
 
     $effect(() => {
-        if(dataSelecionanda){
+        // unidadeIdEfetiva() entra como dependencia para reagir a troca de
+        // unidade pelo ADMIN, mesmo sem uso direto no corpo do efeito.
+        unidadeIdEfetiva()
+        if(dataSelecionanda && !carregandoPerfil){
             contarPacientesPorGrupo()
         }
     })
@@ -120,6 +170,22 @@
     
 </script>
 <Content titleH1="Quantitativos por Data" page="/dashboard/procedimentos" >
+
+    {#if !carregandoPerfil && ehAdmin()}
+        <div class="mx-5 mt-5 p-4 rounded-lg bg-white border border-gray-200 flex items-center gap-3">
+            <label for="unidade-select" class="text-sm font-semibold text-gray-700">Unidade:</label>
+            <select id="unidade-select" bind:value={unidadeEscolhidaPeloAdmin} class="border-gray-300 rounded-md text-sm p-1.5">
+                <option value={null}>— Selecione uma unidade —</option>
+                {#each unidadesParaAdmin as u (u.id)}
+                    <option value={u.id}>{u.nome}</option>
+                {/each}
+            </select>
+        </div>
+    {:else if !carregandoPerfil && !unidadeIdEfetiva()}
+        <div class="mx-5 mt-5 p-4 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-sm">
+            Sua conta não está vinculada a uma unidade. Fale com o administrador do sistema para vincular sua conta a uma Unidade de Saúde.
+        </div>
+    {/if}
 
     <section class="max-w-screen flex justify-start m-5 ">
         <div class="bg-emerald-800 w-[0.5%] ">

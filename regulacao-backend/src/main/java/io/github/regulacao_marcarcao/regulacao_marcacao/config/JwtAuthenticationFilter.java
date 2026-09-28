@@ -1,14 +1,19 @@
 package io.github.regulacao_marcarcao.regulacao_marcacao.config;
 
 import java.io.IOException;
+import java.util.Collection;
+import java.util.List;
 
 import org.springframework.lang.NonNull;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
+import io.github.regulacao_marcarcao.regulacao_marcacao.entity.User;
+import io.github.regulacao_marcarcao.regulacao_marcacao.entity.enums.Roles;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.UserRepository;
 import io.github.regulacao_marcarcao.regulacao_marcacao.service.TokenService;
 import jakarta.servlet.FilterChain;
@@ -35,13 +40,14 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         if (token != null) {
             // 3. Valida o token e pega o CPF (subject)
             var subject = tokenService.validateToken(token);
-            
+
             // 4. Se o token for válido, busca o usuário no banco de dados
-            UserDetails user = userRepository.findByCpf(subject).orElse(null);
+            User user = userRepository.findByCpf(subject).orElse(null);
 
             // Only authenticate users whose account is active (enabled)
             if (user != null && user.isEnabled()) {
-                var authentication = new UsernamePasswordAuthenticationToken(user, null, user.getAuthorities());
+                var authentication = new UsernamePasswordAuthenticationToken(
+                        user, null, autoridadesDoPerfilAtivo(user, token));
                 SecurityContextHolder.getContext().setAuthentication(authentication);
             }
         }
@@ -49,6 +55,27 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         // 7. Continua a cadeia de filtros. Se o usuário não foi autenticado acima,
         //    o acesso será negado posteriormente pelo Spring Security.
         filterChain.doFilter(request, response);
+    }
+
+    /**
+     * Autoridades da requisição: o perfil ATIVO declarado no token, e não
+     * necessariamente o perfil principal gravado em `usuarios.cargo`.
+     *
+     * O perfil do token só vale se ainda estiver entre os perfis concedidos ao
+     * usuário — por isso a conferência acontece aqui, a cada requisição, e não
+     * na emissão. Assim, tirar um perfil de alguém tem efeito imediato, sem
+     * depender de o token expirar ou de a pessoa sair e entrar de novo.
+     *
+     * Sem claim de perfil (token emitido antes da v1.7) ou com perfil revogado,
+     * cai no principal — o comportamento anterior, preservado.
+     */
+    private Collection<? extends GrantedAuthority> autoridadesDoPerfilAtivo(User user, String token) {
+        Roles perfilAtivo = tokenService.getPerfilAtivo(token);
+
+        if (perfilAtivo != null && user.podeAssumir(perfilAtivo)) {
+            return List.of(new SimpleGrantedAuthority("ROLE_" + perfilAtivo.name()));
+        }
+        return user.getAuthorities();
     }
 
     /**

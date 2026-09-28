@@ -4,6 +4,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.CotaUnidade;
+import io.github.regulacao_marcarcao.regulacao_marcacao.entity.enums.OrigemCotaEnum;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.enums.TipoPeriodoCota;
 
 public record CotaUnidadeViewDTO(
@@ -26,7 +27,11 @@ public record CotaUnidadeViewDTO(
         Integer quantidadeUtilizada,
         Integer saldoDisponivel,
         boolean ativo,
-        LocalDateTime criadoEm) {
+        LocalDateTime criadoEm,
+        // origem (V90) — AGENDA nao e editavel aqui, edita-se a agenda
+        OrigemCotaEnum origem,
+        Long agendaOcorrenciaId,
+        Long agendaId) {
 
     public static CotaUnidadeViewDTO from(CotaUnidade c) {
         return new CotaUnidadeViewDTO(
@@ -46,6 +51,9 @@ public record CotaUnidadeViewDTO(
                 c.getQuantidadeUtilizada(),
                 c.getQuantidadeTotal() - c.getQuantidadeUtilizada(),
                 c.isAtivo(),
-                c.getCriadoEm());
+                c.getCriadoEm(),
+                c.getOrigem(),
+                c.getAgendaOcorrencia() != null ? c.getAgendaOcorrencia().getId() : null,
+                c.getAgendaOcorrencia() != null ? c.getAgendaOcorrencia().getAgenda().getId() : null);
     }
 }
