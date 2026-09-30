@@ -133,6 +133,21 @@ public class UnidadeAcessoService {
     }
 
     /**
+     * True especificamente para o perfil ADMIN_UNIDADE — usado onde a regra não é
+     * "global ou não" (que também incluiria GESTOR), mas depende do perfil exato,
+     * como o bloqueio de agendamento sem cota liberada.
+     */
+    @Transactional(readOnly = true)
+    public boolean isAdminUnidade(String cpf) {
+        if (cpf == null) {
+            return false;
+        }
+        return userRepository.findByCpf(cpf)
+                .map(user -> perfilEfetivo(user) == Roles.ADMIN_UNIDADE)
+                .orElse(false);
+    }
+
+    /**
      * Garante que o chamador pode operar sobre a unidade informada.
      * Usado nos endpoints que recebem um {@code unidadeId} vindo do request —
      * sem isto, um ADMIN_UNIDADE poderia ler dados de outra unidade trocando o

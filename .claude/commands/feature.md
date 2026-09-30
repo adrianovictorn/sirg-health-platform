@@ -9,6 +9,11 @@ $ARGUMENTS
 
 Siga estas etapas **na ordem**, sem pular nenhuma e sem implementar antes da etapa 5.
 
+Após a implementação (etapa 5), se a tela/componente novo precisar de acabamento visual
+(layout, espaçamento, hierarquia, agrupamento, estados visuais, responsividade,
+acessibilidade), acione o subagente `ux-ui-designer` sobre os arquivos recém-criados antes
+da revisão final (etapa 6). Ele preserva toda a lógica implementada e ajusta só o visual.
+
 ## 1. Revisão do pedido
 
 Invoque o subagente `prompt-reviewer` (Agent tool, `subagent_type: prompt-reviewer`) com o

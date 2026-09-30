@@ -110,7 +110,7 @@ class SolicitacaoAcessoLegadoTest {
         when(unidadeRepository.findById(MINHA_UNIDADE)).thenReturn(Optional.empty());
 
         var dto = new io.github.regulacao_marcarcao.regulacao_marcacao.dto.solicitacoesDTO.SolicitacaoUpdateDTO(
-                null, "Paciente Legado", null, null, null, null, null, null, null, null, null, null, null);
+                null, "Paciente Legado", null, null, null, null, null, null, null, null, null, null, null, null);
 
         assertThatCode(() -> service.updateSolicitacao(1L, dto, CPF_RESTRITO))
                 .doesNotThrowAnyException();
@@ -130,7 +130,7 @@ class SolicitacaoAcessoLegadoTest {
         when(unidadeAcessoService.resolverUnidadeAlvo("admin", null)).thenReturn(null);
 
         var dto = new io.github.regulacao_marcarcao.regulacao_marcacao.dto.solicitacoesDTO.SolicitacaoUpdateDTO(
-                null, "Paciente Legado", "obs", "700000000000000", "(75)90000-0000",
+                null, "Paciente Legado", null, "obs", "700000000000000", "(75)90000-0000",
                 null, null, null, // nomePai, nomeMae, endereco ausentes
                 null, null, null, null, null);
 
@@ -192,7 +192,7 @@ class SolicitacaoAcessoLegadoTest {
                 .thenThrow(new AccessDeniedException("Acesso negado aos dados de outra unidade."));
 
         var dto = new io.github.regulacao_marcarcao.regulacao_marcacao.dto.solicitacoesDTO.SolicitacaoUpdateDTO(
-                OUTRA_UNIDADE, "Paciente Legado", null, null, null, null, null, null, null, null, null, null, null);
+                OUTRA_UNIDADE, "Paciente Legado", null, null, null, null, null, null, null, null, null, null, null, null);
 
         assertThatThrownBy(() -> service.updateSolicitacao(1L, dto, CPF_RESTRITO))
                 .isInstanceOf(AccessDeniedException.class)

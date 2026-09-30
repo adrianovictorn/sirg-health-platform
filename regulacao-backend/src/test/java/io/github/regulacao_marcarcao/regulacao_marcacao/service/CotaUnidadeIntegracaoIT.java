@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
+import java.util.List;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -14,15 +15,18 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.transaction.annotation.Transactional;
 
+import io.github.regulacao_marcarcao.regulacao_marcacao.dto.cota.CotaUnidadeCreateDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.CotaUnidade;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.Especialidade;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.GrupoRelatorio;
+import io.github.regulacao_marcarcao.regulacao_marcacao.entity.Profissional;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.Unidade;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.enums.ItemCategoria;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.enums.TipoPeriodoCota;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.CotaUnidadeRepository;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.EspecialidadeRepository;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.GrupoRelatorioRepository;
+import io.github.regulacao_marcarcao.regulacao_marcacao.repository.ProfissionalRepository;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.UnidadeRepository;
 
 /**
@@ -51,6 +55,7 @@ class CotaUnidadeIntegracaoIT {
     @Autowired private UnidadeRepository unidadeRepository;
     @Autowired private EspecialidadeRepository especialidadeRepository;
     @Autowired private GrupoRelatorioRepository grupoRelatorioRepository;
+    @Autowired private ProfissionalRepository profissionalRepository;
 
     private Unidade unidade;
     private Especialidade cardiologia;
@@ -492,5 +497,49 @@ class CotaUnidadeIntegracaoIT {
 
         service.estornarUtilizacao(unidade.getId(), hemograma.getId(), data);
         assertThat(utilizadaNoBanco(doGrupo.getId())).isZero();
+    }
+
+    // ==================================================================
+    // Cota MENSAL com profissionais diferentes (V95 + indice uk_cota_mensal)
+    // ==================================================================
+
+    private Profissional novoProfissional(String nome) {
+        Profissional p = new Profissional();
+        p.setNome(nome + "_IT_" + System.nanoTime());
+        p.setAtivo(true);
+        return profissionalRepository.saveAndFlush(p);
+    }
+
+    /**
+     * Caracteriza o bug do indice uk_cota_mensal (V84): ele nao inclui
+     * profissional_id, diferente do uk_cota_data (corrigido na V94). O service
+     * ja aceita a combinacao (exigirCotaInexistente inclui profissional na
+     * chave em memoria) mas o INSERT da segunda cota quebra no indice do
+     * banco. Este teste deve FALHAR contra o schema atual e PASSAR depois da
+     * migration V99 que recria uk_cota_mensal incluindo profissional_id.
+     */
+    @Test
+    @DisplayName("BANCO REAL: duas cotas MENSAL, mesmo escopo/periodo, profissionais diferentes, sao aceitas")
+    void duasCotasMensaisComProfissionaisDiferentesSaoAceitas() {
+        Profissional drA = novoProfissional("Dr. A");
+        Profissional drB = novoProfissional("Dr. B");
+
+        CotaUnidadeCreateDTO dtoDrA = new CotaUnidadeCreateDTO(
+                unidade.getId(), null, cardiologia.getId(), null,
+                TipoPeriodoCota.MENSAL, periodo, null, 5,
+                drA.getId(), null, false, null,
+                java.time.LocalTime.of(8, 0), java.time.LocalTime.of(12, 0), List.of("SEG"));
+
+        assertThatCode(() -> service.criar(dtoDrA)).doesNotThrowAnyException();
+
+        CotaUnidadeCreateDTO dtoDrB = new CotaUnidadeCreateDTO(
+                unidade.getId(), null, cardiologia.getId(), null,
+                TipoPeriodoCota.MENSAL, periodo, null, 5,
+                drB.getId(), null, false, null,
+                java.time.LocalTime.of(13, 0), java.time.LocalTime.of(17, 0), List.of("TER"));
+
+        assertThatCode(() -> service.criar(dtoDrB))
+                .as("segunda cota MENSAL do mesmo escopo/periodo, com profissional diferente, deveria ser aceita")
+                .doesNotThrowAnyException();
     }
 }

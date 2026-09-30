@@ -8,6 +8,8 @@ export interface PacienteProjection{
     especialidade: string
     prioridade: string
     solicitacaoEspecialidadeId: number
+    profissionalExecutanteNome: string | null
+    horaAgendada: string | null
 }
 
 

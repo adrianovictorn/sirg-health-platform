@@ -1,6 +1,8 @@
 package io.github.regulacao_marcarcao.regulacao_marcacao.dto.cota;
 
 import java.time.LocalDate;
+import java.time.LocalTime;
+import java.util.List;
 
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.enums.TipoPeriodoCota;
 
@@ -25,5 +27,12 @@ public record CotaUnidadeUpdateDTO(
         String periodo,
         LocalDate dataEspecifica,
         Integer quantidadeTotal,
-        boolean ativo) {
+        boolean ativo,
+        Long profissionalId,
+        Long localAgendamentoId,
+        boolean horarioDinamico,
+        Integer tempoMedioAtendimentoMinutos,
+        LocalTime horaInicial,
+        LocalTime horaFinal,
+        List<String> diasSemana) {
 }

@@ -4,10 +4,13 @@
   import autoTable from 'jspdf-autotable';
   import { getApi, postApi } from '$lib/api';
   import { listarEspecialidadesCatalogo } from '$lib/especialidadesApi.js';
+  import { formatarHora } from '$lib/cotas.js';
   import RoleBasedMenu from '$lib/RoleBasedMenu.svelte';
   import UserMenu from '$lib/UserMenu.svelte';
   import { env } from '$env/dynamic/public';
   import { base } from '$app/paths';
+  import { user as usuarioLogado } from '$lib/stores/auth.js';
+  import { get } from 'svelte/store';
 
   interface Cidade {
     id: number;
@@ -80,6 +83,97 @@
   let contagemPorEspecialidade = $state<Record<string, { agendados: number; capacidade: number; restante: number }>>({});
   let saldoCotaPorEspecialidade = $state<Record<string, { quantidadeTotal: number | null; quantidadeUtilizada: number | null; saldoDisponivel: number | null }>>({});
   let saldoCotaPorDataEspecialidade = $state<Record<string, { quantidadeTotal: number | null; quantidadeUtilizada: number | null; saldoDisponivel: number | null }>>({});
+
+  // Espelho de atendimento (V92): cotas aplicaveis por especialidade/data, que
+  // trazem profissional/horario/local quando a cota os define — a unidade ve
+  // isso como referencia travada e nao pode agendar diferente do liberado.
+  interface CotaAplicavel {
+    id: number;
+    profissionalId: number | null;
+    profissionalNome: string | null;
+    localAgendamentoId: number | null;
+    localAgendamentoNome: string | null;
+    horarioDinamico: boolean;
+    tempoMedioAtendimentoMinutos: number | null;
+    horaInicial: string | null;
+    horaFinal: string | null;
+  }
+  let cotasAplicaveisPorEspecialidade = $state<Record<string, CotaAplicavel[]>>({});
+  let cotaEscolhidaPorExame = $state<Record<string, number | null>>({});
+  // Hora informada manualmente pelo operador (V97/V100) — sempre aceita,
+  // inclusive quando a cota resolvida é de horário dinâmico (nesse caso
+  // sobrescreve o cálculo automático).
+  let horarioManualPorExame = $state<Record<string, string>>({});
+
+  // Profissional que atende (V100, opcional) — sempre disponível, sobrescreve
+  // o profissional espelhado pela cota resolvida só para este agendamento.
+  interface ProfissionalBusca {
+    id: number;
+    nome: string;
+  }
+  let profissionalTermoPorExame = $state<Record<string, string>>({});
+  let profissionalResultadosPorExame = $state<Record<string, ProfissionalBusca[]>>({});
+  let profissionalBuscandoPorExame = $state<Record<string, boolean>>({});
+  let profissionalSelecionadoPorExame = $state<Record<string, ProfissionalBusca | null>>({});
+  // true quando o operador já mexeu no campo (seleção ou remoção) — enquanto
+  // não mexe, o campo só exibe o profissional da cota, sem gerar override.
+  let profissionalTocadoPorExame = $state<Record<string, boolean>>({});
+
+  /** Profissional exibido no campo: o escolhido pelo operador, ou o da cota resolvida como valor inicial. */
+  function profissionalExibidoParaExame(codigo: string): ProfissionalBusca | null {
+    const chave = codigo.toUpperCase();
+    if (profissionalTocadoPorExame[chave]) {
+      return profissionalSelecionadoPorExame[chave] ?? null;
+    }
+    const cota = cotaResolvida(codigo);
+    if (cota?.profissionalId) {
+      return { id: cota.profissionalId, nome: cota.profissionalNome ?? '' };
+    }
+    return null;
+  }
+
+  async function buscarProfissionalParaExame(codigo: string) {
+    const termo = (profissionalTermoPorExame[codigo] ?? '').trim();
+    if (termo.length < 2) {
+      profissionalResultadosPorExame = { ...profissionalResultadosPorExame, [codigo]: [] };
+      return;
+    }
+    profissionalBuscandoPorExame = { ...profissionalBuscandoPorExame, [codigo]: true };
+    try {
+      const res = await getApi(`profissionais/buscar?nome=${encodeURIComponent(termo)}&size=10`);
+      const pagina = res.ok ? await res.json() : { content: [] };
+      profissionalResultadosPorExame = { ...profissionalResultadosPorExame, [codigo]: pagina.content ?? [] };
+    } catch {
+      profissionalResultadosPorExame = { ...profissionalResultadosPorExame, [codigo]: [] };
+    } finally {
+      profissionalBuscandoPorExame = { ...profissionalBuscandoPorExame, [codigo]: false };
+    }
+  }
+
+  function selecionarProfissionalParaExame(codigo: string, p: ProfissionalBusca) {
+    const chave = codigo.toUpperCase();
+    profissionalSelecionadoPorExame = { ...profissionalSelecionadoPorExame, [chave]: p };
+    profissionalTocadoPorExame = { ...profissionalTocadoPorExame, [chave]: true };
+    profissionalTermoPorExame = { ...profissionalTermoPorExame, [codigo]: '' };
+    profissionalResultadosPorExame = { ...profissionalResultadosPorExame, [codigo]: [] };
+  }
+
+  function removerProfissionalParaExame(codigo: string) {
+    const chave = codigo.toUpperCase();
+    profissionalSelecionadoPorExame = { ...profissionalSelecionadoPorExame, [chave]: null };
+    profissionalTocadoPorExame = { ...profissionalTocadoPorExame, [chave]: true };
+  }
+
+  /** Cota que efetivamente será usada para o exame — a única com profissional, ou a escolhida entre várias. */
+  function cotaResolvida(codigo: string): CotaAplicavel | null {
+    const comProfissional = cotasComProfissional(codigo);
+    if (comProfissional.length === 1) return comProfissional[0];
+    if (comProfissional.length > 1) {
+      const escolhidaId = cotaEscolhidaPorExame[codigo.toUpperCase()];
+      return comProfissional.find((c) => c.id === escolhidaId) ?? null;
+    }
+    return null;
+  }
 
   const solicitacoesFiltradas = $derived(
     !valorBusca
@@ -167,6 +261,13 @@
       params.append('unidadeId', String(solicitacaoDetalhe.unidadeId));
       params.append('especialidadeId', String(especialidadeId));
       params.append('periodo', dataAgendada.slice(0, 7));
+      // V100: com profissional resolvido (cota escolhida entre 2+ compatíveis,
+      // ou única aplicável), o saldo exibido passa a ser o daquela cota
+      // específica — pools isolados por profissional, sem mistura.
+      const profissionalId = cotaResolvida(codigo)?.profissionalId;
+      if (profissionalId != null) {
+        params.append('profissionalId', String(profissionalId));
+      }
 
       const res = await getApi(`cotas/saldo?${params.toString()}`);
       if (!res.ok) {
@@ -207,6 +308,10 @@
       params.append('unidadeId', String(solicitacaoDetalhe.unidadeId));
       params.append('especialidadeId', String(especialidadeId));
       params.append('data', dataAgendada);
+      const profissionalId = cotaResolvida(codigo)?.profissionalId;
+      if (profissionalId != null) {
+        params.append('profissionalId', String(profissionalId));
+      }
 
       const res = await getApi(`cotas/saldo-data?${params.toString()}`);
       if (!res.ok) {
@@ -228,6 +333,89 @@
     }
   }
 
+  // Cotas aplicaveis (com profissional/horario/local, quando houver) para a
+  // especialidade/data escolhida — o "espelho" que trava a tela de agendamento.
+  async function carregarCotasAplicaveis(codigo: string) {
+    if (!dataAgendada || !codigo || !solicitacaoDetalhe?.unidadeId) {
+      return;
+    }
+
+    const chave = codigo.toUpperCase();
+    const especialidadeId = catalogoEspecialidades.find((e) => e.codigo?.toUpperCase() === chave)?.id;
+    if (!especialidadeId) {
+      return;
+    }
+
+    try {
+      const params = new URLSearchParams();
+      params.append('unidadeId', String(solicitacaoDetalhe.unidadeId));
+      params.append('especialidadeId', String(especialidadeId));
+      params.append('data', dataAgendada);
+
+      const res = await getApi(`cotas/aplicaveis?${params.toString()}`);
+      if (!res.ok) {
+        delete cotasAplicaveisPorEspecialidade[chave];
+        return;
+      }
+
+      const json: CotaAplicavel[] = await res.json();
+      cotasAplicaveisPorEspecialidade = { ...cotasAplicaveisPorEspecialidade, [chave]: json };
+    } catch (e) {
+      console.warn('Falha ao carregar cotas aplicaveis', e);
+    }
+  }
+
+  function cotasComProfissional(codigo: string): CotaAplicavel[] {
+    return (cotasAplicaveisPorEspecialidade[codigo.toUpperCase()] ?? []).filter((c) => c.profissionalId != null);
+  }
+
+  /**
+   * Cota "de referência" para travar/preencher o local (V100): quando há
+   * profissional(is) aplicável(is), é a cota RESOLVIDA (a única, ou a
+   * escolhida no dropdown quando há mais de uma) — nunca "existe alguma cota
+   * com local entre todas as candidatas", que travava o campo vazio quando
+   * havia 2+ profissionais com locais definidos e nenhum ainda escolhido.
+   * Sem profissional nenhuma aplicável, cai no caso comum de sempre: cota
+   * única (sem escolha) ou nenhuma.
+   */
+  function cotaReferenciaLocal(codigo: string): CotaAplicavel | null {
+    if (cotasComProfissional(codigo).length > 0) {
+      return cotaResolvida(codigo);
+    }
+    const todas = cotasAplicaveisPorEspecialidade[codigo.toUpperCase()] ?? [];
+    return todas.length === 1 ? todas[0] : null;
+  }
+
+  /** true quando o local do agendamento esta travado pela cota resolvida (nao pode ser trocado). */
+  const localTravadoPorCota = $derived(
+    examesSelecionados.length === 1
+      && cotaReferenciaLocal(examesSelecionados[0])?.localAgendamentoId != null
+  );
+
+  // Preenche o local automaticamente com o da cota resolvida — reage tanto ao
+  // carregar as cotas aplicáveis quanto à troca de profissional no dropdown
+  // (cotaEscolhidaPorExame), que antes não disparava esse preenchimento.
+  let ultimaCotaReferenciaLocalId = $state<number | null>(null);
+  $effect(() => {
+    if (examesSelecionados.length !== 1) return;
+    const cota = cotaReferenciaLocal(examesSelecionados[0]);
+    if (cota?.id !== ultimaCotaReferenciaLocalId) {
+      // Trocou de cota de referência (ex.: profissional diferente escolhido no
+      // dropdown) — limpa antes de preencher, para não deixar o local do
+      // profissional anterior "herdado" quando a nova cota não define nenhum.
+      ultimaCotaReferenciaLocalId = cota?.id ?? null;
+      localAgendamentoId = cota?.localAgendamentoId != null ? String(cota.localAgendamentoId) : '';
+    }
+  });
+
+  /** true se a hora manual informada está fora do período liberado pela cota (V99). */
+  function horaManualForaDoPeriodo(codigo: string): boolean {
+    const hora = horarioManualPorExame[codigo.toUpperCase()];
+    const cota = cotaResolvida(codigo);
+    if (!hora || !cota?.horaInicial || !cota?.horaFinal) return false;
+    return hora < formatarHora(cota.horaInicial) || hora > formatarHora(cota.horaFinal);
+  }
+
   async function atualizarContagemPorEspecialidades() {
     if (!dataAgendada) {
       return;
@@ -237,6 +425,7 @@
       await carregarContagemPorEspecialidade(codigo);
       await carregarSaldoCotaPorEspecialidade(codigo);
       await carregarSaldoCotaPorDataEspecialidade(codigo);
+      await carregarCotasAplicaveis(codigo);
     }
   }
 
@@ -337,6 +526,18 @@
     solicitacaoId = String(solicitacao.id);
     comboboxAberto = false;
 
+    // Estado por-exame de uma solicitação anterior não pode vazar para esta —
+    // sem isso, profissional/hora escolhidos para um exame do paciente A
+    // ficariam pré-selecionados ao trocar para o paciente B, que pode ter o
+    // mesmo código de exame pendente.
+    cotasAplicaveisPorEspecialidade = {};
+    cotaEscolhidaPorExame = {};
+    horarioManualPorExame = {};
+    profissionalTermoPorExame = {};
+    profissionalResultadosPorExame = {};
+    profissionalSelecionadoPorExame = {};
+    profissionalTocadoPorExame = {};
+
     carregandoDetalhe = true;
     try {
       const res = await getApi(`solicitacoes/buscar/${solicitacao.id}`);
@@ -383,6 +584,19 @@
       return;
     }
     atualizarContagemPorEspecialidades();
+  });
+
+  // V100: recarrega o saldo (por profissional, quando resolvido) ao trocar a
+  // escolha entre cotas compatíveis — sem isso, "Cota do mês"/"Cota da data"
+  // continuavam mostrando o valor anterior mesmo depois de escolher o
+  // profissional, já que o efeito acima só reage a dataAgendada/exames.
+  $effect(() => {
+    if (!dataAgendada) return;
+    for (const codigo of examesSelecionados) {
+      void cotaEscolhidaPorExame[codigo.toUpperCase()]; // registra a dependência reativa
+      carregarSaldoCotaPorEspecialidade(codigo);
+      carregarSaldoCotaPorDataEspecialidade(codigo);
+    }
   });
 
   onMount(async () => {
@@ -452,6 +666,9 @@
     turno: 'MANHA' | 'TARDE';
     localAgendamentoId: string;
     observacoes: string;
+    profissionalNome?: string | null;
+    agendadoPorNome?: string | null;
+    horarioInfo?: string | null;
   }) {
     const doc = new jsPDF({ unit: 'pt', format: 'a4', orientation: 'portrait' });
     const margin = { top: 80, left: 40, right: 40, bottom: 60 };
@@ -504,7 +721,10 @@
         { label: 'Data Agendada',  value: new Date(dadosPDF.dataAgendada + 'T00:00:00').toLocaleDateString('pt-BR'), color: corDestaque, style: 'bold' },
         { label: 'Turno',          value: dadosPDF.turno === 'MANHA' ? 'Manhã' : 'Tarde', color: corPadrao },
         { label: 'Local',          value: getLocalLabel(dadosPDF.localAgendamentoId), color: corDestaque, style: 'bold' },
-        { label: 'Observações',    value: dadosPDF.observacoes || 'Nenhuma', color: corPadrao }
+        ...(dadosPDF.profissionalNome ? [{ label: 'Profissional', value: dadosPDF.profissionalNome, color: corPadrao }] : []),
+        ...(dadosPDF.horarioInfo ? [{ label: 'Horário', value: dadosPDF.horarioInfo, color: corPadrao }] : []),
+        { label: 'Observações',    value: dadosPDF.observacoes || 'Nenhuma', color: corPadrao },
+        ...(dadosPDF.agendadoPorNome ? [{ label: 'Agendado por', value: dadosPDF.agendadoPorNome, color: '#6b7280' }] : [])
     ];
 
     allInfo.forEach((info, index) => {
@@ -570,6 +790,45 @@
       return;
     }
 
+    // Espelho de atendimento (V92): quando ha mais de um profissional compativel
+    // para a mesma especialidade/data, a unidade precisa escolher qual — o
+    // backend recusa sem essa escolha explicita.
+    const cotasSelecionadas: Record<string, number> = {};
+    const horariosSelecionados: Record<string, string> = {};
+    const profissionaisSelecionados: Record<string, number> = {};
+    for (const codigo of examesSelecionados) {
+      const chave = codigo.toUpperCase();
+      const comProfissional = cotasComProfissional(codigo);
+      if (comProfissional.length > 1) {
+        const escolhida = cotaEscolhidaPorExame[chave];
+        if (!escolhida) {
+          alert(`Escolha o profissional para ${getEspecialidadeLabel(codigo)} — há mais de uma cota compatível.`);
+          return;
+        }
+        cotasSelecionadas[codigo] = escolhida;
+      }
+
+      // V99: mesma validação de faixa do backend, para não deixar o operador
+      // enviar e só descobrir o erro depois — ver validarHoraDentroDoPeriodoDaCota.
+      if (horaManualForaDoPeriodo(codigo)) {
+        alert(`Hora fora do período liberado pela cota para ${getEspecialidadeLabel(codigo)}.`);
+        return;
+      }
+
+      // Hora manual (V97/V100): sempre aceita, inclusive quando a cota
+      // resolvida é dinâmica — nesse caso sobrescreve o cálculo automático.
+      const horaManual = horarioManualPorExame[chave];
+      if (horaManual) {
+        horariosSelecionados[codigo] = horaManual;
+      }
+
+      // Profissional que atende (V100, opcional) — só envia quando o operador
+      // efetivamente mexeu no campo; sem mexer, usa o profissional da cota.
+      if (profissionalTocadoPorExame[chave] && profissionalSelecionadoPorExame[chave]) {
+        profissionaisSelecionados[codigo] = profissionalSelecionadoPorExame[chave]!.id;
+      }
+    }
+
     const localIdNumber = localAgendamentoId ? Number(localAgendamentoId) : null;
 
     const body: Record<string, unknown> = {
@@ -577,7 +836,10 @@
       dataAgendada,
       observacoes,
       turno,
-      localAgendado: null
+      localAgendado: null,
+      cotasSelecionadas: Object.keys(cotasSelecionadas).length > 0 ? cotasSelecionadas : null,
+      horariosSelecionados: Object.keys(horariosSelecionados).length > 0 ? horariosSelecionados : null,
+      profissionaisSelecionados: Object.keys(profissionaisSelecionados).length > 0 ? profissionaisSelecionados : null
     };
 
     body.localAgendamentoId = localIdNumber !== null ? localIdNumber : null;
@@ -586,6 +848,44 @@
       postApi(`agendamentos/${solicitacaoId}`, body).then(async (resposta) => {
         if (resposta.ok) {
           alert('Agendamento realizado com sucesso!');
+
+          // Profissional real do paciente (V100): vem da resposta do POST,
+          // que já resolve override do operador ou o da cota — evita depender
+          // de estado local desatualizado no comprovante.
+          const profissionalUnico = await (async () => {
+            if (examesSelecionados.length !== 1) return null;
+            try {
+              const dados = await resposta.clone().json();
+              const especialidade = (dados.especialidades ?? []).find(
+                (e: { codigo: string }) => e.codigo?.toUpperCase() === examesSelecionados[0].toUpperCase()
+              );
+              if (especialidade?.profissionalExecutanteNome) {
+                return especialidade.profissionalExecutanteNome as string;
+              }
+            } catch { /* segue para o fallback abaixo */ }
+            return profissionalExibidoParaExame(examesSelecionados[0])?.nome
+              ?? cotasComProfissional(examesSelecionados[0])[0]?.profissionalNome
+              ?? null;
+          })();
+
+          // Horário real do paciente (V97/V99/V100): vem da resposta do POST, que já
+          // inclui a hora calculada (cota dinâmica), sobrescrita ou a hora manual
+          // validada — evita depender de estado local desatualizado no comprovante.
+          const horarioInfo = await (async () => {
+            if (examesSelecionados.length !== 1) return null;
+            try {
+              const dados = await resposta.clone().json();
+              const especialidade = (dados.especialidades ?? []).find(
+                (e: { codigo: string }) => e.codigo?.toUpperCase() === examesSelecionados[0].toUpperCase()
+              );
+              if (especialidade?.horaAgendada) {
+                return formatarHora(especialidade.horaAgendada);
+              }
+            } catch { /* segue para o fallback abaixo */ }
+            const cota = cotaResolvida(examesSelecionados[0]);
+            if (!cota) return null;
+            return cota.horarioDinamico ? null : horarioManualPorExame[examesSelecionados[0].toUpperCase()] || null;
+          })();
 
           await gerarComprovantePDF({
             solicitacaoId: solicitacaoDetalhe.id,
@@ -598,7 +898,10 @@
             dataAgendada,
             turno,
             localAgendamentoId,
-            observacoes
+            observacoes,
+            profissionalNome: profissionalUnico,
+            agendadoPorNome: get(usuarioLogado)?.nome ?? null,
+            horarioInfo
           });
 
           solicitacaoId = '';
@@ -609,6 +912,13 @@
           turno = 'MANHA';
           valorBusca = '';
           solicitacaoDetalhe = null;
+          cotasAplicaveisPorEspecialidade = {};
+          cotaEscolhidaPorExame = {};
+          horarioManualPorExame = {};
+          profissionalTermoPorExame = {};
+          profissionalResultadosPorExame = {};
+          profissionalSelecionadoPorExame = {};
+          profissionalTocadoPorExame = {};
 
           await carregarSolicitacoesPendentes();
           await carregarLocaisAgendamento();
@@ -777,51 +1087,153 @@
                 </fieldset>
 
                 {#if examesSelecionados.length > 0}
-                  <div class="bg-emerald-50 border border-emerald-200 rounded-lg p-4 mt-4 space-y-2">
-                    <h4 class="font-semibold text-emerald-700">Contagem de vagas por especialidade selecionada</h4>
-                    {#each examesSelecionados as codigo}
-                      <div class="bg-white border border-gray-200 rounded p-2">
-                        <p class="text-sm font-medium">{getEspecialidadeLabel(codigo)} ({codigo})</p>
-                        <p class="text-xs text-gray-600">Vagas definidas: {getEspecialidadeVagas(codigo) === 0 ? 'Sem limite (0)' : getEspecialidadeVagas(codigo)}</p>
-                        {#if contagemPorEspecialidade[codigo.toUpperCase()]}
-                          <p class="text-xs text-gray-600">Agendados hoje: {contagemPorEspecialidade[codigo.toUpperCase()].agendados}</p>
-                          {#if getEspecialidadeVagas(codigo) === 0}
-                            <p class="text-xs text-indigo-700">Sem limite de vagas.</p>
-                          {:else}
-                            <p class="text-xs text-gray-600">Restante: {contagemPorEspecialidade[codigo.toUpperCase()].restante}</p>
-                            {#if contagemPorEspecialidade[codigo.toUpperCase()].restante <= 0}
-                              <p class="text-xs text-red-600">Limite atingido. Não é possível agendar mais para esta data.</p>
+                  <div class="bg-emerald-50 border border-emerald-200 rounded-lg p-4 mt-4">
+                    <h4 class="font-semibold text-emerald-700 mb-3">Contagem de vagas por especialidade selecionada</h4>
+                    <div class="space-y-4">
+                      {#each examesSelecionados as codigo}
+                        <div class="bg-white border border-gray-200 rounded-lg p-4 space-y-3">
+                          <p class="text-sm font-semibold text-gray-800">
+                            {getEspecialidadeLabel(codigo)}
+                            <span class="ml-1 text-xs font-normal text-gray-500">({codigo})</span>
+                          </p>
+
+                          <div class="space-y-1">
+                            <p class="text-xs text-gray-600">Vagas definidas: {getEspecialidadeVagas(codigo) === 0 ? 'Sem limite (0)' : getEspecialidadeVagas(codigo)}</p>
+                            {#if contagemPorEspecialidade[codigo.toUpperCase()]}
+                              <p class="text-xs text-gray-600">Agendados hoje: {contagemPorEspecialidade[codigo.toUpperCase()].agendados}</p>
+                              {#if getEspecialidadeVagas(codigo) === 0}
+                                <span class="inline-flex items-center rounded-full bg-indigo-50 text-indigo-700 px-2 py-0.5 text-xs font-medium">Sem limite de vagas</span>
+                              {:else}
+                                <p class="text-xs text-gray-600">Restante: {contagemPorEspecialidade[codigo.toUpperCase()].restante}</p>
+                                {#if contagemPorEspecialidade[codigo.toUpperCase()].restante <= 0}
+                                  <span class="inline-flex items-center rounded-full bg-red-50 text-red-700 px-2 py-0.5 text-xs font-medium">Limite atingido — não é possível agendar mais para esta data</span>
+                                {/if}
+                              {/if}
+                            {:else}
+                              <p class="text-xs text-gray-500">Carregando contagem...</p>
                             {/if}
+                          </div>
+
+                          {#if saldoCotaPorEspecialidade[codigo.toUpperCase()] || saldoCotaPorDataEspecialidade[codigo.toUpperCase()]}
+                            <div class="space-y-1 pt-3 border-t border-gray-100">
+                              <p class="text-xs font-semibold text-gray-500">Cota</p>
+                              {#if saldoCotaPorEspecialidade[codigo.toUpperCase()]}
+                                {@const cota = saldoCotaPorEspecialidade[codigo.toUpperCase()]}
+                                {#if cota.quantidadeTotal == null}
+                                  <p class="text-xs text-gray-500">Sem cota mensal configurada.</p>
+                                {:else}
+                                  <p class="text-xs text-gray-600">
+                                    Cota do mês: {cota.quantidadeUtilizada}/{cota.quantidadeTotal} — saldo {cota.saldoDisponivel}
+                                  </p>
+                                  {#if cota.saldoDisponivel !== null && cota.saldoDisponivel <= 0}
+                                    <span class="inline-flex items-center rounded-full bg-red-50 text-red-700 px-2 py-0.5 text-xs font-medium">Cota do mês esgotada</span>
+                                  {/if}
+                                {/if}
+                              {/if}
+                              {#if saldoCotaPorDataEspecialidade[codigo.toUpperCase()]}
+                                {@const cotaData = saldoCotaPorDataEspecialidade[codigo.toUpperCase()]}
+                                {#if cotaData.quantidadeTotal != null}
+                                  <p class="text-xs text-gray-600">
+                                    Cota da data: {cotaData.quantidadeUtilizada}/{cotaData.quantidadeTotal} — saldo {cotaData.saldoDisponivel}
+                                  </p>
+                                  {#if cotaData.saldoDisponivel !== null && cotaData.saldoDisponivel <= 0}
+                                    <span class="inline-flex items-center rounded-full bg-red-50 text-red-700 px-2 py-0.5 text-xs font-medium">Cota da data esgotada</span>
+                                  {/if}
+                                {/if}
+                              {/if}
+                            </div>
                           {/if}
-                        {:else}
-                          <p class="text-xs text-gray-500">Carregando contagem...</p>
-                        {/if}
-                        {#if saldoCotaPorEspecialidade[codigo.toUpperCase()]}
-                          {@const cota = saldoCotaPorEspecialidade[codigo.toUpperCase()]}
-                          {#if cota.quantidadeTotal == null}
-                            <p class="text-xs text-gray-500">Sem cota mensal configurada.</p>
-                          {:else}
-                            <p class="text-xs text-gray-600">
-                              Cota do mês: {cota.quantidadeUtilizada}/{cota.quantidadeTotal} — saldo {cota.saldoDisponivel}
-                            </p>
-                            {#if cota.saldoDisponivel !== null && cota.saldoDisponivel <= 0}
-                              <p class="text-xs text-red-600">Limite de cota atingido para este mês.</p>
+
+                          {#if cotasComProfissional(codigo).length === 1}
+                            {@const cota = cotasComProfissional(codigo)[0]}
+                            <div class="space-y-1 pt-3 border-t border-gray-100">
+                              <p class="text-xs font-semibold text-gray-500">Atendimento</p>
+                              <div class="text-xs text-indigo-700 space-y-0.5">
+                                <p><strong>Profissional:</strong> {cota.profissionalNome ?? 'não informado'}</p>
+                                {#if cota.localAgendamentoNome}<p><strong>Local:</strong> {cota.localAgendamentoNome}</p>{/if}
+                                {#if cota.horarioDinamico}
+                                  <p><strong>Horário:</strong> calculado automaticamente ao agendar (período {formatarHora(cota.horaInicial)} às {formatarHora(cota.horaFinal)})</p>
+                                {:else if cota.horaInicial}
+                                  <p><strong>Período de referência:</strong> {formatarHora(cota.horaInicial)} às {formatarHora(cota.horaFinal)}</p>
+                                {/if}
+                              </div>
+                            </div>
+                          {:else if cotasComProfissional(codigo).length > 1}
+                            <div class="space-y-1 pt-3 border-t border-gray-100">
+                              <p class="text-xs font-semibold text-gray-500">Atendimento</p>
+                              <label class="text-xs font-medium text-indigo-700">
+                                Mais de um profissional disponível — escolha um:
+                              </label>
+                              <select bind:value={cotaEscolhidaPorExame[codigo.toUpperCase()]}
+                                class="w-full mt-1 border border-gray-300 rounded-lg p-2 text-xs">
+                                <option value={null}>Selecionar profissional...</option>
+                                {#each cotasComProfissional(codigo) as cota (cota.id)}
+                                  <option value={cota.id}>
+                                    {cota.profissionalNome}
+                                    {#if cota.horaInicial}{' '}({formatarHora(cota.horaInicial)} às {formatarHora(cota.horaFinal)}){/if}
+                                  </option>
+                                {/each}
+                              </select>
+                            </div>
+                          {/if}
+                          <div class="space-y-1 pt-3 border-t border-gray-100">
+                            <label class="text-xs font-medium text-gray-600">
+                              Hora do atendimento (opcional{cotaResolvida(codigo)?.horaInicial
+                                ? ` — período de referência: ${formatarHora(cotaResolvida(codigo)?.horaInicial ?? null)} às ${formatarHora(cotaResolvida(codigo)?.horaFinal ?? null)}`
+                                : ''})
+                            </label>
+                            <input type="time" bind:value={horarioManualPorExame[codigo.toUpperCase()]}
+                              min={cotaResolvida(codigo)?.horaInicial ? formatarHora(cotaResolvida(codigo)?.horaInicial ?? null) : undefined}
+                              max={cotaResolvida(codigo)?.horaFinal ? formatarHora(cotaResolvida(codigo)?.horaFinal ?? null) : undefined}
+                              class="w-full mt-1 border rounded-lg p-2 text-xs {horaManualForaDoPeriodo(codigo) ? 'border-red-400' : 'border-gray-300'}" />
+                            {#if cotaResolvida(codigo)?.horarioDinamico}
+                              <p class="text-xs text-gray-500 mt-1">
+                                Calculado automaticamente ao confirmar — deixe em branco para manter o cálculo, ou informe um horário para substituí-lo.
+                              </p>
                             {/if}
-                          {/if}
-                        {/if}
-                        {#if saldoCotaPorDataEspecialidade[codigo.toUpperCase()]}
-                          {@const cotaData = saldoCotaPorDataEspecialidade[codigo.toUpperCase()]}
-                          {#if cotaData.quantidadeTotal != null}
-                            <p class="text-xs text-gray-600">
-                              Cota da data: {cotaData.quantidadeUtilizada}/{cotaData.quantidadeTotal} — saldo {cotaData.saldoDisponivel}
-                            </p>
-                            {#if cotaData.saldoDisponivel !== null && cotaData.saldoDisponivel <= 0}
-                              <p class="text-xs text-red-600">Limite de cota atingido para esta data.</p>
+                            {#if horaManualForaDoPeriodo(codigo)}
+                              <p class="text-xs text-red-600 mt-1">
+                                Hora fora do período liberado pela cota ({formatarHora(cotaResolvida(codigo)?.horaInicial ?? null)} às {formatarHora(cotaResolvida(codigo)?.horaFinal ?? null)}).
+                              </p>
                             {/if}
-                          {/if}
-                        {/if}
-                      </div>
-                    {/each}
+                          </div>
+
+                          <div class="space-y-1 pt-3 border-t border-gray-100">
+                            <label class="text-xs font-medium text-gray-600">
+                              Profissional que atende (opcional{cotaResolvida(codigo)
+                                ? ' — substitui o definido pela cota'
+                                : ''})
+                            </label>
+                            {#if profissionalExibidoParaExame(codigo)}
+                              <div class="flex items-center justify-between bg-indigo-50 border border-indigo-200 rounded-lg p-2 mt-1 text-xs text-indigo-800">
+                                <span>{profissionalExibidoParaExame(codigo)?.nome}</span>
+                                <button type="button" onclick={() => removerProfissionalParaExame(codigo)}
+                                  class="text-indigo-700 hover:text-indigo-900">Remover</button>
+                              </div>
+                            {:else}
+                              <input type="text" placeholder="Buscar profissional por nome..."
+                                bind:value={profissionalTermoPorExame[codigo]}
+                                oninput={() => buscarProfissionalParaExame(codigo)}
+                                class="w-full mt-1 border border-gray-300 rounded-lg p-2 text-xs" />
+                              {#if profissionalBuscandoPorExame[codigo]}
+                                <p class="text-xs text-gray-400 mt-1">Buscando...</p>
+                              {:else if (profissionalResultadosPorExame[codigo] ?? []).length > 0}
+                                <ul class="mt-1 border border-gray-200 rounded-lg divide-y divide-gray-100 max-h-32 overflow-y-auto">
+                                  {#each profissionalResultadosPorExame[codigo] as p (p.id)}
+                                    <li>
+                                      <button type="button" onclick={() => selecionarProfissionalParaExame(codigo, p)}
+                                        class="w-full text-left px-2 py-1 text-xs text-gray-700 hover:bg-gray-50">
+                                        {p.nome}
+                                      </button>
+                                    </li>
+                                  {/each}
+                                </ul>
+                              {/if}
+                            {/if}
+                          </div>
+                        </div>
+                      {/each}
+                    </div>
                   </div>
                 {/if}
 
@@ -841,7 +1253,8 @@
                   </div>
                   <div class="flex flex-col mt-4">
                     <label for="localAgendamentoId" class="text-sm font-medium text-gray-700 mb-1">Local do Agendamento</label>
-                    <select id="localAgendamentoId" bind:value={localAgendamentoId} class="w-full border border-gray-300 rounded-lg p-2" required>
+                    <select id="localAgendamentoId" bind:value={localAgendamentoId} disabled={localTravadoPorCota}
+                      class="w-full border border-gray-300 rounded-lg p-2 disabled:bg-gray-100" required>
                       <option value="" disabled>Selecione o local...</option>
                       {#if locaisAgendamento.length === 0}
                         <option disabled>Nenhum local cadastrado</option>
@@ -856,6 +1269,9 @@
                         {/each}
                       {/if}
                     </select>
+                    {#if localTravadoPorCota}
+                      <p class="text-xs text-indigo-600 mt-1">Local definido pela cota liberada — não pode ser alterado aqui.</p>
+                    {/if}
                   </div>
 
                   <div class="flex flex-col mt-4">

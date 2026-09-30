@@ -23,6 +23,24 @@ function parseDataEspecifica(v) {
 }
 
 /**
+ * Formata `horaInicial`/`horaFinal` (LocalTime do backend) como "HH:MM",
+ * aceitando tanto a string "HH:mm[:ss]" quanto um array `[h, m, ...]` — mesmo
+ * bug de serialização do Jackson documentado em `parseDataEspecifica`, só que
+ * para `LocalTime` em vez de `LocalDate` (produz "18,30" em vez de "18:30" ao
+ * interpolar o array num template). Retorna "" se vazio ou não reconhecido.
+ */
+export function formatarHora(hora) {
+  if (Array.isArray(hora)) {
+    const [h, m] = hora;
+    if (Number.isInteger(h) && Number.isInteger(m)) {
+      return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+    }
+    return "";
+  }
+  return typeof hora === "string" && hora.length >= 5 ? hora.slice(0, 5) : "";
+}
+
+/**
  * Formata período de cota (mensal "YYYY-MM" ou data específica "YYYY-MM-DD"
  * ou `[ano, mes, dia]`) sem nunca passar por `new Date(...)` — evita qualquer
  * risco de "Invalid Date" por formato inesperado, timezone ou dado ausente.

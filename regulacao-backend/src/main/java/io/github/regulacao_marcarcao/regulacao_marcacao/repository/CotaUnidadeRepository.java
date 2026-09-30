@@ -57,6 +57,13 @@ public interface CotaUnidadeRepository extends JpaRepository<CotaUnidade, Long> 
      *
      * Parametros nulos simplesmente nao casam, sem precisar de consulta separada:
      * unidade sem grupo passa {@code grupoUnidadesId = null}, e a comparacao e falsa.
+     *
+     * {@code ORDER BY c.id}: sem ordenacao explicita a ordem de consumo entre cotas
+     * concorrentes (ex.: cota de Hemograma + cota do grupo Laboratorio) dependia do
+     * plano de execucao do banco — instavel entre versoes de indice (exposto pela
+     * V94, que recriou {@code uk_cota_data}). Em producao isso nao muda o resultado
+     * final (a transacao inteira desfaz em caso de erro), mas precisa ser
+     * deterministico para o comportamento ser previsivel e testavel.
      */
     @Query("""
         SELECT c FROM CotaUnidade c
@@ -77,6 +84,7 @@ public interface CotaUnidadeRepository extends JpaRepository<CotaUnidade, Long> 
              OR (c.tipoPeriodo = io.github.regulacao_marcarcao.regulacao_marcacao.entity.enums.TipoPeriodoCota.DATA
                  AND c.dataEspecifica = :data)
           )
+        ORDER BY c.id ASC
         """)
     List<CotaUnidade> buscarCotasAplicaveis(
             @Param("unidadeId") Long unidadeId,

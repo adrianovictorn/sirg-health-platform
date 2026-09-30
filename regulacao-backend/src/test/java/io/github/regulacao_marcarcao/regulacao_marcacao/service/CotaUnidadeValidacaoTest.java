@@ -30,11 +30,15 @@ import io.github.regulacao_marcarcao.regulacao_marcacao.entity.AgendaOcorrencia;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.CotaUnidade;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.Especialidade;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.GrupoRelatorio;
+import io.github.regulacao_marcarcao.regulacao_marcacao.entity.LocalAgendamento;
+import io.github.regulacao_marcarcao.regulacao_marcacao.entity.Profissional;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.Unidade;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.enums.TipoPeriodoCota;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.CotaUnidadeRepository;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.EspecialidadeRepository;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.GrupoRelatorioRepository;
+import io.github.regulacao_marcarcao.regulacao_marcacao.repository.LocalAgendamentoRepository;
+import io.github.regulacao_marcarcao.regulacao_marcacao.repository.ProfissionalRepository;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.UnidadeRepository;
 
 /**
@@ -58,6 +62,8 @@ class CotaUnidadeValidacaoTest {
     @Mock private UnidadeRepository unidadeRepository;
     @Mock private GrupoRelatorioRepository grupoRelatorioRepository;
     @Mock private EspecialidadeRepository especialidadeRepository;
+    @Mock private ProfissionalRepository profissionalRepository;
+    @Mock private LocalAgendamentoRepository localAgendamentoRepository;
 
     @InjectMocks private CotaUnidadeService service;
 
@@ -92,7 +98,8 @@ class CotaUnidadeValidacaoTest {
     private CotaUnidadeCreateDTO dto(Long unidadeId, Long grupoUnidadesId,
             Long especialidadeId, Long grupoEspecialidadesId, String periodo, Integer qtd) {
         return new CotaUnidadeCreateDTO(unidadeId, grupoUnidadesId, especialidadeId,
-                grupoEspecialidadesId, TipoPeriodoCota.MENSAL, periodo, null, qtd);
+                grupoEspecialidadesId, TipoPeriodoCota.MENSAL, periodo, null, qtd,
+                null, null, false, null, null, null, null);
     }
 
     // ==================================================================
@@ -184,7 +191,7 @@ class CotaUnidadeValidacaoTest {
     @DisplayName("Cota por DATA exige data especifica")
     void cotaPorDataExigeData() {
         var semData = new CotaUnidadeCreateDTO(UNIDADE_ID, null, HEMOGRAMA_ID, null,
-                TipoPeriodoCota.DATA, null, null, 5);
+                TipoPeriodoCota.DATA, null, null, 5, null, null, false, null, null, null, null);
 
         assertThatThrownBy(() -> service.criar(semData))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -267,7 +274,8 @@ class CotaUnidadeValidacaoTest {
         cota.setAtivo(true);
         when(cotaRepository.findById(100L)).thenReturn(Optional.of(cota));
 
-        var dto = new CotaUnidadeUpdateDTO(UNIDADE_ID, null, null, null, TipoPeriodoCota.MENSAL, PERIODO, null, 2, true);
+        var dto = new CotaUnidadeUpdateDTO(UNIDADE_ID, null, null, null, TipoPeriodoCota.MENSAL, PERIODO, null, 2, true,
+                null, null, false, null, null, null, null);
         assertThatThrownBy(() -> service.atualizar(100L, dto))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("ja utilizado");
@@ -287,7 +295,8 @@ class CotaUnidadeValidacaoTest {
         cota.setOrigem(io.github.regulacao_marcarcao.regulacao_marcacao.entity.enums.OrigemCotaEnum.AGENDA);
         when(cotaRepository.findById(200L)).thenReturn(Optional.of(cota));
 
-        var dto = new CotaUnidadeUpdateDTO(UNIDADE_ID, null, null, null, TipoPeriodoCota.MENSAL, PERIODO, null, 10, true);
+        var dto = new CotaUnidadeUpdateDTO(UNIDADE_ID, null, null, null, TipoPeriodoCota.MENSAL, PERIODO, null, 10, true,
+                null, null, false, null, null, null, null);
 
         assertThatThrownBy(() -> service.atualizar(200L, dto))
                 .isInstanceOf(IllegalStateException.class)
@@ -332,7 +341,8 @@ class CotaUnidadeValidacaoTest {
         // Troca o titular de unidade para grupo de unidades, e o escopo de
         // "Hemograma" para geral — nada disso era editavel antes da V90.
         var dto = new CotaUnidadeUpdateDTO(
-                null, GRUPO_UNIDADES_ID, null, null, TipoPeriodoCota.MENSAL, PERIODO, null, 10, true);
+                null, GRUPO_UNIDADES_ID, null, null, TipoPeriodoCota.MENSAL, PERIODO, null, 10, true,
+                null, null, false, null, null, null, null);
 
         CotaUnidadeViewDTO resultado = service.atualizar(300L, dto);
 
@@ -364,7 +374,8 @@ class CotaUnidadeValidacaoTest {
         when(cotaRepository.findByUnidadeId(UNIDADE_ID)).thenReturn(List.of(cota));
 
         var dto = new CotaUnidadeUpdateDTO(
-                UNIDADE_ID, null, HEMOGRAMA_ID, null, TipoPeriodoCota.MENSAL, PERIODO, null, 8, true);
+                UNIDADE_ID, null, HEMOGRAMA_ID, null, TipoPeriodoCota.MENSAL, PERIODO, null, 8, true,
+                null, null, false, null, null, null, null);
 
         assertThatCode(() -> service.atualizar(300L, dto)).doesNotThrowAnyException();
     }
@@ -433,5 +444,448 @@ class CotaUnidadeValidacaoTest {
         assertThat(criada.getQuantidadeTotal()).isEqualTo(7);
         assertThat(criada.getTipoPeriodo()).isEqualTo(TipoPeriodoCota.DATA);
         assertThat(criada.getDataEspecifica()).isEqualTo(data);
+    }
+
+    // ==================================================================
+    // Espelho de atendimento (V92) — profissional, horario e local
+    // ==================================================================
+
+    private CotaUnidadeCreateDTO dtoComEspelho(Long profissionalId, Long localAgendamentoId,
+            boolean horarioDinamico, Integer tempoMedio, java.time.LocalTime horaInicial,
+            java.time.LocalTime horaFinal, java.time.LocalDate dataEspecifica) {
+        return new CotaUnidadeCreateDTO(UNIDADE_ID, null, HEMOGRAMA_ID, null,
+                TipoPeriodoCota.DATA, null, dataEspecifica, 5,
+                profissionalId, localAgendamentoId, horarioDinamico, tempoMedio, horaInicial, horaFinal, null);
+    }
+
+    private CotaUnidadeCreateDTO dtoMensalComEspelho(Long profissionalId, Long localAgendamentoId,
+            boolean horarioDinamico, Integer tempoMedio, java.time.LocalTime horaInicial,
+            java.time.LocalTime horaFinal, List<String> diasSemana) {
+        return new CotaUnidadeCreateDTO(UNIDADE_ID, null, HEMOGRAMA_ID, null,
+                TipoPeriodoCota.MENSAL, PERIODO, null, 5,
+                profissionalId, localAgendamentoId, horarioDinamico, tempoMedio, horaInicial, horaFinal, diasSemana);
+    }
+
+    @Test
+    @DisplayName("Cota sem profissional/local/horario continua aceita (cota geral)")
+    void cotaSemEspelhoContinuaAceita() {
+        assertThatCode(() -> service.criar(dto(UNIDADE_ID, null, HEMOGRAMA_ID, null, PERIODO, 5)))
+                .doesNotThrowAnyException();
+    }
+
+    @Test
+    @DisplayName("V95: profissional em cota MENSAL sem dias da semana e recusado")
+    void espelhoEmMensalSemDiasSemanaERecusado() {
+        var dto = new CotaUnidadeCreateDTO(UNIDADE_ID, null, HEMOGRAMA_ID, null,
+                TipoPeriodoCota.MENSAL, PERIODO, null, 5,
+                7L, null, false, null, java.time.LocalTime.of(8, 0), java.time.LocalTime.of(12, 0), null);
+
+        assertThatThrownBy(() -> service.criar(dto))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("dias da semana");
+    }
+
+    @Test
+    @DisplayName("V95: dias da semana numa cota DATA sao recusados (ja e um dia especifico)")
+    void diasSemanaEmCotaDataERecusado() {
+        var base = dtoComEspelho(null, null, false, null, null, null, LocalDate.of(2026, 6, 1));
+        var dto = new CotaUnidadeCreateDTO(base.unidadeId(), base.grupoUnidadesId(), base.especialidadeId(),
+                base.grupoEspecialidadesId(), base.tipoPeriodo(), base.periodo(), base.dataEspecifica(),
+                base.quantidadeTotal(), base.profissionalId(), base.localAgendamentoId(), base.horarioDinamico(),
+                base.tempoMedioAtendimentoMinutos(), base.horaInicial(), base.horaFinal(), List.of("SEG"));
+
+        assertThatThrownBy(() -> service.criar(dto))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("MENSAL");
+    }
+
+    @Test
+    @DisplayName("V95: profissional em cota MENSAL com dias da semana e aceito")
+    void espelhoEmMensalComDiasSemanaEAceito() {
+        Profissional dr = new Profissional();
+        dr.setId(7L);
+        dr.setNome("Dr. A");
+        when(profissionalRepository.findById(7L)).thenReturn(Optional.of(dr));
+
+        var dto = dtoMensalComEspelho(7L, null, false, null,
+                java.time.LocalTime.of(8, 0), java.time.LocalTime.of(12, 0), List.of("SEG", "QUA"));
+
+        CotaUnidadeViewDTO resultado = service.criar(dto);
+
+        assertThat(resultado.profissionalId()).isEqualTo(7L);
+        assertThat(resultado.diasSemana()).containsExactly("SEG", "QUA");
+    }
+
+    @Test
+    @DisplayName("V95: dias da semana sozinhos (sem profissional) em cota MENSAL sao aceitos")
+    void diasSemanaSemProfissionalEmMensalEAceito() {
+        var dto = dtoMensalComEspelho(null, null, false, null, null, null, List.of("SAB", "DOM"));
+
+        CotaUnidadeViewDTO resultado = service.criar(dto);
+
+        assertThat(resultado.profissionalId()).isNull();
+        assertThat(resultado.diasSemana()).containsExactly("SAB", "DOM");
+    }
+
+    @Test
+    @DisplayName("V95: sigla de dia da semana invalida e recusada")
+    void siglaDeDiaInvalidaERecusada() {
+        var dto = dtoMensalComEspelho(null, null, false, null, null, null, List.of("FERIADO"));
+
+        assertThatThrownBy(() -> service.criar(dto))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("invalido");
+    }
+
+    @Test
+    @DisplayName("Horario dinamico sem hora inicial/final e recusado")
+    void horarioDinamicoSemHoraInicialFinalERecusado() {
+        var dto = dtoComEspelho(7L, null, true, null, null, null, LocalDate.of(2026, 6, 1));
+
+        assertThatThrownBy(() -> service.criar(dto))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("hora inicial e hora final");
+    }
+
+    @Test
+    @DisplayName("Horario dinamico com hora inicial e final e aceito, sem exigir tempo medio")
+    void horarioDinamicoComHoraInicialFinalEAceito() {
+        Profissional dr = new Profissional();
+        dr.setId(7L);
+        dr.setNome("Dr. A");
+        when(profissionalRepository.findById(7L)).thenReturn(Optional.of(dr));
+
+        var dto = dtoComEspelho(7L, null, true, null,
+                java.time.LocalTime.of(7, 0), java.time.LocalTime.of(11, 0), LocalDate.of(2026, 6, 1));
+
+        CotaUnidadeViewDTO resultado = service.criar(dto);
+
+        assertThat(resultado.horarioDinamico()).isTrue();
+        assertThat(resultado.horaInicial()).isEqualTo(java.time.LocalTime.of(7, 0));
+        assertThat(resultado.horaFinal()).isEqualTo(java.time.LocalTime.of(11, 0));
+        assertThat(resultado.tempoMedioAtendimentoMinutos()).isNull();
+    }
+
+    @Test
+    @DisplayName("Hora final antes ou igual a hora inicial e recusada")
+    void horaFinalAntesDaInicialERecusada() {
+        var dto = dtoComEspelho(null, null, false, null,
+                java.time.LocalTime.of(12, 0), java.time.LocalTime.of(8, 0), LocalDate.of(2026, 6, 1));
+
+        assertThatThrownBy(() -> service.criar(dto))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("posterior");
+    }
+
+    @Test
+    @DisplayName("Hora inicial sem hora final (ou vice-versa) e recusada")
+    void horarioParcialERecusado() {
+        var dto = dtoComEspelho(null, null, false, null,
+                java.time.LocalTime.of(8, 0), null, LocalDate.of(2026, 6, 1));
+
+        assertThatThrownBy(() -> service.criar(dto))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("hora inicial e hora final");
+    }
+
+    @Test
+    @DisplayName("Cota com profissional, horario fixo e local e aceita")
+    void cotaComProfissionalHorarioFixoELocalEAceita() {
+        Profissional dr = new Profissional();
+        dr.setId(7L);
+        dr.setNome("Dr. A");
+        when(profissionalRepository.findById(7L)).thenReturn(Optional.of(dr));
+
+        LocalAgendamento local = new LocalAgendamento();
+        local.setId(3L);
+        local.setNomeLocal("UBS Central");
+        when(localAgendamentoRepository.findById(3L)).thenReturn(Optional.of(local));
+
+        var dto = dtoComEspelho(7L, 3L, false,
+                null, java.time.LocalTime.of(8, 0), java.time.LocalTime.of(12, 0), LocalDate.of(2026, 6, 1));
+
+        CotaUnidadeViewDTO resultado = service.criar(dto);
+
+        assertThat(resultado.profissionalId()).isEqualTo(7L);
+        assertThat(resultado.localAgendamentoId()).isEqualTo(3L);
+        assertThat(resultado.horaInicial()).isEqualTo(java.time.LocalTime.of(8, 0));
+        assertThat(resultado.horaFinal()).isEqualTo(java.time.LocalTime.of(12, 0));
+    }
+
+    @Test
+    @DisplayName("Profissional inexistente e recusado com 404 de negocio")
+    void profissionalInexistenteERecusado() {
+        when(profissionalRepository.findById(999L)).thenReturn(Optional.empty());
+
+        var dto = dtoComEspelho(999L, null, false,
+                null, java.time.LocalTime.of(8, 0), java.time.LocalTime.of(12, 0), LocalDate.of(2026, 6, 1));
+
+        assertThatThrownBy(() -> service.criar(dto))
+                .isInstanceOf(jakarta.persistence.EntityNotFoundException.class);
+    }
+
+    // ==================================================================
+    // Bloqueio de agendamento sem cota (V93) — existeCotaAtivaAplicavel
+    // ==================================================================
+
+    @Test
+    @DisplayName("existeCotaAtivaAplicavel: sem cota nenhuma cadastrada, devolve false")
+    void existeCotaAtivaAplicavelSemCotaDevolveFalse() {
+        Unidade u = new Unidade();
+        u.setId(UNIDADE_ID);
+        when(unidadeRepository.findById(UNIDADE_ID)).thenReturn(Optional.of(u));
+        when(cotaRepository.buscarCotasAplicaveis(any(), any(), any(), any(), any(), any()))
+                .thenReturn(List.of());
+
+        assertThat(service.existeCotaAtivaAplicavel(UNIDADE_ID, HEMOGRAMA_ID, LocalDate.of(2026, 6, 1)))
+                .isFalse();
+    }
+
+    @Test
+    @DisplayName("existeCotaAtivaAplicavel: com cota ativa cadastrada, devolve true")
+    void existeCotaAtivaAplicavelComCotaDevolveTrue() {
+        Unidade u = new Unidade();
+        u.setId(UNIDADE_ID);
+        when(unidadeRepository.findById(UNIDADE_ID)).thenReturn(Optional.of(u));
+
+        CotaUnidade cota = new CotaUnidade();
+        cota.setId(1L);
+        cota.setUnidade(u);
+        cota.setQuantidadeTotal(5);
+        cota.setQuantidadeUtilizada(5); // esgotada, mas ainda "existe"
+        cota.setAtivo(true);
+        when(cotaRepository.buscarCotasAplicaveis(any(), any(), any(), any(), any(), any()))
+                .thenReturn(List.of(cota));
+
+        assertThat(service.existeCotaAtivaAplicavel(UNIDADE_ID, HEMOGRAMA_ID, LocalDate.of(2026, 6, 1)))
+                .isTrue();
+    }
+
+    @Test
+    @DisplayName("existeCotaAtivaAplicavel: sem unidade ou sem data, devolve false sem consultar o banco")
+    void existeCotaAtivaAplicavelSemParametrosDevolveFalse() {
+        assertThat(service.existeCotaAtivaAplicavel(null, HEMOGRAMA_ID, LocalDate.of(2026, 6, 1))).isFalse();
+        assertThat(service.existeCotaAtivaAplicavel(UNIDADE_ID, HEMOGRAMA_ID, null)).isFalse();
+        verify(unidadeRepository, never()).findById(any());
+    }
+
+    // ==================================================================
+    // resolverCotaParaAgendamento (V93) — rastreabilidade por profissional
+    // ==================================================================
+
+    @Test
+    @DisplayName("resolverCotaParaAgendamento: sem cota com profissional, devolve null (nada a rastrear)")
+    void resolverCotaSemProfissionalDevolveNull() {
+        Unidade u = new Unidade();
+        u.setId(UNIDADE_ID);
+        when(unidadeRepository.findById(UNIDADE_ID)).thenReturn(Optional.of(u));
+
+        CotaUnidade cotaGeral = new CotaUnidade();
+        cotaGeral.setId(1L);
+        cotaGeral.setUnidade(u);
+        when(cotaRepository.buscarCotasAplicaveis(any(), any(), any(), any(), any(), any()))
+                .thenReturn(List.of(cotaGeral));
+
+        assertThat(service.resolverCotaParaAgendamento(UNIDADE_ID, HEMOGRAMA_ID, LocalDate.of(2026, 6, 1), null))
+                .isNull();
+    }
+
+    @Test
+    @DisplayName("resolverCotaParaAgendamento: uma cota com profissional, resolve sozinho")
+    void resolverCotaComUmProfissionalResolveSozinho() {
+        Unidade u = new Unidade();
+        u.setId(UNIDADE_ID);
+        when(unidadeRepository.findById(UNIDADE_ID)).thenReturn(Optional.of(u));
+
+        Profissional drA = new Profissional();
+        drA.setId(7L);
+        CotaUnidade cotaDrA = new CotaUnidade();
+        cotaDrA.setId(1L);
+        cotaDrA.setUnidade(u);
+        cotaDrA.setProfissionalExecutante(drA);
+        when(cotaRepository.buscarCotasAplicaveis(any(), any(), any(), any(), any(), any()))
+                .thenReturn(List.of(cotaDrA));
+
+        CotaUnidade resolvida = service.resolverCotaParaAgendamento(
+                UNIDADE_ID, HEMOGRAMA_ID, LocalDate.of(2026, 6, 1), null);
+
+        assertThat(resolvida).isEqualTo(cotaDrA);
+    }
+
+    @Test
+    @DisplayName("resolverCotaParaAgendamento: dois profissionais compativeis sem escolha e recusado")
+    void resolverCotaComDoisProfissionaisSemEscolhaERecusado() {
+        Unidade u = new Unidade();
+        u.setId(UNIDADE_ID);
+        when(unidadeRepository.findById(UNIDADE_ID)).thenReturn(Optional.of(u));
+
+        Profissional drA = new Profissional();
+        drA.setId(7L);
+        Profissional drB = new Profissional();
+        drB.setId(8L);
+
+        CotaUnidade cotaDrA = new CotaUnidade();
+        cotaDrA.setId(1L);
+        cotaDrA.setUnidade(u);
+        cotaDrA.setProfissionalExecutante(drA);
+
+        CotaUnidade cotaDrB = new CotaUnidade();
+        cotaDrB.setId(2L);
+        cotaDrB.setUnidade(u);
+        cotaDrB.setProfissionalExecutante(drB);
+
+        when(cotaRepository.buscarCotasAplicaveis(any(), any(), any(), any(), any(), any()))
+                .thenReturn(List.of(cotaDrA, cotaDrB));
+
+        assertThatThrownBy(() -> service.resolverCotaParaAgendamento(
+                UNIDADE_ID, HEMOGRAMA_ID, LocalDate.of(2026, 6, 1), null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("mais de uma cota");
+    }
+
+    @Test
+    @DisplayName("resolverCotaParaAgendamento: dois profissionais, unidade escolhe a cota do Dr. B")
+    void resolverCotaComDoisProfissionaisEEscolhaExplicita() {
+        Unidade u = new Unidade();
+        u.setId(UNIDADE_ID);
+        when(unidadeRepository.findById(UNIDADE_ID)).thenReturn(Optional.of(u));
+
+        Profissional drA = new Profissional();
+        drA.setId(7L);
+        Profissional drB = new Profissional();
+        drB.setId(8L);
+
+        CotaUnidade cotaDrA = new CotaUnidade();
+        cotaDrA.setId(1L);
+        cotaDrA.setUnidade(u);
+        cotaDrA.setProfissionalExecutante(drA);
+
+        CotaUnidade cotaDrB = new CotaUnidade();
+        cotaDrB.setId(2L);
+        cotaDrB.setUnidade(u);
+        cotaDrB.setProfissionalExecutante(drB);
+
+        when(cotaRepository.buscarCotasAplicaveis(any(), any(), any(), any(), any(), any()))
+                .thenReturn(List.of(cotaDrA, cotaDrB));
+
+        CotaUnidade resolvida = service.resolverCotaParaAgendamento(
+                UNIDADE_ID, HEMOGRAMA_ID, LocalDate.of(2026, 6, 1), 2L);
+
+        assertThat(resolvida).isEqualTo(cotaDrB);
+    }
+
+    @Test
+    @DisplayName("resolverCotaParaAgendamento: cota escolhida que nao e aplicavel e recusada")
+    void resolverCotaComEscolhaInvalidaERecusado() {
+        Unidade u = new Unidade();
+        u.setId(UNIDADE_ID);
+        when(unidadeRepository.findById(UNIDADE_ID)).thenReturn(Optional.of(u));
+        when(cotaRepository.buscarCotasAplicaveis(any(), any(), any(), any(), any(), any()))
+                .thenReturn(List.of());
+
+        assertThatThrownBy(() -> service.resolverCotaParaAgendamento(
+                UNIDADE_ID, HEMOGRAMA_ID, LocalDate.of(2026, 6, 1), 999L))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("nao e aplicavel");
+    }
+
+    // ==================================================================
+    // V95: filtro por dia da semana em cotasAplicaveis (usado por
+    // existeCotaAtivaAplicavel, listarCotasAplicaveis, incrementarUtilizacao)
+    // ==================================================================
+
+    @Test
+    @DisplayName("V95: cota MENSAL com dias da semana so e aplicavel nos dias marcados")
+    void cotaMensalComDiasSemanaSoAplicavelNosDiasMarcados() {
+        Unidade u = new Unidade();
+        u.setId(UNIDADE_ID);
+        when(unidadeRepository.findById(UNIDADE_ID)).thenReturn(Optional.of(u));
+
+        CotaUnidade cotaSegunda = new CotaUnidade();
+        cotaSegunda.setId(1L);
+        cotaSegunda.setUnidade(u);
+        cotaSegunda.setTipoPeriodo(TipoPeriodoCota.MENSAL);
+        cotaSegunda.setDiasSemana("SEG");
+        when(cotaRepository.buscarCotasAplicaveis(any(), any(), any(), any(), any(), any()))
+                .thenReturn(List.of(cotaSegunda));
+
+        // 2026-06-01 e uma segunda-feira; 2026-06-02 e uma terca-feira.
+        assertThat(service.existeCotaAtivaAplicavel(UNIDADE_ID, HEMOGRAMA_ID, LocalDate.of(2026, 6, 1))).isTrue();
+        assertThat(service.existeCotaAtivaAplicavel(UNIDADE_ID, HEMOGRAMA_ID, LocalDate.of(2026, 6, 2))).isFalse();
+    }
+
+    @Test
+    @DisplayName("V95: cota MENSAL sem dias da semana continua aplicavel todo dia (comportamento preservado)")
+    void cotaMensalSemDiasSemanaContinuaAplicavelTodoDia() {
+        Unidade u = new Unidade();
+        u.setId(UNIDADE_ID);
+        when(unidadeRepository.findById(UNIDADE_ID)).thenReturn(Optional.of(u));
+
+        CotaUnidade cotaGeral = new CotaUnidade();
+        cotaGeral.setId(1L);
+        cotaGeral.setUnidade(u);
+        cotaGeral.setTipoPeriodo(TipoPeriodoCota.MENSAL);
+        cotaGeral.setDiasSemana(null);
+        when(cotaRepository.buscarCotasAplicaveis(any(), any(), any(), any(), any(), any()))
+                .thenReturn(List.of(cotaGeral));
+
+        assertThat(service.existeCotaAtivaAplicavel(UNIDADE_ID, HEMOGRAMA_ID, LocalDate.of(2026, 6, 1))).isTrue();
+        assertThat(service.existeCotaAtivaAplicavel(UNIDADE_ID, HEMOGRAMA_ID, LocalDate.of(2026, 6, 2))).isTrue();
+    }
+
+    // ==================================================================
+    // calcularHorarioSlot (V97) — divisao do periodo entre as vagas
+    // ==================================================================
+
+    private CotaUnidade cotaDinamica(int quantidadeTotal, java.time.LocalTime inicio, java.time.LocalTime fim) {
+        CotaUnidade cota = new CotaUnidade();
+        cota.setHorarioDinamico(true);
+        cota.setHoraInicial(inicio);
+        cota.setHoraFinal(fim);
+        cota.setQuantidadeTotal(quantidadeTotal);
+        return cota;
+    }
+
+    @Test
+    @DisplayName("calcularHorarioSlot: 5 vagas em 07h-11h gera um horario por hora")
+    void calcularHorarioSlotDivideOPeriodoIgualmente() {
+        CotaUnidade cota = cotaDinamica(5, java.time.LocalTime.of(7, 0), java.time.LocalTime.of(11, 0));
+
+        assertThat(service.calcularHorarioSlot(cota, 1)).isEqualTo(java.time.LocalTime.of(7, 0));
+        assertThat(service.calcularHorarioSlot(cota, 2)).isEqualTo(java.time.LocalTime.of(8, 0));
+        assertThat(service.calcularHorarioSlot(cota, 3)).isEqualTo(java.time.LocalTime.of(9, 0));
+        assertThat(service.calcularHorarioSlot(cota, 4)).isEqualTo(java.time.LocalTime.of(10, 0));
+        assertThat(service.calcularHorarioSlot(cota, 5)).isEqualTo(java.time.LocalTime.of(11, 0));
+    }
+
+    @Test
+    @DisplayName("calcularHorarioSlot: uma vaga so usa a hora inicial")
+    void calcularHorarioSlotComUmaVagaUsaHoraInicial() {
+        CotaUnidade cota = cotaDinamica(1, java.time.LocalTime.of(7, 0), java.time.LocalTime.of(11, 0));
+
+        assertThat(service.calcularHorarioSlot(cota, 1)).isEqualTo(java.time.LocalTime.of(7, 0));
+    }
+
+    @Test
+    @DisplayName("calcularHorarioSlot: divisao nao exata arredonda os minutos")
+    void calcularHorarioSlotComDivisaoNaoExataArredonda() {
+        // 3 vagas em 07h-08h: passo = 60/2 = 30min -> 07:00, 07:30, 08:00
+        CotaUnidade cota = cotaDinamica(3, java.time.LocalTime.of(7, 0), java.time.LocalTime.of(8, 0));
+
+        assertThat(service.calcularHorarioSlot(cota, 1)).isEqualTo(java.time.LocalTime.of(7, 0));
+        assertThat(service.calcularHorarioSlot(cota, 2)).isEqualTo(java.time.LocalTime.of(7, 30));
+        assertThat(service.calcularHorarioSlot(cota, 3)).isEqualTo(java.time.LocalTime.of(8, 0));
+    }
+
+    @Test
+    @DisplayName("calcularHorarioSlot: cota sem horario dinamico devolve null (nada a calcular)")
+    void calcularHorarioSlotSemHorarioDinamicoDevolveNull() {
+        CotaUnidade cota = new CotaUnidade();
+        cota.setHorarioDinamico(false);
+        cota.setHoraInicial(java.time.LocalTime.of(7, 0));
+        cota.setHoraFinal(java.time.LocalTime.of(11, 0));
+        cota.setQuantidadeTotal(5);
+
+        assertThat(service.calcularHorarioSlot(cota, 1)).isNull();
     }
 }

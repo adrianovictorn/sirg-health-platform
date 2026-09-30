@@ -13,6 +13,14 @@ reais e usuários dependendo do comportamento atual. O objetivo é o **menor dif
 não uma reescrita. Siga estas etapas **na ordem**, sem pular nenhuma e sem implementar antes
 da etapa 5 (testes de caracterização) e da aprovação na etapa 4.
 
+**Se o pedido for puramente visual** (layout, espaçamento, hierarquia, agrupamento,
+estados visuais, responsividade, acessibilidade — sem mudança de lógica, validação, API ou
+dado), pule direto para o subagente `ux-ui-designer` em vez de seguir as etapas abaixo; ele
+já cobre localização, padrão do projeto e verificação. Para chamadas assim no futuro, o
+usuário pode usar `/design` diretamente. Se o pedido for misto (visual + comportamento),
+siga o fluxo completo abaixo e, na etapa 6 (implementação), delegue a parte visual ao
+`ux-ui-designer` depois de a lógica estar pronta.
+
 ## 1. Revisão do pedido
 
 Invoque o subagente `prompt-reviewer` com o pedido acima, deixando explícito que é um

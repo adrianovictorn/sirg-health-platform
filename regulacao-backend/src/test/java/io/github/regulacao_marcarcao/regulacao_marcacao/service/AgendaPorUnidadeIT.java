@@ -147,7 +147,7 @@ class AgendaPorUnidadeIT {
         s = solicitacaoRepository.saveAndFlush(s);
 
         MultiAgendamentoCreateDTO dto = new MultiAgendamentoCreateDTO(
-                List.of(cardiologia.getCodigo()), hoje, null, null, TurnoEnum.MANHA, "agendado no teste");
+                List.of(cardiologia.getCodigo()), hoje, null, null, TurnoEnum.MANHA, "agendado no teste", null, null, null);
         agendamentoService.criarAgendamentoParaMultiplosExames(s.getId(), dto, cpfOperador);
     }
 

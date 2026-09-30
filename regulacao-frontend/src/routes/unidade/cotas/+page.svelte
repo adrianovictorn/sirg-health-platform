@@ -35,6 +35,11 @@
     quantidadeUtilizada: number;
     saldoDisponivel: number;
     ativo: boolean;
+    profissionalNome: string | null;
+    localAgendamentoNome: string | null;
+    horaInicial: string | null;
+    horaFinal: string | null;
+    diasSemana: string[] | null;
   };
 
   type Grupo = { id: number; nome: string; especialidades: { id: number; nome: string }[] };
@@ -254,6 +259,7 @@
                 <tr>
                   <th class="text-left px-4 py-3 min-w-[120px]">Titular</th>
                   <th class="text-left px-4 py-3 min-w-[380px]">Especialidade / Exame</th>
+                  <th class="text-left px-4 py-3 min-w-[160px]">Profissional / Horário / Local</th>
                   <th class="text-left px-4 py-3 min-w-[100px]">Período</th>
                   <th class="text-right px-4 py-3 min-w-[100px]">Utilizadas</th>
                   <th class="text-right px-4 py-3 min-w-[80px]">Total</th>
@@ -294,6 +300,16 @@
                         <span class="text-gray-500">Cota geral (todas)</span>
                       {/if}
                     </td>
+                    <td class="px-4 py-3 text-gray-700 text-xs">
+                      {#if c.profissionalNome || c.horaInicial || c.localAgendamentoNome || (c.diasSemana && c.diasSemana.length > 0)}
+                        <div>{c.profissionalNome ?? 'Profissional: não informado'}</div>
+                        {#if c.horaInicial}<div>{c.horaInicial.slice(0,5)}–{c.horaFinal ? c.horaFinal.slice(0,5) : '-'}</div>{/if}
+                        {#if c.localAgendamentoNome}<div class="text-gray-500">{c.localAgendamentoNome}</div>{/if}
+                        {#if c.diasSemana && c.diasSemana.length > 0}<div class="text-gray-500">{c.diasSemana.join(', ')}</div>{/if}
+                      {:else}
+                        <span class="text-gray-400">-</span>
+                      {/if}
+                    </td>
                     <td class="px-4 py-3 text-gray-700">{formatarPeriodoCota(c)}</td>
                     <td class="px-4 py-3 text-right text-gray-800">{c.quantidadeUtilizada}</td>
                     <td class="px-4 py-3 text-right text-gray-800">{c.quantidadeTotal}</td>
@@ -315,7 +331,7 @@
                   </tr>
                   {#if c.grupoEspecialidadesId && gruposAbertos[c.id]}
                     <tr>
-                      <td colspan="7" class="px-4 pb-4 pt-0 bg-gray-50/60">
+                      <td colspan="8" class="px-4 pb-4 pt-0 bg-gray-50/60">
                         <GrupoEspecialidadesPainel grupo={grupos.find((g) => g.id === c.grupoEspecialidadesId)} />
                       </td>
                     </tr>

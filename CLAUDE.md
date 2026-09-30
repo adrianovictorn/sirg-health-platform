@@ -129,8 +129,16 @@ aprovação explícita do usuário. Não pule etapas nem implemente antes da apr
   bug, mudar uma regra, adicionar um campo a um fluxo já em produção. Este fluxo exige
   primeiro descrever o comportamento atual (baseado no código, não em suposição) e produzir
   o menor diff possível, porque o alvo já tem dados reais e usuários dependendo dele.
+- **`/design <descrição>`** — para **ajuste puramente visual** de uma tela/componente já
+  existente (layout, espaçamento, hierarquia, estados visuais, responsividade,
+  acessibilidade), sem lógica, validação ou API envolvidas. Aciona o subagente
+  `ux-ui-designer` diretamente, sem prompt-reviewer/architecture-explorer.
 
-Ambos orquestram os mesmos três subagentes, na ordem:
+`/ajuste` e `/feature` também acionam o `ux-ui-designer` quando parte do pedido é visual
+(acabamento de tela nova em `/feature`, ajuste de layout dentro de um pedido misto em
+`/ajuste`).
+
+`/ajuste` e `/feature` orquestram os mesmos três subagentes principais, na ordem:
 
 1. **prompt-reviewer** (`Read`) — reescreve o pedido de forma objetiva, lista critérios de
    aceite verificáveis, ambiguidades/perguntas em aberto e riscos (dados de pacientes,

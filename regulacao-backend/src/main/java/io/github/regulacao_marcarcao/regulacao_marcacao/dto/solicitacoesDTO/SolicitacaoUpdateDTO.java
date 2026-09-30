@@ -3,6 +3,8 @@ package io.github.regulacao_marcarcao.regulacao_marcacao.dto.solicitacoesDTO;
 import java.time.LocalDate;
 import java.util.List;
 
+import org.hibernate.validator.constraints.br.CPF;
+
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.AgendamentoSolicitacao;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.SolicitacaoEspecialidade;
 
@@ -20,10 +22,19 @@ import io.github.regulacao_marcarcao.regulacao_marcacao.entity.SolicitacaoEspeci
  *
  * Quando os registros historicos estiverem completos, o @NotBlank pode ser
  * promovido para ca e, na sequencia, o NOT NULL aplicado no banco.
+ *
+ * {@code cpfPaciente} (V96): permite completar o CPF de um paciente RN
+ * cadastrado sem ele. Sem {@code @UniqueCPF} de proposito — aquele validador
+ * checa duplicidade contra toda a tabela sem excluir a propria solicitacao,
+ * o que colidiria consigo mesma; a checagem de duplicidade na edicao fica no
+ * service, excluindo o id sendo editado. Vazio/nulo = nao mexe no CPF atual
+ * (nunca apaga um CPF ja gravado por omissao).
  */
 public record SolicitacaoUpdateDTO(
     Long unidadeId,
     String nomePaciente,
+    @CPF
+    String cpfPaciente,
     String observacoes,
     String cns,
     String telefone,

@@ -226,6 +226,12 @@
                       <div><span class="font-semibold text-gray-600">CPF:</span> {s.cpfPaciente}</div>
                       <div><span class="font-semibold text-gray-600">USF:</span> {s.usfOrigem}</div>
                       <div><span class="font-semibold text-gray-600">Nascimento:</span> {formatarData(s.dataNascimento)}</div>
+                      {#if s.profissionalExecutanteNome}
+                        <div><span class="font-semibold text-gray-600">Profissional:</span> {s.profissionalExecutanteNome}</div>
+                      {/if}
+                      {#if s.horaAgendada}
+                        <div><span class="font-semibold text-gray-600">Horário:</span> {s.horaAgendada.slice(0, 5)}</div>
+                      {/if}
                     </div>
 
                     <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">

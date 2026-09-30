@@ -153,6 +153,20 @@
       {:else}
         <span class="text-gray-400">Geral (todas)</span>
       {/if}
+      {#if c.profissionalNome || c.horaInicial || c.localAgendamentoNome || (c.diasSemana && c.diasSemana.length > 0)}
+        <div class="text-xs text-indigo-700 mt-0.5">
+          {#if c.profissionalNome}{c.profissionalNome}{/if}
+          {#if c.horaInicial}
+            &nbsp;· {c.horaInicial.slice(0,5)}–{c.horaFinal ? c.horaFinal.slice(0,5) : '-'}
+          {/if}
+          {#if c.localAgendamentoNome}
+            &nbsp;· {c.localAgendamentoNome}
+          {/if}
+          {#if c.diasSemana && c.diasSemana.length > 0}
+            &nbsp;· {c.diasSemana.join(', ')}
+          {/if}
+        </div>
+      {/if}
     </td>
     <td class="px-4 py-3">
       <span

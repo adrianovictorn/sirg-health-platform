@@ -43,7 +43,12 @@ public class Solicitacao {
     @Column(name = "nome_paciente", nullable = false, length = 150)
     private String nomePaciente;
 
-    @Column(name = "cpf_paciente", nullable = false, unique = true, length = 15)
+    /**
+     * Opcional desde a V96 — recem-nascido (RN) pode nao ter CPF emitido ainda.
+     * A obrigatoriedade (exceto para RN) e validada em {@code SolicitacaoService},
+     * nao mais pelo banco.
+     */
+    @Column(name = "cpf_paciente", unique = true, length = 15)
     private String cpfPaciente;
 
     @ManyToMany

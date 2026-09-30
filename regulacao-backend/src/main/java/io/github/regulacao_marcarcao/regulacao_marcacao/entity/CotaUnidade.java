@@ -2,6 +2,7 @@ package io.github.regulacao_marcarcao.regulacao_marcacao.entity;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 
 import org.hibernate.annotations.CreationTimestamp;
 
@@ -107,6 +108,49 @@ public class CotaUnidade {
     @Enumerated(EnumType.STRING)
     @Column(name = "origem", nullable = false, length = 20)
     private OrigemCotaEnum origem = OrigemCotaEnum.MANUAL;
+
+    // ------------------------------------------------------------------
+    // ESPELHO DE ATENDIMENTO (V92) — profissional, horario e local que a
+    // unidade deve reproduzir ao agendar. Todos opcionais: cota geral ou de
+    // laboratorio continua sem eles, como antes desta versao. Quando
+    // presentes, exigem tipoPeriodo = DATA (validado em CotaUnidadeService),
+    // reaproveitando `dataEspecifica` em vez de uma coluna de data propria.
+    // ------------------------------------------------------------------
+
+    /** Quem atende — distinto de {@code SolicitacaoEspecialidade#profissionalSolicitante}. */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "profissional_id", nullable = true)
+    private Profissional profissionalExecutante;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "local_agendamento_id", nullable = true)
+    private LocalAgendamento localAgendamento;
+
+    /**
+     * true = horaInicial/horaFinal (ambos obrigatorios) sao divididos em
+     * quantidadeTotal partes iguais, um horario calculado por vaga (ver
+     * {@link io.github.regulacao_marcarcao.regulacao_marcacao.service.CotaUnidadeService#calcularHorarioSlot}).
+     * false = horaInicial/horaFinal sao so um periodo livre, sem calculo.
+     */
+    @Column(name = "horario_dinamico", nullable = false)
+    private boolean horarioDinamico = false;
+
+    @Column(name = "tempo_medio_atendimento_minutos")
+    private Integer tempoMedioAtendimentoMinutos;
+
+    @Column(name = "hora_inicial")
+    private LocalTime horaInicial;
+
+    @Column(name = "hora_final")
+    private LocalTime horaFinal;
+
+    /**
+     * Dias da semana em que o profissional atende (V95), para cota MENSAL —
+     * substitui a data unica de DATA. Formato "SEG,QUA" (mesmo padrao de
+     * {@link Agenda#getDiasSemana()}). Nulo = cota geral, sem restricao de dia.
+     */
+    @Column(name = "dias_semana", length = 20)
+    private String diasSemana;
 
     @Version
     private Long version;

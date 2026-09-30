@@ -27,6 +27,7 @@
 	// Campos do formulário
 	let nomePaciente = '';
 	let cpfPaciente = '';
+	let recemNascido = false;
 	let cns = '';
 	let telefone = '';
 	// Dados cadastrais obrigatórios do paciente (backend valida via @NotBlank).
@@ -100,9 +101,19 @@
 			return;
 		}
 
+		if (!recemNascido && cpfPaciente.replace(/\D/g, '').length === 0) {
+			alert('Informe o CPF do paciente, ou marque "Recém-nascido" se ele ainda não tiver CPF emitido.');
+			isLoading = false;
+			return;
+		}
+
 		const payload = {
 			nomePaciente,
-			cpfPaciente: cpfPaciente.replace(/\D/g, ''),
+			// null, nao string vazia: @CPF do Bean Validation trata "" como CPF
+			// invalido (só null é tratado como "ausente"), o que barrava o RN com 400
+			// antes mesmo de chegar na validação condicional do service.
+			cpfPaciente: cpfPaciente.replace(/\D/g, '') || null,
+			recemNascido,
 			cns,
 			telefone,
 			nomePai,
@@ -252,7 +263,11 @@
 						</div>
 						<div class="flex flex-col">
 							<label class="text-sm font-medium text-gray-700 mb-1">CPF</label>
-							<input type="text" bind:value={cpfPaciente} on:input={formatarCPF} placeholder="000.000.000-00" class="border border-gray-300 rounded-lg p-2 focus:ring-emerald-500 focus:border-emerald-500" required />
+							<input type="text" bind:value={cpfPaciente} on:input={formatarCPF} placeholder="000.000.000-00" disabled={recemNascido} class="border border-gray-300 rounded-lg p-2 focus:ring-emerald-500 focus:border-emerald-500 disabled:bg-gray-100" required={!recemNascido} />
+							<label class="flex items-center gap-1.5 mt-1 text-xs text-gray-600 cursor-pointer">
+								<input type="checkbox" bind:checked={recemNascido} on:change={() => { if (recemNascido) cpfPaciente = ''; }} class="accent-emerald-600" />
+								Recém-nascido (ainda sem CPF)
+							</label>
 						</div>
 						<div class="flex flex-col">
 							<label class="text-sm font-medium text-gray-700 mb-1">CNS</label>

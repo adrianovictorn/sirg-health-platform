@@ -94,12 +94,18 @@ public interface SolicitacaoRepository extends JpaRepository<Solicitacao, Long>,
         s.datanascimento AS dataNascimento,
         se.id AS solicitacaoEspecialidadeId,
         STRING_AGG(DISTINCT e.nome, ', ' ORDER BY e.nome) AS especialidade,
-        STRING_AGG(DISTINCT se.prioridade, ', ' ORDER BY se.prioridade DESC) AS prioridade
+        STRING_AGG(DISTINCT se.prioridade, ', ' ORDER BY se.prioridade DESC) AS prioridade,
+        pe.nome AS profissionalExecutanteNome,
+        se.hora_agendada AS horaAgendada
       FROM solicitacao s
       JOIN solicitacao_especialidade se
           ON s.id = se.solicitacao_id
       JOIN especialidade e
           ON e.id = se.especialidade_id
+      LEFT JOIN cota_unidade cu
+          ON cu.id = se.cota_unidade_id
+      LEFT JOIN profissional pe
+          ON pe.id = COALESCE(se.profissional_executante_id, cu.profissional_id)
       WHERE
           se.status = :status
           AND (
@@ -116,7 +122,9 @@ public interface SolicitacaoRepository extends JpaRepository<Solicitacao, Long>,
           s.cns,
           s.usf_origem,
           s.datanascimento,
-          se.id
+          se.id,
+          pe.nome,
+          se.hora_agendada
         """, nativeQuery = true)
     Page<PacienteProjection> buscarPorStatus(Pageable pageable, String termo, String status);
 

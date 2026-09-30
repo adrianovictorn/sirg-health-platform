@@ -16,6 +16,7 @@ import io.github.regulacao_marcarcao.regulacao_marcacao.dto.agendamentoDTO.Multi
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.solicitacoesDTO.AgendamentoSolicitacaoCreateDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.solicitacoesDTO.SolicitacaoResumoDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.AgendamentoSolicitacao;
+import io.github.regulacao_marcarcao.regulacao_marcacao.entity.CotaUnidade;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.LocalAgendamento;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.Solicitacao;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.SolicitacaoEspecialidade;
@@ -23,7 +24,9 @@ import io.github.regulacao_marcarcao.regulacao_marcacao.entity.enums.LocalDeAgen
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.enums.StatusDaMarcacao;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.AgendamentoSolicitacaoRepository;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.EspecialidadeRepository;
+import io.github.regulacao_marcarcao.regulacao_marcacao.entity.Profissional;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.LocalAgendamentoRepository;
+import io.github.regulacao_marcarcao.regulacao_marcacao.repository.ProfissionalRepository;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.SolicitacaoEspecialidadeRepository;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.SolicitacaoRepository;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.UserRepository;
@@ -40,6 +43,7 @@ public class AgendamentoService {
     private final SolicitacaoEspecialidadeRepository solicitacaoEspecialidadeRepository;
     private final EspecialidadeRepository especialidadeRepository;
     private final UserRepository userRepository;
+    private final ProfissionalRepository profissionalRepository;
     private final CotaUnidadeService cotaUnidadeService;
     private final UnidadeAcessoService unidadeAcessoService;
     private final io.github.regulacao_marcarcao.regulacao_marcacao.config.InstanceContext instanceContext;
@@ -192,11 +196,15 @@ public class AgendamentoService {
             novoAgendamento.setLocalAgendado(null);
         }
 
+        // Autoria (V93): metadado, nunca impede o agendamento se o usuario nao for encontrado.
+        novoAgendamento.setCriadoPor(userRepository.findByCpf(callerCpf).orElse(null));
+
         // Salva para obter um ID
         AgendamentoSolicitacao agendamentoSalvo = agendamentoRepository.save(novoAgendamento);
 
         // 2. Itera sobre os exames selecionados.
         boolean adminGlobal = isAdminGlobal(callerCpf);
+        boolean adminUnidade = unidadeAcessoService.isAdminUnidade(callerCpf);
         Long unidadeId = solicitacao.getUnidade() != null ? solicitacao.getUnidade().getId() : null;
 
         for (String nomeExame : dto.examesSelecionados()) {
@@ -219,7 +227,50 @@ public class AgendamentoService {
                 Long especialidadeId = especialidadeParaAgendar.getEspecialidadeSolicitada() != null
                         ? especialidadeParaAgendar.getEspecialidadeSolicitada().getId()
                         : null;
-                cotaUnidadeService.incrementarUtilizacao(unidadeId, especialidadeId, dto.dataAgendada());
+
+                // ADMIN_UNIDADE so agenda especialidades com cota liberada para a unidade —
+                // sem cota nenhuma cadastrada, o agendamento fica bloqueado (diferente do
+                // ADMIN global e do GESTOR, que continuam sem restricao nenhuma).
+                if (adminUnidade && !cotaUnidadeService.existeCotaAtivaAplicavel(unidadeId, especialidadeId, dto.dataAgendada())) {
+                    throw new IllegalStateException(
+                            "Nao ha cota liberada para esta especialidade nesta unidade — agendamento bloqueado.");
+                }
+
+                // Rastreabilidade (V93): resolve qual cota/profissional atendeu, quando
+                // aplicavel. V100: resolvido ANTES de consumir — se houver ambiguidade
+                // (2+ cotas com profissional, sem escolha), o erro e detectado sem
+                // tocar em nenhum saldo, em vez de consumir-e-desfazer.
+                Long cotaEscolhidaId = dto.cotasSelecionadas() != null
+                        ? dto.cotasSelecionadas().get(nomeExame)
+                        : null;
+                CotaUnidade cotaAnterior = especialidadeParaAgendar.getCotaUnidade();
+                java.time.LocalTime horaAnterior = especialidadeParaAgendar.getHoraAgendada();
+
+                CotaUnidade cotaUsada = cotaUnidadeService.resolverCotaParaAgendamento(
+                        unidadeId, especialidadeId, dto.dataAgendada(), cotaEscolhidaId);
+
+                // V100: pool isolado por profissional — com cota resolvida, consome
+                // SOMENTE ela; sem cota resolvida (nenhum profissional aplicavel),
+                // consome só as cotas gerais (sem profissional).
+                cotaUnidadeService.incrementarUtilizacao(unidadeId, especialidadeId, dto.dataAgendada(),
+                        cotaUsada != null ? cotaUsada.getId() : null);
+
+                especialidadeParaAgendar.setCotaUnidade(cotaUsada);
+                especialidadeParaAgendar.setHoraAgendada(
+                        resolverHoraAgendada(cotaUsada, cotaAnterior, horaAnterior, dto, nomeExame));
+
+                // Profissional executante (V100): override do operador para este
+                // agendamento — nunca grava nada em cotaUsada (o "espelho" da cota
+                // permanece intocado).
+                Long profissionalSelecionadoId = dto.profissionaisSelecionados() != null
+                        ? dto.profissionaisSelecionados().get(nomeExame)
+                        : null;
+                if (profissionalSelecionadoId != null) {
+                    Profissional profissional = profissionalRepository.findById(profissionalSelecionadoId)
+                            .orElseThrow(() -> new EntityNotFoundException(
+                                    "Profissional nao encontrado: " + profissionalSelecionadoId));
+                    especialidadeParaAgendar.setProfissionalExecutante(profissional);
+                }
             }
 
             // 3. Atualiza o status e associa o agendamento.
@@ -231,7 +282,74 @@ public class AgendamentoService {
         solicitacaoRepository.save(solicitacao);
 
         notificarAgendamentoExternoSeAplicavel(solicitacao, agendamentoSalvo);
-        return AgendamentoSolicitacaoSimpleViewDTO.fromAgendamentoSolicitacao(agendamentoSalvo);
+
+        List<SolicitacaoEspecialidade> especialidadesAgendadas =
+                solicitacaoEspecialidadeRepository.findByAgendamentoSolicitacaoId(agendamentoSalvo.getId());
+        return AgendamentoSolicitacaoSimpleViewDTO.fromAgendamentoSolicitacao(agendamentoSalvo, especialidadesAgendadas);
+    }
+
+    /**
+     * Horario (V97) desta especialidade/paciente dentro do agendamento.
+     *
+     * <p>Cota dinamica: por padrao calcula o slot a partir de {@code
+     * quantidadeUtilizada} apos o consumo desta vaga (ja incrementada por
+     * {@code incrementarUtilizacao} na mesma transacao) — a posicao desta
+     * vaga dentro da cota. A partir da V100, o operador pode SOBRESCREVER
+     * esse calculo informando a hora manualmente ({@code
+     * dto.horariosSelecionados}); a hora informada e validada contra o
+     * periodo da cota antes de aceitar.
+     *
+     * <p>Remanejamento (excluir + recriar) na MESMA cota dinamica preserva o
+     * horario original em vez de recalcular, para nao mudar o horario ja
+     * entregue ao paciente no comprovante, quando o operador nao informa
+     * override; ao trocar de cota, recalcula.
+     *
+     * <p>Cota nao dinamica: usa a hora informada manualmente pelo operador,
+     * validada contra o periodo liberado pela cota ({@code
+     * horaInicial}/{@code horaFinal}, quando definidos); sem informar,
+     * preserva a hora anterior (remanejamento, sem revalidar — nao trava
+     * retroativamente um horario ja gravado antes desta validacao existir) ou
+     * fica nula (a tela usa o periodo da cota so como referencia).
+     */
+    private java.time.LocalTime resolverHoraAgendada(CotaUnidade cotaUsada, CotaUnidade cotaAnterior,
+            java.time.LocalTime horaAnterior, MultiAgendamentoCreateDTO dto, String nomeExame) {
+        java.time.LocalTime informada = dto.horariosSelecionados() != null
+                ? dto.horariosSelecionados().get(nomeExame)
+                : null;
+
+        if (cotaUsada != null && cotaUsada.isHorarioDinamico()) {
+            if (informada != null) {
+                validarHoraDentroDoPeriodoDaCota(cotaUsada, informada, nomeExame);
+                return informada;
+            }
+            if (horaAnterior != null && cotaAnterior != null && cotaAnterior.getId().equals(cotaUsada.getId())) {
+                return horaAnterior;
+            }
+            return cotaUnidadeService.calcularHorarioSlot(cotaUsada, cotaUsada.getQuantidadeUtilizada());
+        }
+
+        if (informada != null) {
+            validarHoraDentroDoPeriodoDaCota(cotaUsada, informada, nomeExame);
+            return informada;
+        }
+        return horaAnterior;
+    }
+
+    /**
+     * Recusa hora manual fora do periodo liberado pela cota (V99+) — sem isso
+     * o operador podia marcar um horario fora do que a cota permite, mesmo
+     * com o "espelho" mostrado na tela. Cota geral (sem horaInicial/horaFinal)
+     * continua sem restricao, como antes.
+     */
+    private void validarHoraDentroDoPeriodoDaCota(CotaUnidade cotaUsada, java.time.LocalTime informada, String nomeExame) {
+        if (cotaUsada == null || cotaUsada.getHoraInicial() == null || cotaUsada.getHoraFinal() == null) {
+            return;
+        }
+        if (informada.isBefore(cotaUsada.getHoraInicial()) || informada.isAfter(cotaUsada.getHoraFinal())) {
+            throw new IllegalArgumentException(
+                    "Hora informada (" + informada + ") fora do periodo liberado pela cota ("
+                            + cotaUsada.getHoraInicial() + "–" + cotaUsada.getHoraFinal() + ") para " + nomeExame + ".");
+        }
     }
 
     private void preencherLocal(AgendamentoSolicitacao ag, Long localAgendamentoId, io.github.regulacao_marcarcao.regulacao_marcacao.entity.enums.LocalDeAgendamentoEnum localEnum) {
@@ -336,10 +454,19 @@ public class AgendamentoService {
                 solicitacaoEspecialidadeRepository.findByAgendamentoSolicitacaoId(agendamento.getId());
 
         for (SolicitacaoEspecialidade se : agendadas) {
+            // Extrai especialidadeId e cotaUsadaId NESTA iteracao, antes de chamar
+            // estornarUtilizacao: @Modifying(clearAutomatically = true) desanexa o
+            // contexto de persistencia, e os proxies LAZY das demais entradas da
+            // lista quebrariam se lidos depois (mesma armadilha ja documentada em
+            // incrementarUtilizacao).
             Long especialidadeId = se.getEspecialidadeSolicitada() != null
                     ? se.getEspecialidadeSolicitada().getId()
                     : null;
-            cotaUnidadeService.estornarUtilizacao(unidadeId, especialidadeId, agendamento.getDataAgendada());
+            // V100: estorna exatamente a cota usada no consumo original (gravada em
+            // SolicitacaoEspecialidade.cotaUnidade), preservando o isolamento por
+            // profissional — nunca recalcula do zero, que devolveria vaga errada.
+            Long cotaUsadaId = se.getCotaUnidade() != null ? se.getCotaUnidade().getId() : null;
+            cotaUnidadeService.estornarUtilizacao(unidadeId, especialidadeId, agendamento.getDataAgendada(), cotaUsadaId);
         }
     }
 

@@ -68,7 +68,10 @@ public class AgendamentoSolicitacao {
     @Column(name = "data_criacao")
     private LocalDateTime dataCriacao;
 
-
+    /** Operador que criou este agendamento (V93). Nulo em agendamentos anteriores. */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "criado_por_id")
+    private User criadoPor;
 
 }
 

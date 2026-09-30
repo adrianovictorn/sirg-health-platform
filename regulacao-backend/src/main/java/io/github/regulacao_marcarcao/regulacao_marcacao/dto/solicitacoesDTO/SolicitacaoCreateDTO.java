@@ -8,11 +8,16 @@ import org.hibernate.validator.constraints.br.CPF;
 import io.github.regulacao_marcarcao.regulacao_marcacao.validation.UniqueCPF;
 import jakarta.validation.constraints.NotBlank;
 
+/**
+ * {@code recemNascido} (V96): quando {@code true}, {@code cpfPaciente} pode vir
+ * vazio — o RN ainda pode nao ter CPF emitido. Nao e persistido: participa so
+ * da validacao condicional de obrigatoriedade em {@code SolicitacaoService}.
+ * Quando informado, o CPF continua validado normalmente (formato e duplicidade).
+ */
 public record SolicitacaoCreateDTO(
     Long unidadeId,
     @NotBlank(message = "O nome do paciente é obrigatório.")
     String nomePaciente,
-    @NotBlank(message = "O CPF do paciente é obrigatório.")
     @CPF
     @UniqueCPF
     String cpfPaciente,
@@ -29,5 +34,6 @@ public record SolicitacaoCreateDTO(
     String observacoes,
     LocalDate dataMalote,
     List<Long> cids,
-    List<SolicitacaoEspecialidadeCreateDTO> especialidades
+    List<SolicitacaoEspecialidadeCreateDTO> especialidades,
+    boolean recemNascido
 ) { }

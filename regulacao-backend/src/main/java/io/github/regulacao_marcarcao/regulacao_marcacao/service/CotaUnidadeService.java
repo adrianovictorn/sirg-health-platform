@@ -1,9 +1,13 @@
 package io.github.regulacao_marcarcao.regulacao_marcacao.service;
 
+import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.Comparator;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -16,12 +20,15 @@ import io.github.regulacao_marcarcao.regulacao_marcacao.entity.AgendaOcorrencia;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.CotaUnidade;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.Especialidade;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.GrupoRelatorio;
+import io.github.regulacao_marcarcao.regulacao_marcacao.entity.Profissional;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.Unidade;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.enums.OrigemCotaEnum;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.enums.TipoPeriodoCota;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.CotaUnidadeRepository;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.EspecialidadeRepository;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.GrupoRelatorioRepository;
+import io.github.regulacao_marcarcao.regulacao_marcacao.repository.LocalAgendamentoRepository;
+import io.github.regulacao_marcarcao.regulacao_marcacao.repository.ProfissionalRepository;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.UnidadeRepository;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
@@ -69,6 +76,8 @@ public class CotaUnidadeService {
     private final UnidadeRepository unidadeRepository;
     private final GrupoRelatorioRepository grupoRelatorioRepository;
     private final EspecialidadeRepository especialidadeRepository;
+    private final ProfissionalRepository profissionalRepository;
+    private final LocalAgendamentoRepository localAgendamentoRepository;
 
     // ------------------------------------------------------------------
     // CRUD
@@ -127,6 +136,9 @@ public class CotaUnidadeService {
             cota.setGrupoEspecialidades(grupoEsp);
         }
 
+        aplicarEspelhoAtendimento(cota, tipo, dto.profissionalId(), dto.localAgendamentoId(),
+                dto.horarioDinamico(), dto.tempoMedioAtendimentoMinutos(), dto.horaInicial(), dto.horaFinal(),
+                dto.diasSemana());
         exigirCotaInexistente(cota, tipo, dto.periodo(), dto.dataEspecifica(), null);
 
         cota.setTipoPeriodo(tipo);
@@ -136,6 +148,124 @@ public class CotaUnidadeService {
         cota.setQuantidadeUtilizada(0);
         cota.setAtivo(true);
         return CotaUnidadeViewDTO.from(cotaRepository.save(cota));
+    }
+
+    private static final Map<DayOfWeek, String> SIGLA_DIA = Map.of(
+            DayOfWeek.MONDAY, "SEG",
+            DayOfWeek.TUESDAY, "TER",
+            DayOfWeek.WEDNESDAY, "QUA",
+            DayOfWeek.THURSDAY, "QUI",
+            DayOfWeek.FRIDAY, "SEX",
+            DayOfWeek.SATURDAY, "SAB",
+            DayOfWeek.SUNDAY, "DOM");
+
+    /** Mesmo parser de {@code AgendaService#validarDiasSemana} — duplicado de proposito (ver V95, decisao de nao acoplar os dois services). */
+    private Set<DayOfWeek> validarDiasSemana(List<String> diasSemana) {
+        Set<DayOfWeek> resultado = new LinkedHashSet<>();
+        for (String sigla : diasSemana) {
+            DayOfWeek dia = SIGLA_DIA.entrySet().stream()
+                    .filter(e -> e.getValue().equalsIgnoreCase(sigla))
+                    .map(Map.Entry::getKey)
+                    .findFirst()
+                    .orElseThrow(() -> new IllegalArgumentException(
+                            "Dia da semana invalido: '" + sigla + "'. Use SEG,TER,QUA,QUI,SEX,SAB,DOM."));
+            resultado.add(dia);
+        }
+        return resultado;
+    }
+
+    /**
+     * Espelho de atendimento (V92 + V95): profissional executante, local e
+     * horario, todos opcionais — cota geral ou de laboratorio continua sem
+     * eles. Cota DATA usa a data unica como referencia de "quando"; cota
+     * MENSAL usa {@code diasSemana} (V95) para o mesmo papel — por isso
+     * profissional/local/horario numa cota MENSAL exigem diasSemana (sem
+     * data unica, precisa de algo que diga quando o profissional atende).
+     * diasSemana sozinho (sem profissional) tambem e aceito, so para indicar
+     * os dias de atendimento gerais da cota.
+     */
+    private void aplicarEspelhoAtendimento(CotaUnidade cota, TipoPeriodoCota tipo,
+            Long profissionalId, Long localAgendamentoId, boolean horarioDinamico,
+            Integer tempoMedioAtendimentoMinutos, java.time.LocalTime horaInicial, java.time.LocalTime horaFinal,
+            List<String> diasSemana) {
+
+        boolean temEspelho = profissionalId != null || localAgendamentoId != null
+                || horarioDinamico || horaInicial != null || horaFinal != null;
+        boolean temDiasSemana = diasSemana != null && !diasSemana.isEmpty();
+
+        if (temDiasSemana && tipo != TipoPeriodoCota.MENSAL) {
+            throw new IllegalArgumentException(
+                    "Dias da semana so se aplicam a cota do tipo MENSAL (cota DATA ja e um dia especifico).");
+        }
+        if (temEspelho && tipo == TipoPeriodoCota.MENSAL && !temDiasSemana) {
+            throw new IllegalArgumentException(
+                    "Profissional, local ou horario numa cota MENSAL exigem os dias da semana de atendimento.");
+        }
+        if (temEspelho && tipo != TipoPeriodoCota.DATA && tipo != TipoPeriodoCota.MENSAL) {
+            throw new IllegalArgumentException(
+                    "Profissional, local ou horario exigem cota do tipo DATA ou MENSAL com dias da semana.");
+        }
+
+        cota.setDiasSemana(temDiasSemana
+                ? String.join(",", validarDiasSemana(diasSemana).stream().map(SIGLA_DIA::get).toList())
+                : null);
+
+        if (horarioDinamico) {
+            if (horaInicial == null || horaFinal == null) {
+                throw new IllegalArgumentException(
+                        "Horario dinamico exige hora inicial e hora final, "
+                                + "para dividir o periodo entre as vagas.");
+            }
+            if (!horaFinal.isAfter(horaInicial)) {
+                throw new IllegalArgumentException("A hora final deve ser posterior a hora inicial.");
+            }
+        } else {
+            if ((horaInicial == null) != (horaFinal == null)) {
+                throw new IllegalArgumentException(
+                        "Informe hora inicial e hora final juntas, ou nenhuma das duas.");
+            }
+            if (horaInicial != null && !horaFinal.isAfter(horaInicial)) {
+                throw new IllegalArgumentException("A hora final deve ser posterior a hora inicial.");
+            }
+        }
+
+        cota.setProfissionalExecutante(profissionalId != null
+                ? profissionalRepository.findById(profissionalId)
+                        .orElseThrow(() -> new EntityNotFoundException("Profissional nao encontrado."))
+                : null);
+        cota.setLocalAgendamento(localAgendamentoId != null
+                ? localAgendamentoRepository.findById(localAgendamentoId)
+                        .orElseThrow(() -> new EntityNotFoundException("Local de agendamento nao encontrado."))
+                : null);
+        cota.setHorarioDinamico(horarioDinamico);
+        cota.setTempoMedioAtendimentoMinutos(horarioDinamico ? tempoMedioAtendimentoMinutos : null);
+        cota.setHoraInicial(horaInicial);
+        cota.setHoraFinal(horaFinal);
+    }
+
+    /**
+     * Horario calculado para a vaga de numero {@code posicao} (1-based, a
+     * quantidadeUtilizada da cota apos o consumo desta vaga) de uma cota com
+     * horario dinamico — divide [horaInicial, horaFinal] em quantidadeTotal-1
+     * partes iguais (quantidadeTotal=1 usa horaInicial direto). Ex.: periodo
+     * 07h-11h com 5 vagas gera 07h, 08h, 09h, 10h, 11h.
+     *
+     * <p>Devolve {@code null} para cota sem horario dinamico (nada a calcular
+     * — a tela usa o periodo so como referencia e o operador informa a hora a
+     * mao, se quiser).
+     */
+    public java.time.LocalTime calcularHorarioSlot(CotaUnidade cota, int posicao) {
+        if (!cota.isHorarioDinamico() || cota.getHoraInicial() == null || cota.getHoraFinal() == null) {
+            return null;
+        }
+        int total = cota.getQuantidadeTotal() != null ? cota.getQuantidadeTotal() : 1;
+        int indice = Math.max(0, Math.min(posicao, total) - 1);
+        if (total <= 1) {
+            return cota.getHoraInicial();
+        }
+        long duracaoMinutos = java.time.Duration.between(cota.getHoraInicial(), cota.getHoraFinal()).toMinutes();
+        long passoMinutos = Math.round((double) duracaoMinutos / (total - 1));
+        return cota.getHoraInicial().plusMinutes(passoMinutos * indice);
     }
 
     /**
@@ -191,6 +321,11 @@ public class CotaUnidadeService {
                 c.getTipoPeriodo() == tipo
                 && idOuMenosUm(c.getEspecialidade()) == idOuMenosUm(nova.getEspecialidade())
                 && idOuMenosUm(c.getGrupoEspecialidades()) == idOuMenosUm(nova.getGrupoEspecialidades())
+                // V94: profissional executante entra na chave de duplicidade — permite
+                // duas cotas da mesma especialidade/data para profissionais diferentes
+                // (ex.: dois ginecologistas no mesmo dia), mantendo no maximo uma cota
+                // SEM profissional por data (mesmo comportamento de antes da V92/V94).
+                && idOuMenosUm(c.getProfissionalExecutante()) == idOuMenosUm(nova.getProfissionalExecutante())
                 && (tipo == TipoPeriodoCota.MENSAL
                         ? periodo.equals(c.getPeriodo())
                         : data.equals(c.getDataEspecifica())));
@@ -207,6 +342,10 @@ public class CotaUnidadeService {
 
     private long idOuMenosUm(GrupoRelatorio g) {
         return g != null ? g.getId() : -1L;
+    }
+
+    private long idOuMenosUm(Profissional p) {
+        return p != null ? p.getId() : -1L;
     }
 
     /**
@@ -287,6 +426,9 @@ public class CotaUnidadeService {
             cota.setGrupoEspecialidades(null);
         }
 
+        aplicarEspelhoAtendimento(cota, tipo, dto.profissionalId(), dto.localAgendamentoId(),
+                dto.horarioDinamico(), dto.tempoMedioAtendimentoMinutos(), dto.horaInicial(), dto.horaFinal(),
+                dto.diasSemana());
         exigirCotaInexistente(cota, tipo, dto.periodo(), dto.dataEspecifica(), id);
 
         cota.setTipoPeriodo(tipo);
@@ -302,17 +444,35 @@ public class CotaUnidadeService {
     // ------------------------------------------------------------------
 
     /**
-     * Valida e consome todas as cotas aplicaveis ao atendimento.
-     *
-     * Se qualquer uma estiver esgotada, a transacao e abortada e nenhum consumo
-     * persiste — inclusive os ja feitos neste laco.
+     * Valida e consome as cotas aplicaveis ao atendimento (overload sem
+     * profissional/cota especifica — ver {@link #incrementarUtilizacao(Long, Long, LocalDate, Long)}).
      */
     @Transactional
     public void incrementarUtilizacao(Long unidadeId, Long especialidadeId, LocalDate dataAtual) {
+        incrementarUtilizacao(unidadeId, especialidadeId, dataAtual, null);
+    }
+
+    /**
+     * Valida e consome a(s) cota(s) aplicaveis ao atendimento (V100: pools
+     * isolados por profissional).
+     *
+     * <p>Com {@code cotaFixadaId} informado (profissional escolhido pela unidade),
+     * consome SOMENTE aquela cota — nunca as de outros profissionais para a mesma
+     * especialidade/data. Sem {@code cotaFixadaId}, consome somente as cotas SEM
+     * profissional definido (cota "geral"), ignorando as de profissionais
+     * especificos — evita consumir "de carona" numa cota que nao foi escolhida.
+     * Entre cotas gerais concorrentes (ex.: MENSAL + DATA da mesma unidade), o
+     * comportamento e o de sempre: todas incidem juntas.
+     *
+     * <p>Se qualquer cota a consumir estiver esgotada, a transacao e abortada e
+     * nenhum consumo persiste — inclusive os ja feitos neste laco.
+     */
+    @Transactional
+    public void incrementarUtilizacao(Long unidadeId, Long especialidadeId, LocalDate dataAtual, Long cotaFixadaId) {
         if (unidadeId == null || dataAtual == null) {
             return;
         }
-        for (CotaUnidade cota : cotasAplicaveis(unidadeId, especialidadeId, dataAtual)) {
+        for (CotaUnidade cota : cotasParaConsumo(cotasAplicaveis(unidadeId, especialidadeId, dataAtual), cotaFixadaId)) {
             if (cotaRepository.consumirVaga(cota.getId()) == 0) {
                 // Nenhuma linha atualizada: saldo esgotado.
                 //
@@ -330,17 +490,126 @@ public class CotaUnidadeService {
 
     /**
      * Devolve as vagas consumidas por um agendamento cancelado, excluido ou
-     * remanejado. Sem isto a cota "vaza": o saldo nunca volta e a unidade fica
-     * travada por vagas que nao correspondem a atendimento nenhum.
+     * remanejado (overload sem profissional/cota especifica — ver
+     * {@link #estornarUtilizacao(Long, Long, LocalDate, Long)}).
      */
     @Transactional
     public void estornarUtilizacao(Long unidadeId, Long especialidadeId, LocalDate dataOriginal) {
+        estornarUtilizacao(unidadeId, especialidadeId, dataOriginal, null);
+    }
+
+    /**
+     * Devolve as vagas consumidas por um agendamento cancelado, excluido ou
+     * remanejado (V100: espelha exatamente o isolamento por profissional de
+     * {@link #incrementarUtilizacao(Long, Long, LocalDate, Long)} — {@code
+     * cotaFixadaId} deve ser o id gravado em {@code SolicitacaoEspecialidade.cotaUnidade}
+     * no momento do consumo original). Sem isto a cota "vaza": o saldo nunca
+     * volta e a unidade fica travada por vagas que nao correspondem a
+     * atendimento nenhum.
+     */
+    @Transactional
+    public void estornarUtilizacao(Long unidadeId, Long especialidadeId, LocalDate dataOriginal, Long cotaFixadaId) {
         if (unidadeId == null || dataOriginal == null) {
             return;
         }
-        for (CotaUnidade cota : cotasAplicaveis(unidadeId, especialidadeId, dataOriginal)) {
+        for (CotaUnidade cota : cotasParaConsumo(cotasAplicaveis(unidadeId, especialidadeId, dataOriginal), cotaFixadaId)) {
             cotaRepository.devolverVaga(cota.getId());
         }
+    }
+
+    /**
+     * Filtra, entre as cotas aplicaveis, quais devem ser consumidas/estornadas
+     * (V100). Ver {@link #incrementarUtilizacao(Long, Long, LocalDate, Long)}.
+     */
+    private List<CotaUnidade> cotasParaConsumo(List<CotaUnidade> aplicaveis, Long cotaFixadaId) {
+        if (cotaFixadaId != null) {
+            CotaUnidade fixada = aplicaveis.stream()
+                    .filter(c -> c.getId().equals(cotaFixadaId))
+                    .findFirst()
+                    .orElseThrow(() -> new IllegalArgumentException(
+                            "A cota escolhida (id=" + cotaFixadaId + ") nao e aplicavel a este agendamento/data."));
+            return List.of(fixada);
+        }
+        return aplicaveis.stream().filter(c -> c.getProfissionalExecutante() == null).toList();
+    }
+
+    /**
+     * Filtra, entre as cotas aplicaveis, quais contam para o saldo exibido
+     * (V100) — mesma regra de isolamento de {@link #cotasParaConsumo}, mas por
+     * profissional em vez de cota especifica (a tela sabe o profissional
+     * escolhido antes de saber o id exato da cota).
+     */
+    private List<CotaUnidade> cotasParaSaldo(List<CotaUnidade> aplicaveis, Long profissionalId) {
+        if (profissionalId != null) {
+            return aplicaveis.stream()
+                    .filter(c -> c.getProfissionalExecutante() != null
+                            && c.getProfissionalExecutante().getId().equals(profissionalId))
+                    .toList();
+        }
+        return aplicaveis.stream().filter(c -> c.getProfissionalExecutante() == null).toList();
+    }
+
+    /**
+     * True se ha ao menos uma cota ATIVA aplicavel ao caso — usado para bloquear
+     * ADMIN_UNIDADE sem cota nenhuma (ver {@code AgendamentoService}). Deliberadamente
+     * isolado de {@link #incrementarUtilizacao}: nao mexe no motor de saldo, so
+     * responde "existe cota", sem consumir nada. Uma cota existente mas esgotada
+     * ainda conta como "existe" — quem bloqueia por saldo zero e o consumo, nao esta
+     * checagem.
+     */
+    @Transactional(readOnly = true)
+    public boolean existeCotaAtivaAplicavel(Long unidadeId, Long especialidadeId, LocalDate data) {
+        if (unidadeId == null || data == null) {
+            return false;
+        }
+        return !cotasAplicaveis(unidadeId, especialidadeId, data).isEmpty();
+    }
+
+    /**
+     * Resolve qual cota sera efetivamente usada num agendamento — desde a V100,
+     * chamada ANTES de {@link #incrementarUtilizacao}, cujo resultado (id da
+     * cota, ou {@code null}) e passado adiante para decidir o que consumir
+     * (ver {@link #cotasParaConsumo}): com profissional resolvido, so aquela
+     * cota; sem profissional, so as cotas gerais. Tambem fica registrada em
+     * {@code SolicitacaoEspecialidade.cotaUnidade} para auditoria (ex.: provar
+     * qual dos dois profissionais atendeu o paciente). Nao consome nada por si
+     * so — e {@code @Transactional(readOnly = true)}.
+     *
+     * <p>Sem cota com profissional aplicavel: devolve {@code null} (nada a rastrear).
+     * Uma so: resolve sozinho. Mais de uma: exige {@code cotaEscolhidaId} explicito —
+     * a unidade precisa escolher qual profissional atende, nao ha como adivinhar.
+     */
+    @Transactional(readOnly = true)
+    public CotaUnidade resolverCotaParaAgendamento(Long unidadeId, Long especialidadeId, LocalDate data,
+            Long cotaEscolhidaId) {
+        List<CotaUnidade> aplicaveis = cotasAplicaveis(unidadeId, especialidadeId, data);
+
+        if (cotaEscolhidaId != null) {
+            return aplicaveis.stream()
+                    .filter(c -> c.getId().equals(cotaEscolhidaId))
+                    .findFirst()
+                    .orElseThrow(() -> new IllegalArgumentException(
+                            "A cota escolhida (id=" + cotaEscolhidaId + ") nao e aplicavel a este agendamento."));
+        }
+
+        List<CotaUnidade> comProfissional = aplicaveis.stream()
+                .filter(c -> c.getProfissionalExecutante() != null)
+                .toList();
+
+        if (comProfissional.size() > 1) {
+            throw new IllegalArgumentException(
+                    "Ha mais de uma cota com profissional para esta especialidade e data — "
+                            + "escolha uma informando cotaUnidadeId.");
+        }
+        return comProfissional.isEmpty() ? null : comProfissional.get(0);
+    }
+
+    /** Cotas aplicaveis a um atendimento, expostas para a unidade ver o "espelho" antes de agendar. */
+    @Transactional(readOnly = true)
+    public List<CotaUnidadeViewDTO> listarCotasAplicaveis(Long unidadeId, Long especialidadeId, LocalDate data) {
+        return cotasAplicaveis(unidadeId, especialidadeId, data).stream()
+                .map(CotaUnidadeViewDTO::from)
+                .toList();
     }
 
     /**
@@ -363,13 +632,23 @@ public class CotaUnidadeService {
                         .map(e -> e.getGrupoRelatorio() != null ? e.getGrupoRelatorio().getId() : null)
                         .orElse(null);
 
-        return cotaRepository.buscarCotasAplicaveis(
+        List<CotaUnidade> encontradas = cotaRepository.buscarCotasAplicaveis(
                 unidadeId,
                 grupoUnidadesId,
                 especialidadeId,
                 grupoEspecialidadesId,
                 data.format(PERIODO_MENSAL),
                 data);
+
+        // V95: cota MENSAL com dias da semana marcados so incide nos dias
+        // marcados — sem isso, ela apareceria "aplicavel" em qualquer dia do
+        // mes, mesmo fora do dia de atendimento do profissional. Cota MENSAL
+        // sem diasSemana (o "geral" de sempre) continua sem filtro nenhum.
+        DayOfWeek diaDaSemana = data.getDayOfWeek();
+        return encontradas.stream()
+                .filter(c -> c.getDiasSemana() == null || c.getDiasSemana().isBlank()
+                        || validarDiasSemana(List.of(c.getDiasSemana().split(","))).contains(diaDaSemana))
+                .toList();
     }
 
     private String mensagemEsgotada(CotaUnidade cota) {
@@ -429,17 +708,29 @@ public class CotaUnidadeService {
     }
 
     /**
-     * Saldo efetivamente disponivel para a unidade na especialidade/periodo.
-     *
-     * Considera todas as cotas incidentes: o saldo real e o <b>menor</b> entre
-     * elas, porque basta uma estar esgotada para bloquear o agendamento. Sem cota
-     * configurada, devolve saldo ilimitado (quantidades nulas + disponivel = true),
-     * que e o comportamento historico.
+     * Saldo efetivamente disponivel para a unidade na especialidade/periodo
+     * (overload sem profissional — ver {@link #consultarSaldo(Long, Long, String, Long)}).
      */
     @Transactional(readOnly = true)
     public CotaUnidadeSaldoDTO consultarSaldo(Long unidadeId, Long especialidadeId, String periodo) {
+        return consultarSaldo(unidadeId, especialidadeId, periodo, null);
+    }
+
+    /**
+     * Saldo efetivamente disponivel para a unidade na especialidade/periodo
+     * (V100: isolado por profissional quando informado — mesma regra de
+     * {@link #cotasParaSaldo}).
+     *
+     * Considera todas as cotas incidentes (do profissional, ou as gerais, sem
+     * misturar): o saldo real e o <b>menor</b> entre elas, porque basta uma
+     * estar esgotada para bloquear o agendamento. Sem cota aplicavel, devolve
+     * saldo ilimitado (quantidades nulas + disponivel = true), que e o
+     * comportamento historico.
+     */
+    @Transactional(readOnly = true)
+    public CotaUnidadeSaldoDTO consultarSaldo(Long unidadeId, Long especialidadeId, String periodo, Long profissionalId) {
         LocalDate referencia = LocalDate.parse(periodo + "-01");
-        List<CotaUnidade> cotas = cotasAplicaveis(unidadeId, especialidadeId, referencia);
+        List<CotaUnidade> cotas = cotasParaSaldo(cotasAplicaveis(unidadeId, especialidadeId, referencia), profissionalId);
 
         if (cotas.isEmpty()) {
             Unidade unidade = unidadeRepository.findById(unidadeId)
@@ -484,7 +775,18 @@ public class CotaUnidadeService {
     }
 
     /**
-     * Saldo para uma DATA especifica, em vez do periodo mensal inteiro.
+     * Saldo para uma DATA especifica (overload sem profissional — ver
+     * {@link #consultarSaldoPorData(Long, Long, LocalDate, Long)}).
+     */
+    @Transactional(readOnly = true)
+    public CotaUnidadeSaldoDTO consultarSaldoPorData(Long unidadeId, Long especialidadeId, LocalDate data) {
+        return consultarSaldoPorData(unidadeId, especialidadeId, data, null);
+    }
+
+    /**
+     * Saldo para uma DATA especifica, em vez do periodo mensal inteiro (V100:
+     * isolado por profissional quando informado — mesma regra de {@link
+     * #cotasParaSaldo}).
      *
      * {@link #consultarSaldo} sempre usa o dia 1 do mes como referencia para
      * {@link #cotasAplicaveis}, entao uma cota do tipo DATA so "casaria" se fosse
@@ -494,8 +796,8 @@ public class CotaUnidadeService {
      * para o saldo do mes, que continua exibido).
      */
     @Transactional(readOnly = true)
-    public CotaUnidadeSaldoDTO consultarSaldoPorData(Long unidadeId, Long especialidadeId, LocalDate data) {
-        List<CotaUnidade> cotas = cotasAplicaveis(unidadeId, especialidadeId, data);
+    public CotaUnidadeSaldoDTO consultarSaldoPorData(Long unidadeId, Long especialidadeId, LocalDate data, Long profissionalId) {
+        List<CotaUnidade> cotas = cotasParaSaldo(cotasAplicaveis(unidadeId, especialidadeId, data), profissionalId);
         String referencia = data.toString();
 
         if (cotas.isEmpty()) {

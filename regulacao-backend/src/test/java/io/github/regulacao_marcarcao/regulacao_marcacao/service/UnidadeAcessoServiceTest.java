@@ -136,4 +136,36 @@ class UnidadeAcessoServiceTest {
     void chamadaSemAutenticacaoNaoQuebra() {
         assertThat(service.contextoDe((String) null).isGlobal()).isTrue();
     }
+
+    // ==================================================================
+    // isAdminUnidade (V93) — usado para bloquear agendamento sem cota
+    // especificamente para ADMIN_UNIDADE, sem incluir GESTOR (que tambem e
+    // "global" para isAcessoGlobal, mas nao deve ser bloqueado).
+    // ==================================================================
+
+    @Test
+    void isAdminUnidadeEVerdadeiroParaOPerfilAdminUnidade() {
+        dadoUsuario(usuario(Roles.ADMIN_UNIDADE, 7L));
+
+        assertThat(service.isAdminUnidade(CPF)).isTrue();
+    }
+
+    @Test
+    void isAdminUnidadeEFalsoParaAdminGlobal() {
+        dadoUsuario(usuario(Roles.ADMIN, null));
+
+        assertThat(service.isAdminUnidade(CPF)).isFalse();
+    }
+
+    @Test
+    void isAdminUnidadeEFalsoParaGestor() {
+        dadoUsuario(usuario(Roles.GESTOR, null));
+
+        assertThat(service.isAdminUnidade(CPF)).isFalse();
+    }
+
+    @Test
+    void isAdminUnidadeEFalsoSemCpf() {
+        assertThat(service.isAdminUnidade(null)).isFalse();
+    }
 }

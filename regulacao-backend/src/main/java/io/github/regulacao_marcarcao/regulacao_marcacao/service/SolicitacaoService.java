@@ -79,6 +79,14 @@ public class SolicitacaoService {
 
     @Transactional
     public SolicitacaoViewDTO createSolicitacao(SolicitacaoCreateDTO dto, String callerCpf) {
+        // CPF obrigatorio, exceto para recem-nascido (RN) sem CPF emitido ainda (V96).
+        // O formato (@CPF) e a duplicidade (@UniqueCPF), quando o CPF vem preenchido,
+        // continuam sendo Bean Validation no DTO — so a obrigatoriedade virou condicional.
+        if (!dto.recemNascido() && (dto.cpfPaciente() == null || dto.cpfPaciente().isBlank())) {
+            throw new IllegalArgumentException(
+                    "O CPF do paciente é obrigatório, exceto para recém-nascido sem CPF emitido.");
+        }
+
         Solicitacao solicitacao = new Solicitacao();
 
         // Vincula a Unidade. Operador restrito a uma unidade sempre grava na própria
@@ -152,6 +160,18 @@ public class SolicitacaoService {
 
         // Impede editar solicitação de outra unidade via chamada direta à API.
         exigirAcessoASolicitacao(solicitacao, callerCpf);
+
+        // Completa o CPF de um paciente RN cadastrado sem ele (V96). Vazio/nulo =
+        // não mexe no CPF já gravado (nunca apaga por omissão do campo no PUT).
+        if (dto.cpfPaciente() != null && !dto.cpfPaciente().isBlank()) {
+            String cpfLimpo = dto.cpfPaciente().replaceAll("\\D", "");
+            boolean duplicado = solicitacaoRepository.findByCpfPacienteSemPonto(cpfLimpo).stream()
+                    .anyMatch(s -> !s.getId().equals(id));
+            if (duplicado) {
+                throw new IllegalStateException("CPF já cadastrado, consulte o módulo Paciente");
+            }
+            solicitacao.setCpfPaciente(dto.cpfPaciente());
+        }
 
         solicitacao.setNomePaciente(dto.nomePaciente());
         solicitacao.setCns(dto.cns());
@@ -489,6 +509,7 @@ public class SolicitacaoService {
         novaEspecialidade.setDataColeta(dto.dataColeta());
         novaEspecialidade.setStatus(dto.status());
         novaEspecialidade.setPrioridade(dto.prioridade());
+        novaEspecialidade.setCriadoPor(userRepository.findByCpf(callerCpf).orElse(null));
 
         solicitacao.getEspecialidades().add(novaEspecialidade);
 

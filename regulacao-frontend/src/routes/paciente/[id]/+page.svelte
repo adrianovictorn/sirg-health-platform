@@ -23,6 +23,14 @@
         prioridade: string;
         dataDeCadastro: DataArray;
         agendamentoId?: number | null;
+        // V92/V93 — profissional que ATENDE (distinto do solicitante acima), local
+        // e horario vindos da cota, e autoria de quem operou o sistema.
+        profissionalExecutanteNome?: string | null;
+        localExecucaoNome?: string | null;
+        horaInicial?: string | null;
+        horaFinal?: string | null;
+        adicionadoPorNome?: string | null;
+        agendadoPorNome?: string | null;
     };
 
     let todosOsCids = $state<CID[]>([]); // Guarda a lista completa de CIDs para o dropdown
@@ -222,7 +230,9 @@
 
     const payload = {
         nomePaciente,
-        cpfPaciente,
+        // null, nao string vazia: @CPF do Bean Validation trata "" como CPF
+        // invalido — só null é "ausente, não mexe no CPF já gravado".
+        cpfPaciente: cpfPaciente ? (cpfPaciente.replace(/\D/g, '') || null) : null,
         cns,
         telefone,
         nomePai,
@@ -502,6 +512,13 @@
                     <input type="text" bind:value={nomePaciente} class="w-full border-gray-300 rounded-md shadow-sm focus:border-emerald-500 focus:ring-emerald-500" />
                 </div>
                 <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">CPF</label>
+                    <input type="text" bind:value={cpfPaciente} placeholder="Sem CPF (ex.: recém-nascido)" class="w-full border-gray-300 rounded-md shadow-sm focus:border-emerald-500 focus:ring-emerald-500" />
+                    {#if !cpfPaciente}
+                        <p class="text-xs text-gray-500 mt-1">Paciente sem CPF cadastrado — informe aqui quando emitido.</p>
+                    {/if}
+                </div>
+                <div>
                     <label class="block text-sm font-medium text-gray-700 mb-1">Cartão do SUS</label>
                     <input type="text" bind:value={cns} class="w-full border-gray-300 rounded-md shadow-sm focus:border-emerald-500 focus:ring-emerald-500" />
                 </div>
@@ -692,7 +709,21 @@
                                             <ul class="space-y-2">
                                                 {#each ag.itensAgendados as h (h.id)}
                                                     <li class="flex justify-between items-center text-sm">
-                                                        <span class="text-gray-800">{getNomeEspecialidade(h.especialidadeSolicitada)}</span>
+                                                        <div class="flex flex-col gap-0.5">
+                                                            <span class="text-gray-800">{getNomeEspecialidade(h.especialidadeSolicitada)}</span>
+                                                            {#if h.profissionalExecutanteNome}
+                                                                <span class="text-xs text-indigo-700">Atendido por: {h.profissionalExecutanteNome}</span>
+                                                            {/if}
+                                                            {#if h.horaInicial}
+                                                                <span class="text-xs text-gray-500">Horário: {h.horaInicial.slice(0,5)} às {h.horaFinal ? h.horaFinal.slice(0,5) : '-'}</span>
+                                                            {/if}
+                                                            {#if h.localExecucaoNome}
+                                                                <span class="text-xs text-gray-500">Local: {h.localExecucaoNome}</span>
+                                                            {/if}
+                                                            {#if h.agendadoPorNome}
+                                                                <span class="text-xs text-gray-400">Agendado por: {h.agendadoPorNome}</span>
+                                                            {/if}
+                                                        </div>
                                                         <div class="flex items-center space-x-3">
                                                             <span class="px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-100 text-blue-800">AGENDADO</span>
                                                             <button onclick={() => removerEspecialidade(h.id)} aria-label="Remover especialidade"
@@ -726,6 +757,9 @@
                                             <span class="text-gray-800 font-medium">{getNomeEspecialidade(e.especialidadeSolicitada)}</span>
                                             {#if e.profissionalNome}
                                                 <span class="text-xs text-gray-500">Solicitante: {e.profissionalNome}</span>
+                                            {/if}
+                                            {#if e.adicionadoPorNome}
+                                                <span class="text-xs text-gray-400">Adicionado por: {e.adicionadoPorNome}</span>
                                             {/if}
                                         </div>
                                         <div class="grid grid-cols-1 m-auto justify-center">

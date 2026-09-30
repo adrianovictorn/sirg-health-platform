@@ -88,9 +88,21 @@ public class CotaUnidadeController {
             @RequestParam Long unidadeId,
             @RequestParam(required = false) Long especialidadeId,
             @RequestParam String periodo,
+            @RequestParam(required = false) Long profissionalId,
             Authentication authentication) {
         exigirAcesso(authentication, unidadeId);
-        return ResponseEntity.ok(cotaService.consultarSaldo(unidadeId, especialidadeId, periodo));
+        return ResponseEntity.ok(cotaService.consultarSaldo(unidadeId, especialidadeId, periodo, profissionalId));
+    }
+
+    /** Cotas aplicaveis (com profissional/horario/local, quando houver) para a unidade montar o "espelho" ao agendar. */
+    @GetMapping("/aplicaveis")
+    public ResponseEntity<List<CotaUnidadeViewDTO>> listarCotasAplicaveis(
+            @RequestParam Long unidadeId,
+            @RequestParam(required = false) Long especialidadeId,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate data,
+            Authentication authentication) {
+        exigirAcesso(authentication, unidadeId);
+        return ResponseEntity.ok(cotaService.listarCotasAplicaveis(unidadeId, especialidadeId, data));
     }
 
     @GetMapping("/saldo-data")
@@ -98,9 +110,10 @@ public class CotaUnidadeController {
             @RequestParam Long unidadeId,
             @RequestParam(required = false) Long especialidadeId,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate data,
+            @RequestParam(required = false) Long profissionalId,
             Authentication authentication) {
         exigirAcesso(authentication, unidadeId);
-        return ResponseEntity.ok(cotaService.consultarSaldoPorData(unidadeId, especialidadeId, data));
+        return ResponseEntity.ok(cotaService.consultarSaldoPorData(unidadeId, especialidadeId, data, profissionalId));
     }
 
     @PutMapping("/{id}")
