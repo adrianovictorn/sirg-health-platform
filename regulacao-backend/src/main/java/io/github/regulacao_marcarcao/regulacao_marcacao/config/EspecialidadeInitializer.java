@@ -22,16 +22,21 @@ public class EspecialidadeInitializer implements ApplicationRunner {
     @Transactional
     public void run(ApplicationArguments args) {
         // 1) Seed tabela de especialidades a partir do enum existente (garantir que já existem)
-        for (EspecialidadesEnum e : EspecialidadesEnum.values()) {
+       for (EspecialidadesEnum e : EspecialidadesEnum.values()) {
             final String codigo = e.name();
-            especialidadeRepository.findByCodigo(codigo).orElseGet(() -> {
+            final String nome = e.getDescricao();
+
+            if (especialidadeRepository.findByCodigo(codigo).isEmpty()
+                    && especialidadeRepository.findByNome(nome).isEmpty()) {
+
                 Especialidade esp = new Especialidade();
                 esp.setCodigo(codigo);
-                esp.setNome(e.getDescricao());
+                esp.setNome(nome);
                 esp.setCategoria(e.getCategoria());
                 esp.setAtivo(true);
-                return especialidadeRepository.save(esp);
-            });
+
+                especialidadeRepository.save(esp);
+            }
         }
 
         // 2) Migrar dados legados de solicitacao_especialidade: preencher especialidade_id onde estiver nulo
