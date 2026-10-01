@@ -67,7 +67,9 @@ public record AgendamentoSolicitacaoSimpleViewDTO(
 
     private static String resolveLocal(AgendamentoSolicitacao agendamento) {
         if (agendamento.getLocalAgendamento() != null) {
-            return agendamento.getLocalAgendamento().getNomeLocal();
+            var local = agendamento.getLocalAgendamento();
+            var cidade = local.getCidade();
+            return cidade != null ? local.getNomeLocal() + " - " + cidade.getNomeCidade() : local.getNomeLocal();
         }
         if (agendamento.getLocalAgendado() != null) {
             return agendamento.getLocalAgendado().name().replace('_', ' ');

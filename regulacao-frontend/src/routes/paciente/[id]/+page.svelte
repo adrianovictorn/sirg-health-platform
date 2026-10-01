@@ -6,6 +6,7 @@
     import { listarEspecialidadesCatalogo } from '$lib/especialidadesApi.js';
     import RoleBasedMenu from "$lib/RoleBasedMenu.svelte";
     import { listarPactos, publicarSolicitacao } from '$lib/pactosApi.js';
+    import { gerarComprovantePDF } from '$lib/comprovantePdf';
 
     interface CID{
         id: number
@@ -302,6 +303,26 @@
         } catch (e: any) {
             alert(`Erro na requisição: ${e.message}`);
         }
+    }
+
+    async function baixarComprovante(ag: any, itens: EspecialidadeItem[]) {
+        if (!solicitacao) return;
+        const unico = itens.length === 1 ? itens[0] : null;
+        await gerarComprovantePDF({
+            solicitacaoId: solicitacao.id,
+            nomePaciente: solicitacao.nomePaciente,
+            cpfPaciente: solicitacao.cpfPaciente,
+            unidadeNome: solicitacao.unidadeNome,
+            cns: solicitacao.cns,
+            examesNomes: itens.map((h) => getNomeEspecialidade(h.especialidadeSolicitada)),
+            dataAgendada: ag.dataAgendada,
+            turno: ag.turno,
+            localLabel: ag.localAgendado ? ag.localAgendado.replace(/_/g, ' ') : 'Local não informado',
+            observacoes: ag.observacoes || '',
+            profissionalNome: unico?.profissionalExecutanteNome ?? null,
+            agendadoPorNome: itens.find((h) => h.agendadoPorNome)?.agendadoPorNome ?? null,
+            horarioInfo: unico?.horaInicial ? `${unico.horaInicial.slice(0, 5)}${unico.horaFinal ? ` às ${unico.horaFinal.slice(0, 5)}` : ''}` : null
+        });
     }
 
     async function removerAgendamento(agendamentoId: number) {
@@ -646,6 +667,13 @@
                                                     <p class="text-base font-medium text-gray-900">{formatarData(ag.dataAgendada)}</p>
                                                 </div>
                                             </div>
+                                            <button onclick={() => baixarComprovante(ag, ag.itensRealizados)} aria-label="Baixar comprovante"
+                                                    class="p-2 rounded-full text-gray-400 hover:bg-emerald-100 hover:text-emerald-700 transition-colors flex-shrink-0"
+                                                    title="Baixar comprovante de agendamento">
+                                                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3" />
+                                                </svg>
+                                            </button>
                                         </div>
                                         <div class="p-4">
                                             <h4 class="text-sm font-semibold text-gray-700 mb-2">Itens Realizados:</h4>
@@ -696,13 +724,22 @@
                                                     <p class="text-base font-medium text-gray-900">{formatarData(ag.dataAgendada)}</p>
                                                 </div>
                                             </div>
-                                            <button onclick={() => removerAgendamento(ag.id)} aria-label="Remover agendamento"
-                                                    class="p-2 rounded-full text-gray-400 hover:bg-red-100 hover:text-red-600 transition-colors flex-shrink-0"
-                                                    title="Remover Agendamento e Itens Associados">
-                                                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                                                    <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                                </svg>
-                                            </button>
+                                            <div class="flex items-center gap-1 flex-shrink-0">
+                                                <button onclick={() => baixarComprovante(ag, ag.itensAgendados)} aria-label="Baixar comprovante"
+                                                        class="p-2 rounded-full text-gray-400 hover:bg-emerald-100 hover:text-emerald-700 transition-colors"
+                                                        title="Baixar comprovante de agendamento">
+                                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3" />
+                                                    </svg>
+                                                </button>
+                                                <button onclick={() => removerAgendamento(ag.id)} aria-label="Remover agendamento"
+                                                        class="p-2 rounded-full text-gray-400 hover:bg-red-100 hover:text-red-600 transition-colors"
+                                                        title="Remover Agendamento e Itens Associados">
+                                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                                    </svg>
+                                                </button>
+                                            </div>
                                         </div>
                                         <div class="p-4">
                                             <h4 class="text-sm font-semibold text-gray-700 mb-2">Itens Agendados:</h4>
