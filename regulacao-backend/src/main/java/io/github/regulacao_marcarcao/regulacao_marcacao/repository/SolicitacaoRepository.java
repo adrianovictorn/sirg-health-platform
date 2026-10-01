@@ -77,10 +77,16 @@ public interface SolicitacaoRepository extends JpaRepository<Solicitacao, Long>,
             or lower(s.nomePaciente) like concat('%', lower(:termo), '%')
             or lower(s.cpfPaciente) like concat('%', lower(:termo), '%')
           )
+          and (
+            :unidadeId is null
+            or u.id = :unidadeId
+            or u.id is null
+          )
     """)
     Page<SolicitacaoResumoDTO> buscarPendentesPorTermo(
         @Param("statusPendentes") List<StatusDaMarcacao> statusPendentes,
         @Param("termo") String termo,
+        @Param("unidadeId") Long unidadeId,
         Pageable pageable
     );
 

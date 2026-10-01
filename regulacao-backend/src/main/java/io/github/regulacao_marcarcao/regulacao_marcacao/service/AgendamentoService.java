@@ -6,6 +6,7 @@ import java.util.stream.Collectors;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -61,11 +62,25 @@ public class AgendamentoService {
             .collect(Collectors.toList());
     }
 
+    /**
+     * RF01: para ADMIN_UNIDADE, restringe a busca a propria unidade de
+     * lotacao (orfas sem unidade continuam visiveis). ADMIN e os demais
+     * perfis nao sao afetados — recebem a lista completa, como antes.
+     */
     @Transactional(readOnly = true)
-    public Page<SolicitacaoResumoDTO> buscarPendentesParaAutoComplete(String termo, Pageable pageable){
+    public Page<SolicitacaoResumoDTO> buscarPendentesParaAutoComplete(String termo, Pageable pageable, String callerCpf){
         var statusPendentes = List.of(StatusDaMarcacao.RETORNO, StatusDaMarcacao.RETORNO_POLICLINICA, StatusDaMarcacao.AGUARDANDO, StatusDaMarcacao.GEL);
 
-        return solicitacaoRepository.buscarPendentesPorTermo(statusPendentes, termo, pageable);
+        Long unidadeId = null;
+        if (unidadeAcessoService.isAdminUnidade(callerCpf)) {
+            try {
+                unidadeId = unidadeAcessoService.contextoDe(callerCpf).id();
+            } catch (AccessDeniedException e) {
+                return Page.empty(pageable);
+            }
+        }
+
+        return solicitacaoRepository.buscarPendentesPorTermo(statusPendentes, termo, unidadeId, pageable);
     }
 
     /**

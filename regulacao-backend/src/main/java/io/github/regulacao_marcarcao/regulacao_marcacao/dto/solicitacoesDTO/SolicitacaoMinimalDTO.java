@@ -4,25 +4,30 @@ import java.time.LocalDate;
 import java.util.List;
 
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.AgendamentoSolicitacao;
-import io.github.regulacao_marcarcao.regulacao_marcacao.entity.enums.UsfEnum;
+import io.github.regulacao_marcarcao.regulacao_marcacao.entity.Solicitacao;
 
 public record  SolicitacaoMinimalDTO(
     String nomePaciente,
     String cpfPaciente,
     LocalDate dataNascimento,
-    UsfEnum usfOrigem,
+    String usfOrigem,
     List<String> especialidades
 ) {
 
-    public static SolicitacaoMinimalDTO fromEntity(AgendamentoSolicitacao solicitacao){
+    public static SolicitacaoMinimalDTO fromEntity(AgendamentoSolicitacao agendamentoSolicitacao){
 
-        List<String> listarDeEspecialidades = solicitacao.getEspecialidades().stream().map(e->e.getEspecialidadeSolicitada().getNome()).toList();
+        Solicitacao solicitacao = agendamentoSolicitacao.getSolicitacao();
+        List<String> listarDeEspecialidades = agendamentoSolicitacao.getEspecialidades().stream().map(e->e.getEspecialidadeSolicitada().getNome()).toList();
+
+        String usfOuUnidade = solicitacao.getUnidade() != null
+                ? solicitacao.getUnidade().getNome()
+                : (solicitacao.getUsfOrigem() != null ? solicitacao.getUsfOrigem().toString() : null);
 
         return new SolicitacaoMinimalDTO(
-            solicitacao.getSolicitacao().getNomePaciente(),
-            solicitacao.getSolicitacao().getCpfPaciente(), 
-            solicitacao.getSolicitacao().getDataNascimento(),
-            solicitacao.getSolicitacao().getUsfOrigem(),
+            solicitacao.getNomePaciente(),
+            solicitacao.getCpfPaciente(),
+            solicitacao.getDataNascimento(),
+            usfOuUnidade,
             listarDeEspecialidades
             );
     }

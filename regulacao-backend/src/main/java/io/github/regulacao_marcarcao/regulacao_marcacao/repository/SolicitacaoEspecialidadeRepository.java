@@ -93,31 +93,33 @@ public interface SolicitacaoEspecialidadeRepository extends JpaRepository<Solici
 
 
     @Query(value = """
-            SELECT 
+            SELECT
                 s.id AS solicitacaoId,
                 s.nome_paciente as nomePaciente,
-                s.cpf_paciente as cpfPaciente, 
+                s.cpf_paciente as cpfPaciente,
                 s.cns as cns,
                 s.datanascimento as dataNascimento,
-                s.usf_origem as usfOrigem,
+                COALESCE(u.nome, s.usf_origem) as usfOrigem,
                 ag.data_agendada as dataAgendada,
                 ag.turno as turno,
                 STRING_AGG(DISTINCT e.nome, ', ' ORDER BY e.nome) as especialidades
-            FROM solicitacao s 
+            FROM solicitacao s
             JOIN solicitacao_especialidade se ON se.solicitacao_id = s.id
             JOIN especialidade e ON e.id = se.especialidade_id
             JOIN agendamento_solicitacao ag ON ag.id = se.agendamento_id
             JOIN grupo_relatorio gr ON gr.id = e.grupo_relatorio_id
-            WHERE gr.codigo = :grupo 
+            LEFT JOIN unidade u ON u.id = s.unidade_id
+            WHERE gr.codigo = :grupo
                 AND ag.data_agendada = :data
                 AND se.status = 'AGENDADO'
             GROUP BY
                 s.id,
-                s.nome_paciente, 
-                s.cpf_paciente, 
+                s.nome_paciente,
+                s.cpf_paciente,
                 s.cns,
-                s.datanascimento, 
+                s.datanascimento,
                 s.usf_origem,
+                u.nome,
                 ag.data_agendada,
                 ag.turno
             """, nativeQuery = true)
@@ -138,29 +140,31 @@ public interface SolicitacaoEspecialidadeRepository extends JpaRepository<Solici
 
 
             @Query(value = """
-                    SELECT 
+                    SELECT
                         s.id AS solicitacaoId,
-                        s.nome_paciente AS nomePaciente, 
-                        s.cpf_paciente AS cpfPaciente, 
+                        s.nome_paciente AS nomePaciente,
+                        s.cpf_paciente AS cpfPaciente,
                         s.cns AS cns,
                         s.datanascimento AS dataNascimento,
-                        s.usf_origem AS usfOrigem,
+                        COALESCE(u.nome, s.usf_origem) AS usfOrigem,
                         s.data_malote as dataMalote,
                         se.status AS status,
                         se.prioridade AS prioridade,
                         STRING_AGG(DISTINCT e.nome, ', ' ORDER BY e.nome) as especialidades
-                    FROM solicitacao s 
+                    FROM solicitacao s
                     JOIN solicitacao_especialidade se ON se.solicitacao_id = s.id
                     JOIN especialidade e ON e.id = se.especialidade_id
                     JOIN grupo_relatorio gr ON gr.id = e.grupo_relatorio_id
-                    WHERE gr.codigo = :grupo and (se.status = 'AGUARDANDO' OR se.status = 'RETORNO' OR se.status = 'RETORNO_POLICLINICA') 
+                    LEFT JOIN unidade u ON u.id = s.unidade_id
+                    WHERE gr.codigo = :grupo and (se.status = 'AGUARDANDO' OR se.status = 'RETORNO' OR se.status = 'RETORNO_POLICLINICA')
                     GROUP BY
                         s.id,
-                        s.nome_paciente, 
-                        s.cpf_paciente, 
+                        s.nome_paciente,
+                        s.cpf_paciente,
                         s.cns,
-                        s.datanascimento, 
+                        s.datanascimento,
                         s.usf_origem,
+                        u.nome,
                         s.data_malote,
                         se.status,
                         se.prioridade

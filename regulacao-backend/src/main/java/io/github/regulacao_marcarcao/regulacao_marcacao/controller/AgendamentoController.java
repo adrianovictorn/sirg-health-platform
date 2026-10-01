@@ -43,10 +43,11 @@ public class AgendamentoController {
      * Lista todas as solicitações pendentes para agendamento.
      */
     @GetMapping("/pendentes/buscar")
-    public ResponseEntity<Page<SolicitacaoResumoDTO>> buscarPendentes(@RequestParam(required = false, defaultValue = "") String termo, @RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "20") int size ) {
-        
+    public ResponseEntity<Page<SolicitacaoResumoDTO>> buscarPendentes(@RequestParam(required = false, defaultValue = "") String termo, @RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "20") int size, Authentication authentication) {
+
         PageRequest pageable = PageRequest.of(page, size);
-        return ResponseEntity.ok(agendamentoService.buscarPendentesParaAutoComplete(termo, pageable));
+        String callerCpf = authentication != null ? authentication.getName() : null;
+        return ResponseEntity.ok(agendamentoService.buscarPendentesParaAutoComplete(termo, pageable, callerCpf));
     }
 
     /**

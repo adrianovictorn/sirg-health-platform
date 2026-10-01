@@ -113,7 +113,7 @@ public class ExcelService {
         centerStyle.cloneStyleFrom(dataStyle);
         centerStyle.setAlignment(HorizontalAlignment.CENTER);
 
-        String[] headers = {"NOME", "CPF", "CNS", "NASCIMENTO", "USF", "ESPECIALIDADE/EXAME", "DATA MALOTE", "PRIORIDADE"};
+        String[] headers = {"NOME", "CPF", "CNS", "NASCIMENTO", "USF/Unidade Origem", "ESPECIALIDADE/EXAME", "DATA MALOTE", "PRIORIDADE"};
         int numberOfColumns = headers.length;
 
         // --- CABEÇALHO COM BRASÃO CENTRALIZADO ---
@@ -123,7 +123,7 @@ public class ExcelService {
             CreationHelper helper = workbook.getCreationHelper();
             Drawing<?> drawing = sheet.createDrawingPatriarch();
             ClientAnchor anchor = helper.createClientAnchor();
-            
+
             anchor.setCol1(4);
             anchor.setRow1(0);
             anchor.setCol2(5);
@@ -277,7 +277,7 @@ public class ExcelService {
         centerStyle.cloneStyleFrom(dataStyle);
         centerStyle.setAlignment(HorizontalAlignment.CENTER);
 
-        String[] headers = {"NOME", "CPF", "CNS", "NASCIMENTO", "USF", "ESPECIALIDADE/EXAME", "AGENDAMENTO", "TURNO"};
+        String[] headers = {"NOME", "CPF", "CNS", "NASCIMENTO", "USF/Unidade Origem", "ESPECIALIDADE/EXAME", "AGENDAMENTO", "TURNO"};
         int numberOfColumns = headers.length;
 
 

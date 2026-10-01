@@ -123,12 +123,12 @@ public class RelatorioProducaoService {
         Row header = sheet.createRow(headerRowIndex++);
         
         String[] titulos = {
-            "Paciente", 
-            "CPF", 
-            "USF", 
-            "Data Agendada", 
-            "Turno", 
-            "Local Agendado", 
+            "Paciente",
+            "CPF",
+            "USF/Unidade Origem",
+            "Data Agendada",
+            "Turno",
+            "Local Agendado",
             "Especialidades"};
 
 
@@ -152,8 +152,8 @@ public class RelatorioProducaoService {
 
             String[] items = {
                 item.solicitacaoSimpleViewDTO().nomePaciente(),
-                item.solicitacaoSimpleViewDTO().cpfPaciente(), 
-                item.solicitacaoSimpleViewDTO().usfOrigem().toString(), 
+                item.solicitacaoSimpleViewDTO().cpfPaciente(),
+                item.solicitacaoSimpleViewDTO().usfOrigem() != null ? item.solicitacaoSimpleViewDTO().usfOrigem() : "",
                 item.agendamentoSolicitacaoSimpleViewDTO().dataAgendada(),
                 item.agendamentoSolicitacaoSimpleViewDTO().turno(),
                 item.agendamentoSolicitacaoSimpleViewDTO().localAgendado(),
