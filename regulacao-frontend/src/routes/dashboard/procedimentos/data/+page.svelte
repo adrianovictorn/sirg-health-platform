@@ -2,6 +2,8 @@
     import { goto } from "$app/navigation";
     import { getApi } from "$lib/api";
     import Content from "$lib/Content.svelte";
+    import AgendaDiaConsolidada from "$lib/AgendaDiaConsolidada.svelte";
+    import { user } from "$lib/stores/auth.js";
     import { onMount } from "svelte";
 
     type formPacientePorGrupo = {
@@ -40,6 +42,16 @@
     let unidadeEscolhidaPeloAdmin = $state<number | null>(null)
 
     const ehAdmin = $derived(() => meRole === 'ADMIN')
+
+    // ADMIN abre na visao consolidada (todas as unidades); "Por unidade" mantem a
+    // tela anterior, com o seletor de unidade e os cartoes por grupo.
+    //
+    // A visao consolidada segue o perfil ATIVO (token), nao o principal devolvido
+    // por users/me: o backend so libera /api/agenda-dia para ROLE_ADMIN ativo, e
+    // um ADMIN atuando com outro perfil nao pode ver o modo nem disparar a chamada.
+    let modoAdmin = $state<'consolidado' | 'unidade'>('consolidado')
+    const perfilAtivoAdmin = $derived($user?.role === 'ADMIN')
+    const mostrarConsolidado = $derived(() => !carregandoPerfil && perfilAtivoAdmin && modoAdmin === 'consolidado')
     const unidadeIdEfetiva = $derived(() => ehAdmin() ? unidadeEscolhidaPeloAdmin : minhaUnidadeId)
 
     async function carregarPerfilEUnidades() {
@@ -171,6 +183,23 @@
 </script>
 <Content titleH1="Quantitativos por Data" page="/dashboard/procedimentos" >
 
+    {#if !carregandoPerfil && perfilAtivoAdmin}
+        <div class="mx-5 mt-5 inline-flex rounded-lg border border-gray-300 bg-white p-1" role="group" aria-label="Modo de visualização">
+            <button type="button" aria-pressed={modoAdmin === 'consolidado'} onclick={() => (modoAdmin = 'consolidado')}
+                class={`rounded-md px-3 py-1.5 text-sm font-medium ${modoAdmin === 'consolidado' ? 'bg-emerald-700 text-white' : 'text-gray-700 hover:bg-gray-100'}`}>
+                Todas as unidades
+            </button>
+            <button type="button" aria-pressed={modoAdmin === 'unidade'} onclick={() => (modoAdmin = 'unidade')}
+                class={`rounded-md px-3 py-1.5 text-sm font-medium ${modoAdmin === 'unidade' ? 'bg-emerald-700 text-white' : 'text-gray-700 hover:bg-gray-100'}`}>
+                Por unidade
+            </button>
+        </div>
+    {/if}
+
+    {#if mostrarConsolidado()}
+        <AgendaDiaConsolidada />
+    {:else}
+
     {#if !carregandoPerfil && ehAdmin()}
         <div class="mx-5 mt-5 p-4 rounded-lg bg-white border border-gray-200 flex items-center gap-3">
             <label for="unidade-select" class="text-sm font-semibold text-gray-700">Unidade:</label>
@@ -236,4 +265,5 @@
             </div>
             {/each}
     </div>
+    {/if}
 </Content>
