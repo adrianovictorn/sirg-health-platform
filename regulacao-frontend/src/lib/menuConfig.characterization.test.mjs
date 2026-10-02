@@ -92,6 +92,25 @@ test("COORD_TRANSPORTE nao ganha acesso as rotas administrativas de unidade/prof
   assert.ok(!hrefs.has("/admin/cotas"));
 });
 
+// "Agenda do Dia" (/dashboard/procedimentos/data) e a tela de quantitativos por
+// unidade (v1.6), usada pelos operadores das unidades. A visao consolidada
+// (todas as unidades) e embutida nessa mesma pagina e restrita ao ADMIN ativo
+// DENTRO da pagina — o item de menu nao pode sumir das unidades por causa dela.
+test('Perfis clinicos e de unidade continuam vendo "Agenda do Dia" (/dashboard/procedimentos/data)', () => {
+  for (const role of [
+    "ADMIN",
+    "ADMIN_UNIDADE",
+    "RECEPCAO",
+    "ENFERMEIRO",
+    "MEDICO",
+  ]) {
+    assert.ok(
+      hrefsVisiveis(role).has("/dashboard/procedimentos/data"),
+      `${role} deveria ver /dashboard/procedimentos/data`,
+    );
+  }
+});
+
 test("Nenhuma role ve /liberacao-agenda depois de oculta (ADMIN incluido)", () => {
   for (const role of ["ADMIN", ...OUTRAS_ROLES, "COORD_TRANSPORTE"]) {
     assert.ok(

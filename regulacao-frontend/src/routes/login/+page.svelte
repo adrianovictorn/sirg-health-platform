@@ -8,7 +8,7 @@
   let cpf = ''; // Trocamos 'email' por 'cpf'
   let password = '';
   let error = '';
-  let errorType = ''; // 'disabled' | 'credentials' | 'generic'
+  let errorType = ''; // 'disabled' | 'credentials' | 'indisponivel' | 'conexao' | 'generic'
   let loading = false;
   let showPassword = false;
 
@@ -19,13 +19,25 @@ async function handleLogin() {
   errorType = '';
 
   try {
-    const response = await postApi('auth/login', { cpf, password });
+    let response;
+    try {
+      response = await postApi('auth/login', { cpf, password });
+    } catch {
+      // RF07/RF08: sem resposta nenhuma do servidor — falha de rede, distinta
+      // de credencial incorreta ou servidor fora do ar (esses respondem).
+      errorType = 'conexao';
+      throw new Error('Falha de conexão. Verifique sua internet e tente novamente.');
+    }
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
       if (response.status === 403) {
         errorType = 'disabled';
         throw new Error(errorData.message || 'Conta desativada. Entre em contato com o administrador.');
+      }
+      if (response.status === 503) {
+        errorType = 'indisponivel';
+        throw new Error(errorData.message || 'Servidor indisponível. Tente novamente em instantes.');
       }
       errorType = 'credentials';
       throw new Error(errorData.message || 'CPF ou senha inválidos.');
@@ -36,6 +48,9 @@ async function handleLogin() {
     goto('/home');
   } catch (e: any) {
     error = e.message;
+    if (!errorType) {
+      errorType = 'generic';
+    }
   } finally {
     loading = false;
   }

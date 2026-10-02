@@ -5,6 +5,7 @@
   import { formatarHora } from '$lib/cotas.js';
   import RoleBasedMenu from '$lib/RoleBasedMenu.svelte';
   import UserMenu from '$lib/UserMenu.svelte';
+  import LoadingSpinner from '$lib/LoadingSpinner.svelte';
   import { user as usuarioLogado } from '$lib/stores/auth.js';
   import { get } from 'svelte/store';
   import { gerarComprovantePDF } from '$lib/comprovantePdf';
@@ -61,6 +62,8 @@
   let solicitacoes = $state<SolicitacaoResumo[]>([]);
   let isLoading = $state(true);
   let error = $state('');
+  let buscandoSolicitacoes = $state(false);
+  let buscaSequencia = 0;
 
 
 
@@ -494,6 +497,8 @@
   async function carregarSolicitacoesPendentes(termo: string = '', page = 0) {
     error = '';
     paginaAtual = page;
+    const minhaSequencia = ++buscaSequencia;
+    buscandoSolicitacoes = true;
     try {
       const params = new URLSearchParams({
         termo,
@@ -507,11 +512,18 @@
         throw new Error(`Erro ao carregar as solicitações pendentes (${response.status}): ${detalhe || response.statusText}`);
       }
       const pageJson = await response.json();
-      solicitacoes = pageJson.content ?? pageJson;
+      if (minhaSequencia === buscaSequencia) {
+        solicitacoes = pageJson.content ?? pageJson;
+      }
     } catch (e: any) {
-      error = e.message;
       console.error('Falha ao buscar pendentes', e);
-      alert(e.message || 'Erro ao carregar as solicitações pendentes.');
+      if (minhaSequencia === buscaSequencia) {
+        error = 'Não foi possível buscar as solicitações. Verifique sua conexão e tente novamente.';
+      }
+    } finally {
+      if (minhaSequencia === buscaSequencia) {
+        buscandoSolicitacoes = false;
+      }
     }
   }
 
@@ -862,10 +874,10 @@
 
     <main class="flex-1 overflow-auto p-6">
       {#if isLoading}
-        <div class="text-center p-10">
-          <p class="text-lg text-gray-600">Carregando solicitações...</p>
+        <div class="bg-white rounded-lg shadow-lg p-6">
+          <LoadingSpinner mensagem="Carregando solicitações..." />
         </div>
-      {:else if error}
+      {:else if error && solicitacoes.length === 0}
         <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative" role="alert">
           <strong class="font-bold">Ocorreu um erro:</strong>
           <span class="block sm:inline">{error}</span>
@@ -890,8 +902,14 @@
                       class="border border-gray-300 rounded-lg p-2 w-full focus:ring-emerald-500 focus:border-emerald-500"
                     />
 
-                    {#if comboboxAberto && solicitacoesFiltradas.length > 0}
-                      <ul class="absolute z-10 w-full bg-white border border-gray-200 rounded-lg mt-1 max-h-60 overflow-y-auto shadow-lg">
+                    {#if comboboxAberto}
+                      <ul
+                        class="absolute z-10 w-full bg-white border border-gray-200 rounded-lg mt-1 max-h-60 overflow-y-auto shadow-lg transition-opacity"
+                        class:opacity-50={buscandoSolicitacoes}
+                      >
+                        {#if solicitacoesFiltradas.length === 0 && !buscandoSolicitacoes}
+                          <li class="p-3 text-sm text-gray-500">Nenhuma solicitação encontrada.</li>
+                        {/if}
                         {#each solicitacoesFiltradas as s (s.id)}
                           <li class="p-0">
                             <button
@@ -904,8 +922,16 @@
                           </li>
                         {/each}
                       </ul>
+                      {#if buscandoSolicitacoes}
+                        <div class="absolute z-20 w-full flex justify-center pt-4 pointer-events-none">
+                          <LoadingSpinner tamanho={18} inline />
+                        </div>
+                      {/if}
                     {/if}
 </div>
+              {#if error && solicitacoes.length > 0}
+                <p class="text-sm text-red-600 mt-1" role="alert">{error}</p>
+              {/if}
             </div>
 
             {#if solicitacaoDetalhe}

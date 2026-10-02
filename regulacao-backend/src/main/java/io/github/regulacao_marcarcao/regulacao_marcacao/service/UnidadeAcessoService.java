@@ -148,6 +148,21 @@ public class UnidadeAcessoService {
     }
 
     /**
+     * Exige o perfil ADMIN exato (perfil ativo na requisição). Mais estreito que
+     * {@link #isAcessoGlobal}, que também inclui GESTOR e usuários sem unidade de
+     * lotação — usado em telas que concentram dados nominais de todas as unidades.
+     */
+    @Transactional(readOnly = true)
+    public void exigirAdminGlobal(String cpf) {
+        boolean admin = cpf != null && userRepository.findByCpf(cpf)
+                .map(user -> perfilEfetivo(user) == Roles.ADMIN)
+                .orElse(false);
+        if (!admin) {
+            throw new AccessDeniedException("Acesso restrito ao administrador.");
+        }
+    }
+
+    /**
      * Garante que o chamador pode operar sobre a unidade informada.
      * Usado nos endpoints que recebem um {@code unidadeId} vindo do request —
      * sem isto, um ADMIN_UNIDADE poderia ler dados de outra unidade trocando o
