@@ -300,7 +300,12 @@ public class AgendamentoService {
 
         List<SolicitacaoEspecialidade> especialidadesAgendadas =
                 solicitacaoEspecialidadeRepository.findByAgendamentoSolicitacaoId(agendamentoSalvo.getId());
-        return AgendamentoSolicitacaoSimpleViewDTO.fromAgendamentoSolicitacao(agendamentoSalvo, especialidadesAgendadas);
+        // consumirVaga limpa o contexto de persistencia (clearAutomatically): agendamentoSalvo
+        // e seus proxies LAZY (ex.: localAgendamento.cidade) ficam desanexados e estourariam
+        // LazyInitializationException ao montar a resposta. Recarrega antes de ler.
+        AgendamentoSolicitacao agendamentoAtual = agendamentoRepository.findById(agendamentoSalvo.getId())
+                .orElse(agendamentoSalvo);
+        return AgendamentoSolicitacaoSimpleViewDTO.fromAgendamentoSolicitacao(agendamentoAtual, especialidadesAgendadas);
     }
 
     /**
