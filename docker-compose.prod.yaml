@@ -65,6 +65,8 @@ services:
       APP_MUNICIPIO_QUEUE_NAME:         ${MUNICIPIO_QUEUE}
       APP_UPLOAD_DIR:             /app/uploads/profile-pictures
       CORS_ALLOWED_ORIGINS:       ${APP_ORIGIN}
+      APP_WHATSAPP_VERIFY_TOKEN:  ${WHATSAPP_VERIFY_TOKEN:-}
+      APP_WHATSAPP_APP_SECRET:    ${WHATSAPP_APP_SECRET:-}
     volumes:
       - uploads_data:/app/uploads
     networks:

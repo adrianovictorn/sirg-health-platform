@@ -4,6 +4,19 @@
 
 ### Novidades
 
+- **Webhook do WhatsApp (`GET` e `POST /api/webhooks/whatsapp`).**
+  Primeira fatia da integracao com a WhatsApp Business Cloud API (Meta): a rota que o painel da
+  Meta pede em "URL de callback". Publica, sem JWT — autenticada pelo verify token (GET) e pela
+  assinatura HMAC-SHA256 do corpo com o App Secret (POST).
+
+  **So valida e registra em log.** Nada e gravado, nenhuma mensagem e enviada ou respondida.
+  O log leva apenas tipo do evento, id da conta e quantidades — nunca telefone, nome ou texto.
+  Lembretes, aviso de agendamento e atendimento de duvidas ficam para as proximas fatias.
+
+  **Desligado por padrao.** Liga por instancia com `WHATSAPP_VERIFY_TOKEN` e
+  `WHATSAPP_APP_SECRET` no `.env` da VPS; sem os dois a rota responde 404 e o resto do sistema
+  nao muda. Passo a passo em `INFRA.md`. Sem migration.
+
 - **Fila de Espera (`/paciente/fila`, `GET /api/fila-espera`).**
   Lista os pacientes com pedidos aguardando marcacao, **uma linha por paciente**, com os pedidos
   agrupados na linha. Filtros combinaveis: tipo (Consulta / Especialidade ou Exame ou

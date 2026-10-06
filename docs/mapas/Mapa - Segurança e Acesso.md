@@ -42,7 +42,9 @@ Métodos: `contextoDe(cpf)`, `isAcessoGlobal(cpf)`, `exigirAcessoA(cpf, unidadeI
 
 ## Rotas públicas
 
-`/api/auth/**`, `/api/transparencia/**`, `/api/solicitacoes/public/**`, `/api/agendamentos/pendentes/**`, `/api/registry/**`, `/api/uploads/**`, Swagger e Actuator. Todo o resto exige autenticação. CORS listado em `CorsConfig.java`.
+`/api/auth/**`, `/api/transparencia/**`, `/api/solicitacoes/public/**`, `/api/registry/**`, `/api/uploads/**`, Swagger e Actuator. Todo o resto exige autenticação. CORS listado em `CorsConfig.java`.
+
+`GET`/`POST /api/webhooks/whatsapp` também não usa JWT, mas não é aberta: quem chama é a Meta, autenticada por verify token e por assinatura HMAC do corpo (`WhatsAppWebhookService`). Sem as variáveis da instância, responde `404`. Ver [[0002-webhook-whatsapp-por-instancia]].
 
 ---
 

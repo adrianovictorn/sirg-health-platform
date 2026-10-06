@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -132,6 +133,20 @@ class SegurancaEndpointsIT {
     @DisplayName("A consulta publica do paciente por CPF continua aberta")
     void consultaPublicaContinuaAberta() throws Exception {
         mockMvc.perform(get("/api/solicitacoes/public/cpf/00000000000")).andExpect(status().isOk());
+    }
+
+    @Test
+    @DisplayName("Webhook do WhatsApp: publico so em GET/POST do caminho exato, e 404 se desligado")
+    void webhookWhatsAppSoAbreOCaminhoExato() throws Exception {
+        // Sem app.whatsapp.* configurado (padrao): a rota e alcancavel sem login, mas recusa.
+        assertThat(statusDe(get("/api/webhooks/whatsapp"))).isEqualTo(404);
+        assertThat(statusDe(post("/api/webhooks/whatsapp")
+                .contentType(MediaType.APPLICATION_JSON).content("{}"))).isEqualTo(404);
+
+        assertThat(statusDe(put("/api/webhooks/whatsapp"))).isIn(401, 403);
+        assertThat(statusDe(delete("/api/webhooks/whatsapp"))).isIn(401, 403);
+        assertThat(statusDe(get("/api/webhooks/outra"))).isIn(401, 403);
+        assertThat(statusDe(get("/api/webhooks/whatsapp/extra"))).isIn(401, 403);
     }
 
     @Test

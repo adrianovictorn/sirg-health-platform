@@ -55,6 +55,11 @@ public class SecurityConfiguration {
                 auth.requestMatchers("/api/registry/**").permitAll();
                 auth.requestMatchers(HttpMethod.POST, "/api/registry/pactos/*/join-requests").permitAll();
                 auth.requestMatchers("/api/uploads/**").permitAll();
+                // Webhook da Meta (WhatsApp): sem JWT porque quem autentica e o verify
+                // token (GET) e a assinatura HMAC do corpo (POST), no proprio controller.
+                // Caminho exato e so esses dois metodos — nao ampliar para /api/webhooks/**.
+                auth.requestMatchers(HttpMethod.GET, "/api/webhooks/whatsapp").permitAll();
+                auth.requestMatchers(HttpMethod.POST, "/api/webhooks/whatsapp").permitAll();
                 // 3. Todas as outras requisições exigem autenticação
                 auth.anyRequest().authenticated();
             })

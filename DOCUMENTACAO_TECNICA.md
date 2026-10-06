@@ -1367,6 +1367,40 @@ profissionais é por arquivo (§7.10d), alimentada pela *Extração de dados de 
 portal do CNES. O webservice SOAP exige credencial que a SMS precisa solicitar ao DATASUS; se
 ela vier, troca-se só o adaptador que alimenta a lista — a tela não muda.
 
+### 7.10g Webhook do WhatsApp (`/webhooks/whatsapp`)
+
+| Método | Endpoint | Role Mínima | Descrição |
+|---|---|---|---|
+| GET | `/webhooks/whatsapp?hub.mode=&hub.verify_token=&hub.challenge=` | Pública | Verificação de inscrição da Meta — devolve o `hub.challenge` em `text/plain` |
+| POST | `/webhooks/whatsapp` | Pública | Recebe os eventos da WhatsApp Business Cloud API (mensagens e status de entrega) |
+
+Rota chamada **pela Meta**, não pelo frontend. Não usa JWT: a autenticação é o verify token no
+GET e, no POST, o header `X-Hub-Signature-256` — HMAC-SHA256 do corpo com o App Secret,
+comparado em tempo constante (`WhatsAppWebhookService`).
+
+| Situação | Resposta |
+|---|---|
+| Falta `app.whatsapp.verify-token` ou `app.whatsapp.app-secret` (qualquer um dos dois) | `404` nos dois métodos |
+| Verify token errado/ausente, ou `hub.mode` ≠ `subscribe` | `403` sem corpo |
+| Assinatura ausente, malformada ou que não confere | `403` sem corpo, nenhum efeito |
+| Autenticado | `200` (GET devolve o challenge; POST devolve vazio) |
+
+**Nesta fatia o evento só é validado e resumido em log** — nada é gravado, nenhuma mensagem é
+enviada ou respondida. O resumo leva apenas o tipo do objeto, o id da conta, o campo alterado e
+as quantidades de mensagens e de status. **Nunca** telefone, nome, texto nem id de mensagem: o
+payload carrega dado de paciente.
+
+**Duas armadilhas:**
+
+1. **O corpo é recebido como `byte[]`, não `String` nem DTO.** O projeto usa `@EnableWebMvc`, que
+   deixa o conversor de `String` em ISO-8859-1; decodificar antes de calcular o HMAC muda os
+   bytes e a assinatura falha só em mensagens com acento ou emoji.
+2. **Sem exceção e sem `GlobalExceptionHandler`.** O controller devolve o status direto. Um 500
+   aqui faria forward para `/error`, que exige login, e a Meta veria um 403 opaco e entraria em
+   retentativa.
+
+Decisões e o que ficou de fora: `docs/decisoes/0002-webhook-whatsapp-por-instancia.md`.
+
 ---
 
 ### 7.8 Módulo Federado
@@ -1632,6 +1666,8 @@ O frontend suporta geração de documentos sem servidor:
 - `/swagger-ui/**`, `/v3/api-docs/**`
 - `/api/registry/**`
 - `/api/uploads/**`
+- `GET` e `POST` em `/api/webhooks/whatsapp` — caminho exato; autenticada por verify token e
+  assinatura HMAC, não por JWT (§7.10g). Não ampliar para `/api/webhooks/**`.
 
 **Todas as demais rotas:** requerem autenticação.
 
@@ -1901,6 +1937,8 @@ spring.rabbitmq.password=guest
 app.municipio.nome-identificador=CONCEICAO_DO_ALMEIDA
 app.municipio.queue-name=fila_conceicao_do_almeida
 app.notifications.ignore-self-executor=false
+app.whatsapp.verify-token=
+app.whatsapp.app-secret=
 ```
 
 **Variáveis a alterar em produção:**
@@ -1908,6 +1946,8 @@ app.notifications.ignore-self-executor=false
 - `api.security.token.secret` — chave forte (mínimo 32 caracteres aleatórios)
 - `spring.rabbitmq.*` — broker de produção
 - `app.municipio.*` — identificador único por instância
+- `app.whatsapp.*` — opcionais; vazias desligam o webhook do WhatsApp (§7.10g). Em produção vêm
+  de `WHATSAPP_VERIFY_TOKEN` e `WHATSAPP_APP_SECRET` no `.env` da VPS. Nunca commitar valor real.
 
 ---
 

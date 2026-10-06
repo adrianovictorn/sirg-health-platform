@@ -156,7 +156,41 @@ MUNICIPIO_NOME_DISPLAY=São Felipe
 MUNICIPIO_BRASAO=brasao_saofelipe.png
 APP_ORIGIN=https://sirgsaofelipe.com
 NGINX_DOMAIN=sirgsaofelipe.com
+WHATSAPP_VERIFY_TOKEN=<gere um valor aleatório — não copie este texto>
+WHATSAPP_APP_SECRET=<chave secreta do app, copiada do painel da Meta>
 ```
+
+### Webhook do WhatsApp (Meta)
+
+Opcional e por instância. Hoje só **São Felipe** usa; Conceição do Almeida fica sem as duas
+variáveis e a rota responde `404`.
+
+| Campo no painel da Meta | Valor |
+|---|---|
+| URL de callback | `https://sirgsaofelipe.com/api/webhooks/whatsapp` |
+| Verificar token | o mesmo valor de `WHATSAPP_VERIFY_TOKEN` |
+
+- `WHATSAPP_VERIFY_TOKEN` — você inventa (string longa e aleatória) e repete no painel.
+- `WHATSAPP_APP_SECRET` — "Chave secreta do app", em *Configurações do app → Básico* no painel
+  Meta for Developers. É o que assina cada evento; sem ele nenhum POST é aceito.
+
+**Ordem para ligar** (a Meta reenvia por dias os eventos que não recebem `200`, então o
+servidor precisa estar pronto antes de salvar no painel):
+
+1. Deploy da versão que contém a rota.
+2. Incluir as duas variáveis no `.env` da VPS.
+3. `docker compose -f docker-compose.prod.yaml up -d` para recriar o backend.
+4. Conferir `docker logs sirg_backend | grep WhatsApp` → `Webhook do WhatsApp ligado.`
+5. Só então preencher a URL e o token no painel, clicar em **Verificar e salvar** e assinar o
+   campo `messages`.
+
+**Se o painel recusar:** `404` = variáveis não chegaram ao container (precisam estar no `.env`
+**e** listadas em `backend.environment` do `docker-compose.prod.yaml`); `403` = verify token
+diferente do configurado.
+
+O nginx não precisa de mudança: `location /api/` já encaminha a rota. O access log do nginx
+grava a query string do GET de verificação, então o verify token aparece em
+`docker logs sirg_nginx` — troque-o depois se isso incomodar.
 
 ---
 
