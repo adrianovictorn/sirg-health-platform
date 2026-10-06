@@ -111,6 +111,43 @@ test('Perfis clinicos e de unidade continuam vendo "Agenda do Dia" (/dashboard/p
   }
 });
 
+// "Pacientes" virou grupo com "Pacientes" e "Fila de Espera". Quem via
+// /paciente continua vendo; GESTOR entra so para a fila (leitura); quem nao
+// tem acesso a nenhum dos dois nao ve o grupo.
+test('Grupo "Pacientes": clinicos e unidade veem /paciente e /paciente/fila', () => {
+  for (const role of [
+    "ADMIN",
+    "ADMIN_UNIDADE",
+    "RECEPCAO",
+    "ENFERMEIRO",
+    "MEDICO",
+  ]) {
+    const hrefs = hrefsVisiveis(role);
+    assert.ok(hrefs.has("/paciente"), `${role} deveria ver /paciente`);
+    assert.ok(
+      hrefs.has("/paciente/fila"),
+      `${role} deveria ver /paciente/fila`,
+    );
+  }
+});
+
+test('Grupo "Pacientes": GESTOR ve so a Fila de Espera', () => {
+  const hrefs = hrefsVisiveis("GESTOR");
+  assert.ok(hrefs.has("/paciente/fila"));
+  assert.ok(!hrefs.has("/paciente"));
+});
+
+test('Grupo "Pacientes": USER, PACIENTE e COORD_TRANSPORTE nao veem nenhum dos dois', () => {
+  for (const role of ["USER", "PACIENTE", "COORD_TRANSPORTE"]) {
+    const hrefs = hrefsVisiveis(role);
+    assert.ok(!hrefs.has("/paciente"), `${role} nao deveria ver /paciente`);
+    assert.ok(
+      !hrefs.has("/paciente/fila"),
+      `${role} nao deveria ver /paciente/fila`,
+    );
+  }
+});
+
 test("Nenhuma role ve /liberacao-agenda depois de oculta (ADMIN incluido)", () => {
   for (const role of ["ADMIN", ...OUTRAS_ROLES, "COORD_TRANSPORTE"]) {
     assert.ok(

@@ -10,6 +10,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
@@ -82,7 +83,10 @@ public class AgendamentoController {
         return ResponseEntity.ok(agendamentos);
     }
 
+    // Remover agendamento estorna cota: restrito a quem opera a ficha. Sem isto
+    // o GESTOR (que so consulta) conseguia chamar o endpoint direto pela API.
     @DeleteMapping("/{id}")
+    @PreAuthorize("hasAnyRole('ADMIN', 'ADMIN_UNIDADE', 'USER', 'RECEPCAO', 'ENFERMEIRO', 'MEDICO', 'COORD_TRANSPORTE')")
     public ResponseEntity<Void> deletarAgendamento(@PathVariable Long id, Authentication authentication){
         agendamentoService.deleteAgendamento(id, authentication != null ? authentication.getName() : null);
         return ResponseEntity.noContent().build();

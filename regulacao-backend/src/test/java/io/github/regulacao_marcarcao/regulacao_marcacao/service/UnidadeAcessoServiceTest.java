@@ -168,4 +168,82 @@ class UnidadeAcessoServiceTest {
     void isAdminUnidadeEFalsoSemCpf() {
         assertThat(service.isAdminUnidade(null)).isFalse();
     }
+
+    // ------------------------------------------------------------------
+    // escopoDeListagem: listagens e contagens nominais (fila, dashboard)
+    // ------------------------------------------------------------------
+
+    @Test
+    void escopoDeListagemEGlobalParaAdminEGestor() {
+        dadoUsuario(usuario(Roles.ADMIN, null));
+        assertThat(service.escopoDeListagem(CPF, null).isGlobal()).isTrue();
+
+        // Lotacao do GESTOR e so administrativa — nao estreita o que ele ve.
+        dadoUsuario(usuario(Roles.GESTOR, 7L));
+        assertThat(service.escopoDeListagem(CPF, null).isGlobal()).isTrue();
+    }
+
+    @Test
+    void escopoDeListagemGlobalPodeFiltrarPorUmaUnidade() {
+        dadoUsuario(usuario(Roles.ADMIN, null));
+
+        var escopo = service.escopoDeListagem(CPF, 9L);
+
+        assertThat(escopo.isGlobal()).isFalse();
+        assertThat(escopo.isSemAcesso()).isFalse();
+        assertThat(escopo.unidadeId()).isEqualTo(9L);
+    }
+
+    @Test
+    void escopoDeListagemComLotacaoEAPropriaUnidade() {
+        for (Roles role : new Roles[] {Roles.ADMIN_UNIDADE, Roles.RECEPCAO, Roles.ENFERMEIRO, Roles.MEDICO,
+                Roles.USER, Roles.COORD_TRANSPORTE}) {
+            dadoUsuario(usuario(role, 7L));
+
+            var escopo = service.escopoDeListagem(CPF, null);
+
+            assertThat(escopo.isGlobal()).as("%s", role).isFalse();
+            assertThat(escopo.unidadeId()).as("%s", role).isEqualTo(7L);
+            assertThat(service.escopoDeListagem(CPF, 7L).unidadeId()).as("%s", role).isEqualTo(7L);
+        }
+    }
+
+    @Test
+    void escopoDeListagemNegaPedidoDeOutraUnidade() {
+        dadoUsuario(usuario(Roles.RECEPCAO, 7L));
+
+        assertThatThrownBy(() -> service.escopoDeListagem(CPF, 8L))
+                .isInstanceOf(AccessDeniedException.class);
+    }
+
+    /**
+     * Diferenca deliberada em relacao a contextoDe: sem lotacao nao vira global.
+     * ADMIN_UNIDADE tambem cai aqui sem excecao — a tela mostra vazio e o aviso.
+     */
+    @Test
+    void escopoDeListagemSemLotacaoFicaSemAcesso() {
+        for (Roles role : new Roles[] {Roles.ADMIN_UNIDADE, Roles.RECEPCAO, Roles.ENFERMEIRO, Roles.MEDICO,
+                Roles.USER}) {
+            dadoUsuario(usuario(role, null));
+
+            assertThat(service.escopoDeListagem(CPF, null).isSemAcesso()).as("%s", role).isTrue();
+            assertThat(service.escopoDeListagem(CPF, 7L).isSemAcesso()).as("%s", role).isTrue();
+        }
+    }
+
+    /** Excecao decidida pelo usuario: transporte opera o municipio inteiro. */
+    @Test
+    void escopoDeListagemMantemCoordTransporteSemLotacaoGlobal() {
+        dadoUsuario(usuario(Roles.COORD_TRANSPORTE, null));
+
+        assertThat(service.escopoDeListagem(CPF, null).isGlobal()).isTrue();
+    }
+
+    @Test
+    void escopoDeListagemFalhaFechadaSemCpfOuSemUsuario() {
+        assertThat(service.escopoDeListagem(null, null).isSemAcesso()).isTrue();
+
+        when(userRepository.findByCpf(CPF)).thenReturn(Optional.empty());
+        assertThat(service.escopoDeListagem(CPF, null).isSemAcesso()).isTrue();
+    }
 }

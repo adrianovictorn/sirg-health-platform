@@ -1175,10 +1175,46 @@ Pacto 1──N PactoJoinRequest
 | DELETE | `/solicitacoes/{id}` | Remove |
 | GET | `/solicitacoes/pacientes` | Lista pacientes com solicitações |
 | GET | `/solicitacoes/resumo-dashboard` | Contagem por status |
-| GET | `/solicitacoes/pacientes/gel` | Lista pacientes com status GEL |
+| GET | `/solicitacoes/pacientes/gel` | Lista pacientes com status GEL (escopo de unidade) |
+| GET | `/solicitacoes/buscar/por/status/usf` | Pendentes — lista do card (escopo de unidade; `unidadeId` de outra unidade → 403) |
+| GET | `/solicitacoes/buscar/por/agendados` · `/concluido` · `/urgentes` | Listas dos cards (escopo de unidade) |
+| GET | `/solicitacoes/buscar/{id}` · `/buscar/por/nome/cpf` | Apoio de `/agendar` e `/exames` (exigem perfil) |
 | GET | `/solicitacoes/public/**` | Acesso público (sem auth) |
 
+`/solicitacoes/resumo-dashboard` devolve os totais por **pedido** (`total*`, `pendentesPorUnidade`)
+e por **paciente** (`pacientesPendentes`, `pacientesUrgentes`, `pacientesPendentesPorUnidade`). Os
+cards que abrem a Fila de Espera exibem os campos por paciente, que saem da mesma query da fila —
+por isso o número do card é o total da lista aberta.
+
 **Filtros disponíveis (query params):** `nome`, `cpf`, `status`, `especialidade`, `usfOrigem`, `dataInicio`, `dataFim`, `prioridade`
+
+### 7.3b Fila de Espera (`/fila-espera`)
+
+| Método | Endpoint | Descrição |
+|---|---|---|
+| GET | `/fila-espera` | Pacientes aguardando marcação, uma linha por paciente (paginado) |
+
+**Perfis:** ADMIN, ADMIN_UNIDADE, GESTOR, RECEPCAO, ENFERMEIRO, MEDICO. Somente leitura.
+
+**Query params (todos opcionais):** `especialidadeId`, `categoria` (`ESPECIALIDADE_MEDICA` |
+`EXAME_OU_PROCEDIMENTO`), `status` (`AGUARDANDO`, `RETORNO`, `RETORNO_POLICLINICA`; padrão: os
+três), `prioridade` (`NORMAL`, `URGENTE`, `EMERGENCIA`), `unidadeId` (só ADMIN/GESTOR),
+`esperaMinimaDias`, `dataDe`, `dataAte`, `ordem` (`ANTIGOS` padrão | `RECENTES`), `termo` (busca
+livre por nome, CPF ou CNS; máx. 100 caracteres), `page`, `size` (máx. 50). Listas aceitam valores
+separados por vírgula. Valor inválido → 400.
+
+**Regras:**
+- O filtro é por **pedido**: o paciente entra se tiver ao menos um pedido que bate, a linha traz
+  só esses pedidos e `diasEspera` é o do mais antigo entre eles.
+- Escopo decidido por `UnidadeAcessoService.escopoDeListagem` (ver 9.4c), nunca pelo parâmetro.
+- Solicitação sem unidade (`unidade_id` nulo) só aparece para ADMIN/GESTOR, com `unidadeId` nulo.
+- GEL não entra na fila (`status=GEL` → 400).
+- A espera vem de `solicitacao_especialidade.data_cadastro`: pedidos anteriores à V62 têm a data
+  da migração e pedido em RETORNO conta desde o pedido original.
+- `termo` é o único predicado do **paciente** (nome, CPF, CNS), não do pedido. Nome: "contém",
+  sem diferenciar maiúsculas. CPF e CNS: só pelos dígitos, parcial, e apenas quando o termo é
+  feito de dígitos e pontuação ("Maria 2" procura no nome, não em todo CPF que contenha 2).
+  `%` e `_` são texto comum (a query usa `strpos`, não `LIKE`). A tela não põe o termo na URL.
 
 ---
 
@@ -1537,7 +1573,8 @@ Exibido no header de todas as páginas autenticadas. Mostra foto de perfil ou in
 | `/dashboard/unidade` | Dashboard da unidade | Todos |
 | `/dashboard/procedimentos/data` | Agenda do dia | Todos |
 | `/paciente` | Lista de pacientes/solicitações | Clínicos, Admin |
-| `/paciente/[id]` | Detalhe da solicitação — alerta de cadastro incompleto | Clínicos, Admin, ADMIN_UNIDADE |
+| `/paciente/fila` | Fila de Espera: pacientes aguardando marcação, com filtros na URL (é o destino dos cards "Pendentes" e "Urgência / Emergência") | Clínicos, ADMIN_UNIDADE, GESTOR |
+| `/paciente/[id]` | Detalhe da solicitação — alerta de cadastro incompleto. GESTOR abre em modo consulta (sem ações de edição) | Clínicos, Admin, ADMIN_UNIDADE, GESTOR (leitura) |
 | `/cadastrar` | Cadastro de consulta | Clínicos, ADMIN_UNIDADE |
 | `/exames` | Cadastro de exame/procedimento (com Data da Coleta) | Clínicos, ADMIN_UNIDADE |
 | `/unidade/cotas` | Consulta das cotas da própria unidade (somente leitura) | ADMIN_UNIDADE |
@@ -1593,11 +1630,14 @@ O frontend suporta geração de documentos sem servidor:
 - `/api/transparencia/**`
 - `/api/solicitacoes/public/**`
 - `/swagger-ui/**`, `/v3/api-docs/**`
-- `/api/agendamentos/pendentes/**`
 - `/api/registry/**`
 - `/api/uploads/**`
 
 **Todas as demais rotas:** requerem autenticação.
+
+> `/api/agendamentos/pendentes/**` e `/api/solicitacoes/buscar/**` **já foram públicas** e
+> devolviam nome, CPF e CNS de pacientes sem login. Não recolocar como `permitAll`: as telas que
+> as usam enviam o token. `SegurancaEndpointsIT` cobre isso.
 
 **Sessão:** `SessionCreationPolicy.STATELESS` — nenhuma sessão HTTP é criada.
 
@@ -1615,6 +1655,25 @@ Implementada via `@PreAuthorize` ou verificações no service:
 - Gestão de pactos: ADMIN apenas
 - Operações clínicas (solicitação, agendamento): RECEPCAO, ENFERMEIRO, MEDICO, ADMIN
 - Transporte: COORD_TRANSPORTE, ADMIN
+
+### 9.4c Escopo de listagem por unidade (`UnidadeAcessoService.escopoDeListagem`)
+
+Listagens e contagens **nominais** de pacientes (Fila de Espera, resumo do dashboard e as listas
+que os cards abrem) usam `escopoDeListagem(cpf, unidadeSolicitada)`, que devolve um de três
+resultados, sempre pelo perfil **ativo**:
+
+| Chamador | Resultado |
+|---|---|
+| ADMIN, GESTOR | Todas as unidades, ou só a `unidadeSolicitada` quando informada |
+| Demais perfis **com** lotação | A própria unidade; pedir outra → 403 |
+| Demais perfis **sem** lotação | Sem acesso: lista vazia, contagem zero |
+| COORD_TRANSPORTE **sem** lotação | Todas as unidades (exceção: opera o transporte do município) |
+| CPF nulo / usuário inexistente | Sem acesso |
+
+É mais estrito que `contextoDe`, onde perfil sem lotação cai em acesso global. A fronteira:
+**listar/contar** usa `escopoDeListagem`; **escrita e acesso por id** continuam em `contextoDe`,
+`resolverUnidadeAlvo` e `exigirAcessoA`. As duas regras compartilham o mesmo predicado de
+"perfil global" (ADMIN ou GESTOR).
 
 ### 9.4b Tratamento de Erros (GlobalExceptionHandler)
 

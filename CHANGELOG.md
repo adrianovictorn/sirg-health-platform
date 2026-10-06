@@ -1,5 +1,74 @@
 # Changelog — SIRG (Sistema de Regulação)
 
+## [Não publicado]
+
+### Novidades
+
+- **Fila de Espera (`/paciente/fila`, `GET /api/fila-espera`).**
+  Lista os pacientes com pedidos aguardando marcacao, **uma linha por paciente**, com os pedidos
+  agrupados na linha. Filtros combinaveis: tipo (Consulta / Especialidade ou Exame ou
+  Procedimento), especialidade, status (Pendente, Retorno, Retorno Policlinica), prioridade,
+  tempo de espera (mais de 30, 60 ou 90 dias), periodo de cadastro e ordem (mais antigos ou mais
+  recentes primeiro). Somente leitura: nao agenda, nao consome cota, nao muda status.
+
+  **O filtro e por pedido, nao por paciente.** O paciente entra se tiver ao menos um pedido que
+  bate; a linha mostra so esses pedidos e a espera exibida e a do mais antigo entre eles.
+
+  **O tipo tem 2 opcoes, nao 4.** `ItemCategoria` so distingue `ESPECIALIDADE_MEDICA` de
+  `EXAME_OU_PROCEDIMENTO`. Separar exame de procedimento exige migration e reclassificacao
+  manual do catalogo — ficou fora desta entrega.
+
+  **A espera vem de `solicitacao_especialidade.data_cadastro`, com duas limitacoes avisadas na
+  tela:** pedidos anteriores a V62 tem a data da migracao (a coluna nasceu com `DEFAULT now()`),
+  entao aparecem com espera menor que a real; e pedido em RETORNO conta desde o pedido original,
+  porque nao ha registro de quando o status mudou.
+
+  **GEL fica fora da fila.** Tem card e lista proprios; `status=GEL` na fila devolve 400.
+
+  **Busca livre por nome, CPF ou CNS (`termo`).** Campo unico; nome por "contem", CPF e CNS so
+  pelos digitos e parcial. CPF e CNS so sao comparados quando o termo e feito de digitos e
+  pontuacao — "Maria 2" procura esse texto no nome, em vez de trazer todo CPF que contenha 2.
+  `%` e `_` sao texto comum (`strpos`, nao `LIKE`), diferente das listas antigas. **O termo nao
+  vai para a URL da tela**, ao contrario dos demais filtros: nome e CPF de paciente nao devem
+  ficar em historico do navegador nem em link compartilhado. Os cards do dashboard nunca enviam
+  termo, entao o numero do card continua batendo com a lista.
+
+- **Menu: "Pacientes" virou grupo** com "Pacientes" e "Fila de Espera". O GESTOR ve o grupo so
+  com a fila.
+
+- **GESTOR abre a ficha do paciente em modo consulta.** `GET /api/solicitacoes/{id}` passou a
+  aceitar GESTOR; a tela esconde as acoes de edicao para ele.
+
+### Seguranca
+
+- **Listas nominais de pacientes deixaram de ser publicas.** `GET /api/solicitacoes/buscar/**`
+  e `GET /api/agendamentos/pendentes/**` estavam como `permitAll` e devolviam nome, CPF e CNS
+  sem login. Os matchers sairam do `SecurityConfiguration` e os endpoints ganharam
+  `@PreAuthorize`. A consulta publica do paciente continua so em `/api/solicitacoes/public/**`.
+  `SegurancaEndpointsIT` (MockMvc) quebra o build se alguem reabrir.
+
+- **`DELETE /api/agendamentos/{id}` e `PUT /api/especialidades/{id}` ganharam `@PreAuthorize`.**
+  Nao tinham nenhum; o GESTOR, que so consulta, conseguia chama-los direto pela API.
+
+### Correcoes
+
+- **As listas que os cards do dashboard abrem nao tinham escopo de unidade.** O numero do card ja
+  era o da unidade, mas a lista aberta (pendentes, agendados, concluidos, urgentes, GEL) trazia o
+  municipio inteiro, e `/unidade/{id}` aceitava o id de outra unidade. Agora todas passam por
+  `UnidadeAcessoService.escopoDeListagem`; pedir outra unidade devolve 403.
+
+- **Quem nao tem unidade de lotacao deixou de ver o municipio inteiro nessas telas.** Para
+  listagem e contagem nominal, perfil que nao e ADMIN/GESTOR e nao tem lotacao recebe lista vazia
+  e cards zerados, com um aviso para procurar o administrador. Excecao: COORD_TRANSPORTE sem
+  lotacao mantem a visao global. `contextoDe` (escrita e acesso por id) nao mudou.
+
+- **O numero do card passou a bater com a lista que ele abre.** "Pendentes" e "Urgencia /
+  Emergencia" contam **pacientes** (mesma query da fila), nao pedidos — o valor exibido cai.
+  O resumo ganhou os campos `pacientesPendentes`, `pacientesUrgentes` e
+  `pacientesPendentesPorUnidade`; os campos antigos continuam no contrato.
+
+---
+
 ## [1.7] — 2026-09-25
 
 ### Novidades

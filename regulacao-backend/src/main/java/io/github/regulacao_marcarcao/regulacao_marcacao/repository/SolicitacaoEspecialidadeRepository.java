@@ -1,6 +1,7 @@
 package io.github.regulacao_marcarcao.regulacao_marcacao.repository;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.List;
 
@@ -15,6 +16,8 @@ import io.github.regulacao_marcarcao.regulacao_marcacao.dto.agendamentoDTO.Conta
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.SolicitacaoEspecialidade;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.enums.StatusDaMarcacao;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.EspecialidadesMaisSolicitadasProjection;
+import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.FilaEsperaItemProjection;
+import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.FilaEsperaPacienteProjection;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.PacientesGelProjection;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.PainelEspecialidadeProjection;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.ProfissionalEspecialidadeRankingProjection;
@@ -25,6 +28,7 @@ import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.Re
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.RelatorioGrupoPendenteProjection;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.TempoEsperaEspecialidadeProjection;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.TempoEsperaGeralProjection;
+import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.UnidadePendentesProjection;
 
 public interface SolicitacaoEspecialidadeRepository extends JpaRepository<SolicitacaoEspecialidade, Long> {
 
@@ -266,6 +270,7 @@ public interface SolicitacaoEspecialidadeRepository extends JpaRepository<Solici
                             LIKE concat('%', regexp_replace(:termo, '[^0-9]', '', 'g'), '%')
                         )
                       )
+                      AND (CAST(:unidadeId AS bigint) IS NULL OR s.unidade_id = :unidadeId)
                     ORDER BY s.nome_paciente ASC
                     """,
                     countQuery = """
@@ -284,9 +289,11 @@ public interface SolicitacaoEspecialidadeRepository extends JpaRepository<Solici
                             LIKE concat('%', regexp_replace(:termo, '[^0-9]', '', 'g'), '%')
                         )
                       )
+                      AND (CAST(:unidadeId AS bigint) IS NULL OR s.unidade_id = :unidadeId)
                     """,
                     nativeQuery = true)
-            Page<PacientesGelProjection> listarPacientesGel(@Param("termo") String termo, Pageable page);
+            Page<PacientesGelProjection> listarPacientesGel(@Param("termo") String termo,
+                    @Param("unidadeId") Long unidadeId, Pageable page);
 
             @Query(value = """
                     SELECT
@@ -494,5 +501,144 @@ public interface SolicitacaoEspecialidadeRepository extends JpaRepository<Solici
                     @Param("fim")            LocalDate fim,
                     @Param("unidadeId")      Long unidadeId,
                     @Param("especialidadeId") Long especialidadeId);
+
+            // ------------------------------------------------------------------
+            // Fila de espera (uma linha por paciente)
+            //
+            // FILA_FROM e FILA_FILTRO sao compartilhados pelas quatro queries
+            // abaixo de proposito: a pagina, a contagem (usada tambem pelos cards
+            // do dashboard), os itens e a contagem por unidade precisam aplicar
+            // EXATAMENTE o mesmo predicado, senao o numero do card deixa de bater
+            // com o total da lista que ele abre.
+            //
+            // O filtro e por ITEM (pedido): o paciente entra se tiver ao menos um
+            // pedido que bate, e a espera exibida e o MIN(data_cadastro) so entre
+            // esses. :filtrarPrioridade existe porque prioridade e nullable — um
+            // IN puro esconderia pedidos sem prioridade quando nao ha filtro.
+            //
+            // A busca livre (:termo / :termoDigitos) e a excecao: e predicado do
+            // PACIENTE (nome, CPF, CNS), nao do pedido. Usa strpos em vez de LIKE
+            // para que % e _ digitados sejam texto comum. :termo chega nulo quando
+            // nao ha busca (strpos com texto vazio casaria com tudo); :termoDigitos
+            // so vem preenchido quando o termo e feito de digitos e pontuacao.
+            // ------------------------------------------------------------------
+            String FILA_FROM = """
+                    FROM solicitacao s
+                    JOIN solicitacao_especialidade se ON se.solicitacao_id = s.id
+                    LEFT JOIN especialidade e ON e.id = se.especialidade_id
+                    LEFT JOIN unidade u ON u.id = s.unidade_id
+                    """;
+
+            String FILA_FILTRO = """
+                    se.status IN (:status)
+                      AND (CAST(:especialidadeId AS bigint) IS NULL OR e.id = :especialidadeId)
+                      AND (CAST(:categoria AS text) IS NULL OR e.categoria = :categoria)
+                      AND (CAST(:filtrarPrioridade AS boolean) = false OR se.prioridade IN (:prioridades))
+                      AND (CAST(:unidadeId AS bigint) IS NULL OR s.unidade_id = :unidadeId)
+                      AND (CAST(:dataDe AS date) IS NULL OR CAST(se.data_cadastro AS date) >= :dataDe)
+                      AND (CAST(:dataAte AS date) IS NULL OR CAST(se.data_cadastro AS date) <= :dataAte)
+                      AND (CAST(:cadastradoAte AS timestamp) IS NULL OR se.data_cadastro <= :cadastradoAte)
+                      AND (CAST(:termo AS text) IS NULL
+                           OR strpos(lower(s.nome_paciente), lower(CAST(:termo AS text))) > 0
+                           OR (CAST(:termoDigitos AS text) IS NOT NULL
+                               AND (strpos(regexp_replace(s.cpf_paciente, '[^0-9]', '', 'g'), CAST(:termoDigitos AS text)) > 0
+                                 OR strpos(regexp_replace(s.cns, '[^0-9]', '', 'g'), CAST(:termoDigitos AS text)) > 0)))
+                    """;
+
+            @Query(value = """
+                    SELECT
+                        s.id                  AS solicitacaoId,
+                        s.nome_paciente       AS nomePaciente,
+                        s.cpf_paciente        AS cpfPaciente,
+                        s.cns                 AS cns,
+                        s.datanascimento      AS dataNascimento,
+                        u.id                  AS unidadeId,
+                        u.nome                AS unidadeNome,
+                        MIN(se.data_cadastro) AS entradaMaisAntiga
+                    """ + FILA_FROM + " WHERE " + FILA_FILTRO + """
+                    GROUP BY s.id, s.nome_paciente, s.cpf_paciente, s.cns, s.datanascimento, u.id, u.nome
+                    ORDER BY
+                        CASE WHEN CAST(:maisRecentes AS boolean) THEN NULL ELSE MIN(se.data_cadastro) END ASC,
+                        CASE WHEN CAST(:maisRecentes AS boolean) THEN MIN(se.data_cadastro) END DESC,
+                        s.id
+                    """,
+                    countQuery = "SELECT COUNT(DISTINCT s.id) " + FILA_FROM + " WHERE " + FILA_FILTRO,
+                    nativeQuery = true)
+            Page<FilaEsperaPacienteProjection> listarFilaDeEspera(
+                    @Param("status")            List<String> status,
+                    @Param("especialidadeId")   Long especialidadeId,
+                    @Param("categoria")         String categoria,
+                    @Param("filtrarPrioridade") boolean filtrarPrioridade,
+                    @Param("prioridades")       List<String> prioridades,
+                    @Param("unidadeId")         Long unidadeId,
+                    @Param("dataDe")            LocalDate dataDe,
+                    @Param("dataAte")           LocalDate dataAte,
+                    @Param("cadastradoAte")     LocalDateTime cadastradoAte,
+                    @Param("termo")             String termo,
+                    @Param("termoDigitos")      String termoDigitos,
+                    @Param("maisRecentes")      boolean maisRecentes,
+                    Pageable pageable);
+
+            @Query(value = "SELECT COUNT(DISTINCT s.id) " + FILA_FROM + " WHERE " + FILA_FILTRO, nativeQuery = true)
+            long contarPacientesNaFila(
+                    @Param("status")            List<String> status,
+                    @Param("especialidadeId")   Long especialidadeId,
+                    @Param("categoria")         String categoria,
+                    @Param("filtrarPrioridade") boolean filtrarPrioridade,
+                    @Param("prioridades")       List<String> prioridades,
+                    @Param("unidadeId")         Long unidadeId,
+                    @Param("dataDe")            LocalDate dataDe,
+                    @Param("dataAte")           LocalDate dataAte,
+                    @Param("cadastradoAte")     LocalDateTime cadastradoAte,
+                    @Param("termo")             String termo,
+                    @Param("termoDigitos")      String termoDigitos);
+
+            @Query(value = """
+                    SELECT
+                        s.unidade_id            AS unidadeId,
+                        MIN(u.nome)             AS unidadeNome,
+                        COUNT(DISTINCT s.id)    AS total
+                    """ + FILA_FROM + " WHERE " + FILA_FILTRO + """
+                      AND s.unidade_id IS NOT NULL
+                    GROUP BY s.unidade_id
+                    """, nativeQuery = true)
+            List<UnidadePendentesProjection> contarPacientesNaFilaPorUnidade(
+                    @Param("status")            List<String> status,
+                    @Param("especialidadeId")   Long especialidadeId,
+                    @Param("categoria")         String categoria,
+                    @Param("filtrarPrioridade") boolean filtrarPrioridade,
+                    @Param("prioridades")       List<String> prioridades,
+                    @Param("unidadeId")         Long unidadeId,
+                    @Param("dataDe")            LocalDate dataDe,
+                    @Param("dataAte")           LocalDate dataAte,
+                    @Param("cadastradoAte")     LocalDateTime cadastradoAte,
+                    @Param("termo")             String termo,
+                    @Param("termoDigitos")      String termoDigitos);
+
+            @Query(value = """
+                    SELECT
+                        se.id                                         AS id,
+                        se.solicitacao_id                             AS solicitacaoId,
+                        COALESCE(e.nome, se.especialidade_solicitada) AS especialidadeNome,
+                        e.categoria                                   AS categoria,
+                        se.status                                     AS status,
+                        se.prioridade                                 AS prioridade,
+                        se.data_cadastro                              AS dataCadastro
+                    """ + FILA_FROM + " WHERE se.solicitacao_id IN (:solicitacaoIds) AND " + FILA_FILTRO + """
+                    ORDER BY se.data_cadastro, se.id
+                    """, nativeQuery = true)
+            List<FilaEsperaItemProjection> listarItensDaFila(
+                    @Param("solicitacaoIds")    List<Long> solicitacaoIds,
+                    @Param("status")            List<String> status,
+                    @Param("especialidadeId")   Long especialidadeId,
+                    @Param("categoria")         String categoria,
+                    @Param("filtrarPrioridade") boolean filtrarPrioridade,
+                    @Param("prioridades")       List<String> prioridades,
+                    @Param("unidadeId")         Long unidadeId,
+                    @Param("dataDe")            LocalDate dataDe,
+                    @Param("dataAte")           LocalDate dataAte,
+                    @Param("cadastradoAte")     LocalDateTime cadastradoAte,
+                    @Param("termo")             String termo,
+                    @Param("termoDigitos")      String termoDigitos);
 
 }

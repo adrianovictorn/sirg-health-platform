@@ -137,11 +137,24 @@ export const MENU_SECTIONS = [
         roles: CLINICOS_E_UNIDADE,
       },
       {
-        type: "link",
+        type: "group",
+        key: "pacientes",
         label: "Pacientes",
         icon: ICONS.pacientes,
-        href: "/paciente",
-        roles: CLINICOS_E_UNIDADE,
+        items: [
+          {
+            label: "Pacientes",
+            href: "/paciente",
+            roles: CLINICOS_E_UNIDADE,
+          },
+          {
+            // GESTOR acompanha a fila (leitura), mas nao a lista de pacientes:
+            // para ele o grupo aparece so com este item.
+            label: "Fila de Espera",
+            href: "/paciente/fila",
+            roles: [...CLINICOS_E_UNIDADE, "GESTOR"],
+          },
+        ],
       },
       {
         type: "link",

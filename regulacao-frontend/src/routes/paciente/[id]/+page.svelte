@@ -7,6 +7,11 @@
     import RoleBasedMenu from "$lib/RoleBasedMenu.svelte";
     import { listarPactos, publicarSolicitacao } from '$lib/pactosApi.js';
     import { gerarComprovantePDF } from '$lib/comprovantePdf';
+    import { user } from '$lib/stores/auth.js';
+
+    // GESTOR chega aqui pela Fila de Espera e so consulta: o backend nega a
+    // escrita para ele; esconder as acoes evita oferecer o que vai dar 403.
+    const somenteLeitura = $derived($user?.role === 'GESTOR');
 
     interface CID{
         id: number
@@ -478,7 +483,7 @@
 </svelte:head>
 
 <div class="flex h-screen bg-gray-100">
-    <RoleBasedMenu activePage="/paciente" />
+    <RoleBasedMenu activePage={somenteLeitura ? '/paciente/fila' : '/paciente'} />
 
     <div class="grid grid-cols-1 md:flex md:flex-1 md:flex-col">
         <header class="bg-emerald-700 text-white p-4 flex justify-between items-center shadow-md">
@@ -499,6 +504,13 @@
                     <p>{error}</p>
                 </div>
             {:else if solicitacao}
+
+                {#if somenteLeitura}
+                    <div class="bg-sky-50 border-l-4 border-sky-400 rounded-r-lg p-4 text-sm text-sky-900" role="status">
+                        <strong>Modo consulta.</strong> Seu perfil pode ver a ficha do paciente, mas não alterar dados,
+                        pedidos ou agendamentos.
+                    </div>
+                {/if}
 
                 <!-- Alerta de cadastro incompleto (somente visual, nao bloqueia) -->
                 {#if mostrarAlertaIncompleto}
@@ -526,7 +538,8 @@
 
                 <!-- Seção Editar Paciente -->
                 <section class="bg-white rounded-lg shadow p-6">
-                    <h2 class="text-lg font-bold text-emerald-800 mb-4 border-b pb-2">Editar Paciente</h2>
+                    <h2 class="text-lg font-bold text-emerald-800 mb-4 border-b pb-2">{somenteLeitura ? 'Dados do Paciente' : 'Editar Paciente'}</h2>
+                    <fieldset disabled={somenteLeitura} class="border-0 p-0 m-0 min-w-0">
                     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 <div class="lg:col-span-2">
                     <label class="block text-sm font-medium text-gray-700 mb-1">Nome</label>
@@ -585,7 +598,9 @@
                                 {#each solicitacao.cids as cid (cid.id)}
                                     <div class="flex items-center bg-emerald-100 text-emerald-800 text-sm font-medium px-3 py-1 rounded-full">
                                         <span>{cid.codigo} - {cid.descricao}</span>
+                                        {#if !somenteLeitura}
                                         <button onclick={() => removerCid(cid.id)} aria-label="Remover CID" class="ml-2 text-emerald-600 hover:text-emerald-900 font-bold">&times;</button>
+                                        {/if}
                                     </div>
                                 {/each}
                             {:else}
@@ -619,19 +634,24 @@
                                     {/if}
                                 </div>
 
+                                {#if !somenteLeitura}
                                 <button onclick={adicionarCid} type="button" class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition-colors shadow-sm">Adicionar</button>
+                                {/if}
                             </div>
                   <div class="mt-4">
                     <label class="block text-sm font-medium text-gray-700 mb-1">Observações</label>
                     <textarea bind:value={observacoes} rows="3" class="w-full border-gray-300 rounded-md shadow-sm focus:border-emerald-500 focus:ring-emerald-500"></textarea>
                 </div>
 
+                {#if !somenteLeitura}
                 <div class="mt-6 flex justify-end">
                     <button onclick={salvarPaciente} class="bg-emerald-700 text-white px-6 py-2 rounded-md hover:bg-emerald-800 transition-colors shadow">
                         Salvar Alterações
                     </button>
                 </div>
+                {/if}
                 </div><!-- fecha mt-6 pt-4 border-t -->
+                </fieldset>
                 </section>
 
            
@@ -732,6 +752,7 @@
                                                         <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3" />
                                                     </svg>
                                                 </button>
+                                                {#if !somenteLeitura}
                                                 <button onclick={() => removerAgendamento(ag.id)} aria-label="Remover agendamento"
                                                         class="p-2 rounded-full text-gray-400 hover:bg-red-100 hover:text-red-600 transition-colors"
                                                         title="Remover Agendamento e Itens Associados">
@@ -739,6 +760,7 @@
                                                         <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                                                     </svg>
                                                 </button>
+                                                {/if}
                                             </div>
                                         </div>
                                         <div class="p-4">
@@ -763,6 +785,7 @@
                                                         </div>
                                                         <div class="flex items-center space-x-3">
                                                             <span class="px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-100 text-blue-800">AGENDADO</span>
+                                                            {#if !somenteLeitura}
                                                             <button onclick={() => removerEspecialidade(h.id)} aria-label="Remover especialidade"
                                                                     class="p-2 rounded-full text-gray-400 hover:bg-red-100 hover:text-red-600 transition-colors"
                                                                     title="Desvincular e Remover Especialidade">
@@ -770,6 +793,7 @@
                                                                     <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
                                                                 </svg>
                                                             </button>
+                                                            {/if}
                                                         </div>
                                                     </li>
                                                 {/each}
@@ -816,13 +840,14 @@
 
                                                 {/if}
                                             </div>
-                                            <select bind:value={e.prioridade} 
+                                            <select bind:value={e.prioridade} disabled={somenteLeitura} 
                                                     onchange={(event) => handlePrioridadeChange(e.id, event)}
                                                     class="text-sm border-gray-300 rounded-md shadow-sm focus:ring-emerald-500 px-4 focus:border-emerald-500 transition duration-150 ease-in-out py-1">
                                                 <option value="NORMAL">Normal</option>
                                                 <option value="URGENTE">Urgente</option>
                                                 <option value="EMERGENCIA">Emergência</option>
                                             </select>
+                                            {#if !somenteLeitura}
                                             <button onclick={() => abrirEncaminhar(e)}
                                                 class="px-3 py-1 text-xs rounded bg-emerald-600 text-white hover:bg-emerald-700"
                                                 title="Encaminhar para filas compartilhadas">
@@ -836,6 +861,7 @@
                                                 </svg>
                                             </button>
                                             <button onclick={() => removerEspecialidade(e.id)} type="button" class="md:hidden px-3 py-1 text-xs rounded bg-red-600 text-white hover:bg-red-700">Remover</button>
+                                            {/if}
                                         </div>
                                     </li>
                                 {/each}
@@ -928,6 +954,7 @@
     </section>
 
                 <!-- Seção Adicionar Nova Especialidade -->
+                {#if !somenteLeitura}
                 <section class="bg-white rounded-lg shadow p-6">
                      <h2 class="text-lg font-bold text-emerald-800 mb-4 border-b pb-2">Adicionar Nova Especialidade</h2>
                     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -1045,6 +1072,7 @@
                     </div>
                     <button onclick={adicionarEspecialidade} class="mt-4 bg-emerald-700 text-white px-6 py-2 rounded-md hover:bg-emerald-800 transition-colors shadow">Adicionar</button>
                 </section>
+                {/if}
             {/if}
         </main>
     </div>

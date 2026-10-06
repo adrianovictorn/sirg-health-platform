@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { getApi } from "$lib/api";
+  import { formatarDataHora } from "$lib/datas.js";
   import RoleBasedMenu from "$lib/RoleBasedMenu.svelte";
   import UserMenu from "$lib/UserMenu.svelte";
 
@@ -16,7 +17,7 @@
     especialidadeNome: string;
     pacienteNome: string;
     cpfPaciente: string;
-    dataSolicitacao: string;
+    dataSolicitacao: number[] | string | null;
   };
 
   type Quantitativo = {
@@ -91,12 +92,6 @@
 
   function tipoLabel(tipo: string) {
     return tipo === "ESPECIALIDADE_MEDICA" ? "Consulta" : "Exame/Procedimento";
-  }
-
-  function formatarData(iso: string) {
-    if (!iso) return "-";
-    const d = new Date(iso);
-    return d.toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
   }
 
   function queryComum() {
@@ -345,7 +340,7 @@
                                       <td class="p-2">{d.especialidadeNome}</td>
                                       <td class="p-2">{d.pacienteNome}</td>
                                       <td class="p-2">{d.cpfPaciente}</td>
-                                      <td class="p-2">{formatarData(d.dataSolicitacao)}</td>
+                                      <td class="p-2">{formatarDataHora(d.dataSolicitacao)}</td>
                                     </tr>
                                   {/each}
                                 </tbody>
@@ -407,7 +402,7 @@
                       <td class="p-2">{d.especialidadeNome}</td>
                       <td class="p-2">{d.pacienteNome}</td>
                       <td class="p-2">{d.cpfPaciente}</td>
-                      <td class="p-2">{formatarData(d.dataSolicitacao)}</td>
+                      <td class="p-2">{formatarDataHora(d.dataSolicitacao)}</td>
                     </tr>
                   {/each}
                 </tbody>

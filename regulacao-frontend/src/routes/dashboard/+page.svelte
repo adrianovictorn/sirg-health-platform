@@ -16,6 +16,9 @@
     totalUrgentes: number;
     totalGel: number;
     pendentesPorUnidade: Record<string, number>;
+    pacientesPendentes: number;
+    pacientesUrgentes: number;
+    pacientesPendentesPorUnidade: Record<string, number>;
   } | null = null;
 
   let unidades: { id: number; nome: string }[] = [];
@@ -50,9 +53,17 @@
   $: urgencia = resumo?.totalUrgentes ?? 0;
   $: gel = resumo?.totalGel ?? 0;
 
-  const pendentesDaUnidade = (id: number): number => {
-    if (!resumo?.pendentesPorUnidade) return 0;
-    return resumo.pendentesPorUnidade[String(id)] ?? 0;
+  // Cards que abrem a Fila de Espera mostram PACIENTES (mesma contagem da fila),
+  // para o numero bater com o total da lista aberta. COORD_TRANSPORTE tambem cai
+  // neste dashboard mas nao acessa a fila: para ele os cards continuam contando
+  // pedidos e abrindo as listas antigas.
+  $: abreFila = $user?.role === 'ADMIN' || $user?.role === 'GESTOR';
+  $: pendentesCard = abreFila ? (resumo?.pacientesPendentes ?? 0) : pendentes;
+  $: urgenciaCard = abreFila ? (resumo?.pacientesUrgentes ?? 0) : urgencia;
+
+  const pendentesDaUnidade = (id: number, fila: boolean): number => {
+    const mapa = fila ? resumo?.pacientesPendentesPorUnidade : resumo?.pendentesPorUnidade;
+    return mapa?.[String(id)] ?? 0;
   };
 </script>
 
@@ -89,7 +100,13 @@
             <h2 class="text-xs font-semibold text-gray-700 uppercase tracking-widest mb-3">Visão Geral</h2>
             <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 rounded-lg">
               <Card title="Total de Solicitações" value={totalDeSolicitacoes} color="emerald-dark"/>
-              <Card2 header="Solicitações" title="Pendentes" value={pendentes} href="/usf" color="emerald-dark"/>
+              <Card2
+                header={abreFila ? 'Pacientes' : 'Solicitações'}
+                title="Pendentes"
+                value={pendentesCard}
+                href={abreFila ? '/paciente/fila?status=AGUARDANDO' : '/usf'}
+                color="emerald-dark"
+              />
               <Card2 header="Solicitações" title="Agendadas" value={agendado} href="/paciente/agendados" color="emerald-dark"/>
               <Card2 header="Solicitações" title="Concluídas" value={concluida} href="/paciente/concluido" color="emerald-dark"/>
             </div>
@@ -99,7 +116,13 @@
           <section>
             <h2 class="text-xs font-semibold text-gray-700 uppercase tracking-widest mb-3">Atenção Imediata</h2>
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <Card3 header="Alertas" title="Urgência / Emergência" value={urgencia} href="/paciente/urgentes" color="danger"/>
+              <Card3
+                header="Alertas"
+                title="Urgência / Emergência"
+                value={urgenciaCard}
+                href={abreFila ? '/paciente/fila?prioridade=URGENTE,EMERGENCIA' : '/paciente/urgentes'}
+                color="danger"
+              />
               <Card3 header="Procedimentos Externos" title="GEL" value={gel} href="/paciente/gel" color="warning"/>
             </div>
           </section>
@@ -116,8 +139,8 @@
                   <Card2
                     header={u.nome}
                     title="Pendentes"
-                    value={pendentesDaUnidade(u.id)}
-                    href={`/unidade/${u.id}`}
+                    value={pendentesDaUnidade(u.id, abreFila)}
+                    href={abreFila ? `/paciente/fila?status=AGUARDANDO&unidadeId=${u.id}` : `/unidade/${u.id}`}
                     color="emerald"
                   />
                 {/each}

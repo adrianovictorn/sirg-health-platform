@@ -46,10 +46,11 @@ public class SecurityConfiguration {
                                 "/swagger-ui/**",
                                 "/v3/api-docs",
                                 "/v3/api-docs/**").permitAll();
-                // Fluxo de agendamento: busca pendentes e detalhes de solicitação
-                auth.requestMatchers(HttpMethod.GET, "/api/agendamentos/pendentes/buscar").permitAll();
-                auth.requestMatchers(HttpMethod.GET, "/api/agendamentos/pendentes/**").permitAll();
-                auth.requestMatchers(HttpMethod.GET, "/api/solicitacoes/buscar/**").permitAll();
+                // /api/agendamentos/pendentes/** e /api/solicitacoes/buscar/** ja foram
+                // permitAll aqui e devolviam nome, CPF e CNS de pacientes sem login.
+                // Nao recolocar: as telas que os usam (/agendar, /exames, listas do
+                // dashboard) enviam o token. Consulta publica do paciente e so
+                // /api/solicitacoes/public/**, acima.
                 auth.requestMatchers(HttpMethod.POST, "/api/pactos/convites/*/responder").permitAll();
                 auth.requestMatchers("/api/registry/**").permitAll();
                 auth.requestMatchers(HttpMethod.POST, "/api/registry/pactos/*/join-requests").permitAll();

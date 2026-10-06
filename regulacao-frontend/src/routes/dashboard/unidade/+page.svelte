@@ -19,6 +19,9 @@
     totalUrgentes: number;
     totalGel: number;
     pendentesPorUnidade: Record<string, number>;
+    pacientesPendentes: number;
+    pacientesUrgentes: number;
+    pacientesPendentesPorUnidade: Record<string, number>;
   } | null = null;
 
   let unidadeId: number | null = null;
@@ -85,11 +88,13 @@
   });
 
   $: totalDeSolicitacoes = resumo?.totalSolicitacoes ?? 0;
-  $: pendentes = resumo?.totalPendentes ?? 0;
   $: agendado = resumo?.totalAgendadas ?? 0;
   $: concluida = resumo?.totalConcluidas ?? 0;
-  $: urgencia = resumo?.totalUrgentes ?? 0;
   $: gel = resumo?.totalGel ?? 0;
+  // Cards que abrem a Fila de Espera mostram PACIENTES (mesma contagem da fila),
+  // para o numero bater com o total da lista aberta.
+  $: pendentes = resumo?.pacientesPendentes ?? 0;
+  $: urgencia = resumo?.pacientesUrgentes ?? 0;
 
   // As 5 cotas (de especialidade OU de grupo — mesma regra pras duas) com data
   // mais próxima de agora, sem filtrar por "ainda em aberto": se a unidade só
@@ -98,8 +103,8 @@
     .sort((a, b) => distanciaDeHoje(a) - distanciaDeHoje(b))
     .slice(0, 5);
   $: cotasEsgotadas = proximasCotas.filter((c) => c.ativo && c.saldoDisponivel <= 0);
-  $: pendentesDaMinhaUnidade = (unidadeId && resumo?.pendentesPorUnidade)
-    ? (resumo.pendentesPorUnidade[String(unidadeId)] ?? pendentes)
+  $: pendentesDaMinhaUnidade = (unidadeId && resumo?.pacientesPendentesPorUnidade)
+    ? (resumo.pacientesPendentesPorUnidade[String(unidadeId)] ?? pendentes)
     : pendentes;
 </script>
 
@@ -131,12 +136,19 @@
       <main class="flex-1 p-6 overflow-auto">
         <div class="max-w-[1600px] mx-auto space-y-6">
 
+          {#if !unidadeId}
+            <div class="bg-amber-50 border-l-4 border-amber-400 rounded-r-lg p-4 text-sm text-amber-900" role="status">
+              Sua conta não está vinculada a uma unidade, por isso os números abaixo aparecem zerados.
+              Fale com o administrador do sistema para vincular sua conta a uma Unidade de Saúde.
+            </div>
+          {/if}
+
           <!-- Visão Geral -->
           <section>
             <h2 class="text-xs font-semibold text-gray-700 uppercase tracking-widest mb-3">Visão Geral</h2>
             <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 rounded-lg">
               <Card title="Total de Solicitações" value={totalDeSolicitacoes} color="emerald-dark"/>
-              <Card2 header="Solicitações" title="Pendentes" value={pendentes} href="/usf" color="emerald-dark"/>
+              <Card2 header="Pacientes" title="Pendentes" value={pendentes} href="/paciente/fila?status=AGUARDANDO" color="emerald-dark"/>
               <Card2 header="Solicitações" title="Agendadas" value={agendado} href="/paciente/agendados" color="emerald-dark"/>
               <Card2 header="Solicitações" title="Concluídas" value={concluida} href="/paciente/concluido" color="emerald-dark"/>
             </div>
@@ -146,7 +158,7 @@
           <section>
             <h2 class="text-xs font-semibold text-gray-700 uppercase tracking-widest mb-3">Atenção Imediata</h2>
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <Card3 header="Alertas" title="Urgência / Emergência" value={urgencia} href="/paciente/urgentes" color="danger"/>
+              <Card3 header="Alertas" title="Urgência / Emergência" value={urgencia} href="/paciente/fila?prioridade=URGENTE,EMERGENCIA" color="danger"/>
               <Card3 header="Procedimentos Externos" title="GEL" value={gel} href="/paciente/gel" color="warning"/>
             </div>
           </section>
@@ -160,7 +172,7 @@
                   header={unidadeNome}
                   title="Pendentes"
                   value={pendentesDaMinhaUnidade}
-                  href={`/unidade/${unidadeId}`}
+                  href="/paciente/fila?status=AGUARDANDO"
                   color="emerald"
                 />
               </div>

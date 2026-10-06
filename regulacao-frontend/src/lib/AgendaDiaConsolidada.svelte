@@ -6,6 +6,7 @@
         dataHojeBahia,
         gerarCsv
     } from '$lib/agendaDiaConsolidada.js';
+    import { formatarData } from '$lib/datas.js';
     import { onMount } from 'svelte';
 
     /**
@@ -304,12 +305,6 @@
     function rotuloCota(c: CotaDia): string {
         const tipo = c.tipo === 'MES' ? 'cota do mês' : c.tipo === 'DIA_SEMANA' ? 'cota mensal, atende neste dia' : 'vagas do dia';
         return `${c.livres} livres de ${c.total} (${tipo}${c.compartilhada ? ', compartilhada' : ''})`;
-    }
-
-    function formatarData(iso: string | null): string {
-        if (!iso) return '—';
-        const [a, m, d] = iso.split('-');
-        return `${d}/${m}/${a}`;
     }
 </script>
 

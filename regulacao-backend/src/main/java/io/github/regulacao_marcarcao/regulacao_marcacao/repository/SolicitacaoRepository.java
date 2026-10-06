@@ -121,6 +121,7 @@ public interface SolicitacaoRepository extends JpaRepository<Solicitacao, Long>,
               OR e.nome ILIKE '%' || :termo || '%'
               OR e.categoria ILIKE '%' || :termo || '%'
           )
+          AND (CAST(:unidadeId AS bigint) IS NULL OR s.unidade_id = :unidadeId)
       GROUP BY
           s.id,
           s.nome_paciente,
@@ -132,7 +133,8 @@ public interface SolicitacaoRepository extends JpaRepository<Solicitacao, Long>,
           pe.nome,
           se.hora_agendada
         """, nativeQuery = true)
-    Page<PacienteProjection> buscarPorStatus(Pageable pageable, String termo, String status);
+    Page<PacienteProjection> buscarPorStatus(Pageable pageable, String termo, String status,
+            @Param("unidadeId") Long unidadeId);
 
     @Query(value = """
       SELECT
@@ -155,6 +157,7 @@ public interface SolicitacaoRepository extends JpaRepository<Solicitacao, Long>,
             OR s.cpf_paciente  ILIKE '%' || :termo || '%'
             OR e.nome          ILIKE '%' || :termo || '%'
         )
+        AND (CAST(:unidadeId AS bigint) IS NULL OR s.unidade_id = :unidadeId)
       GROUP BY s.cpf_paciente
       ORDER BY MIN(s.nome_paciente)
       """,
@@ -170,8 +173,10 @@ public interface SolicitacaoRepository extends JpaRepository<Solicitacao, Long>,
             OR s.cpf_paciente  ILIKE '%' || :termo || '%'
             OR e.nome          ILIKE '%' || :termo || '%'
         )
+        AND (CAST(:unidadeId AS bigint) IS NULL OR s.unidade_id = :unidadeId)
       """, nativeQuery = true)
-    Page<PacienteProjection> buscarConcluidosAgrupados(@Param("termo") String termo, Pageable pageable);
+    Page<PacienteProjection> buscarConcluidosAgrupados(@Param("termo") String termo,
+            @Param("unidadeId") Long unidadeId, Pageable pageable);
 
     Page<Solicitacao> findAll(Pageable pageable);
     Page<Solicitacao> findByNomePacienteContainingIgnoreCaseOrCpfPacienteContainingIgnoreCase(Pageable pageable, String nomePaciente, String cpfPaciente);
@@ -265,12 +270,14 @@ public interface SolicitacaoRepository extends JpaRepository<Solicitacao, Long>,
             WHERE se.status IN ('AGUARDANDO', 'RETORNO', 'RETORNO_POLICLINICA', 'GEL')
               AND se.prioridade IN ('URGENTE', 'EMERGENCIA')
           ) sub ON sub.solicitacao_id = s.id
-          WHERE
+          WHERE (
             :termo IS NULL OR :termo = ''
             OR s.nome_paciente ILIKE '%' || :termo || '%'
             OR s.cpf_paciente ILIKE '%' || :termo || '%'
             OR sub.especialidade_nome ILIKE '%' || :termo || '%'
             OR sub.especialidade_categoria ILIKE '%' || :termo || '%'
+          )
+            AND (CAST(:unidadeId AS bigint) IS NULL OR s.unidade_id = :unidadeId)
           GROUP BY
             s.id, s.nome_paciente, s.cpf_paciente, s.datanascimento, s.cns, s.usf_origem
           ORDER BY s.nome_paciente ASC
@@ -288,15 +295,18 @@ public interface SolicitacaoRepository extends JpaRepository<Solicitacao, Long>,
             WHERE se.status IN ('AGUARDANDO', 'RETORNO', 'RETORNO_POLICLINICA', 'GEL')
               AND se.prioridade IN ('URGENTE', 'EMERGENCIA')
           ) sub ON sub.solicitacao_id = s.id
-          WHERE
+          WHERE (
             :termo IS NULL OR :termo = ''
             OR s.nome_paciente ILIKE '%' || :termo || '%'
             OR s.cpf_paciente ILIKE '%' || :termo || '%'
             OR sub.especialidade_nome ILIKE '%' || :termo || '%'
             OR sub.especialidade_categoria ILIKE '%' || :termo || '%'
+          )
+            AND (CAST(:unidadeId AS bigint) IS NULL OR s.unidade_id = :unidadeId)
         """,
         nativeQuery = true
       )
-    Page<UrgenciaEmergenciaPacienteProjection> listarPacientesUrgenteseEmergencias(Pageable pageable, @Param("termo") String termo);
+    Page<UrgenciaEmergenciaPacienteProjection> listarPacientesUrgenteseEmergencias(Pageable pageable,
+            @Param("termo") String termo, @Param("unidadeId") Long unidadeId);
 
 }

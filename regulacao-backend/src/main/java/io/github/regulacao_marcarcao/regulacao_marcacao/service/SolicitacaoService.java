@@ -20,6 +20,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.agendamentoDTO.AgendamentoSolicitacaoSimpleViewDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.dashboard.DashboardResumoDTO;
+import io.github.regulacao_marcarcao.regulacao_marcacao.dto.fila.FilaEsperaFiltroDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.paciente.PacienteResumoDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.solicitacaoEspecialidadeDTO.EspecialidadeAdicionarDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.solicitacoesDTO.AgendamentoSolicitacaoCreateDTO;
@@ -43,6 +44,7 @@ import io.github.regulacao_marcarcao.regulacao_marcacao.repository.SolicitacaoEs
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.SolicitacaoRepository;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.UserRepository;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.UnidadeRepository;
+import io.github.regulacao_marcarcao.regulacao_marcacao.service.UnidadeAcessoService.EscopoListagem;
 import io.github.regulacao_marcarcao.regulacao_marcacao.service.UnidadeAcessoService.UnidadeContexto;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.SolicitacaoSpecification;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.solicitacoesDTO.SolicitacaoListFiltersDTO;
@@ -70,6 +72,7 @@ public class SolicitacaoService {
     private final UserRepository userRepository;
     private final UnidadeRepository unidadeRepository;
     private final UnidadeAcessoService unidadeAcessoService;
+    private final FilaEsperaService filaEsperaService;
 
     // Delega ao UnidadeAcessoService, que concentra a regra de segregação por unidade
     // (inclusive o perfil ADMIN_UNIDADE, restrito à própria unidade de lotação).
@@ -378,21 +381,30 @@ public class SolicitacaoService {
         return solicitacaoRepository.findAll(pagina).map(SolicitacaoViewDTO::fromSolicitacao);
     }
 
+    /**
+     * Resumo do dashboard no escopo de listagem do chamador
+     * ({@link UnidadeAcessoService#escopoDeListagem}): ADMIN e GESTOR veem o
+     * municipio; quem tem lotacao ve so a propria unidade; quem nao tem lotacao
+     * recebe tudo zerado, em vez do total do municipio.
+     */
     @Transactional(readOnly = true)
     public DashboardResumoDTO obterResumoDashboard(String cpf) {
-        UnidadeContexto ctx = getContextoUnidade(cpf);
+        EscopoListagem escopo = unidadeAcessoService.escopoDeListagem(cpf, null);
+        if (escopo.isSemAcesso()) {
+            return new DashboardResumoDTO(0, 0, 0, 0, 0, 0, new HashMap<>(), 0, 0, new HashMap<>());
+        }
 
         long totalSolicitacoes;
         List<StatusCountProjection> porStatus;
         long totalUrgentes;
 
-        if (!ctx.isGlobal()) {
-            totalSolicitacoes = solicitacaoRepository.contarSolicitacoesParaUnidadeSemUsf(ctx.id());
-            porStatus = solicitacaoRepository.contarPorStatusParaUnidadeSemUsf(ctx.id());
+        if (!escopo.isGlobal()) {
+            totalSolicitacoes = solicitacaoRepository.contarSolicitacoesParaUnidadeSemUsf(escopo.unidadeId());
+            porStatus = solicitacaoRepository.contarPorStatusParaUnidadeSemUsf(escopo.unidadeId());
             totalUrgentes = solicitacaoRepository.contarPorStatusPrioridadesParaUnidadeSemUsf(
                 StatusDaMarcacao.AGUARDANDO,
                 Arrays.asList(PrioridadeDaMarcacaoEnum.URGENTE, PrioridadeDaMarcacaoEnum.EMERGENCIA),
-                ctx.id());
+                escopo.unidadeId());
         } else {
             totalSolicitacoes = solicitacaoRepository.count();
             porStatus = solicitacaoRepository.contarPorStatus();
@@ -406,10 +418,25 @@ public class SolicitacaoService {
         long totalConcluidas = extrairTotalStatus(porStatus, StatusDaMarcacao.REALIZADO);
         long totalGel = extrairTotalStatus(porStatus, StatusDaMarcacao.GEL);
 
+        // Chamador restrito recebe so a chave da propria unidade: a tela da unidade
+        // ja lia so ela, mas o mapa inteiro trafegava com os numeros das demais.
         Map<Long, Long> pendentesPorUnidade = new HashMap<>();
         for (UnidadePendentesProjection proj : solicitacaoRepository.contarPorUnidadeEStatus(StatusDaMarcacao.AGUARDANDO)) {
-            pendentesPorUnidade.put(proj.getUnidadeId(), proj.getTotal());
+            if (escopo.isGlobal() || proj.getUnidadeId().equals(escopo.unidadeId())) {
+                pendentesPorUnidade.put(proj.getUnidadeId(), proj.getTotal());
+            }
         }
+
+        // Contagens por PACIENTE, pela mesma query da fila de espera — sao as que
+        // os cards "Pendentes" e "Urgencia / Emergencia" exibem e abrem.
+        List<String> pendente = List.of(StatusDaMarcacao.AGUARDANDO.name());
+        List<String> urgentes = List.of(
+            PrioridadeDaMarcacaoEnum.URGENTE.name(), PrioridadeDaMarcacaoEnum.EMERGENCIA.name());
+        long pacientesPendentes = filaEsperaService.contar(FilaEsperaFiltroDTO.de(pendente, null, null), cpf);
+        long pacientesUrgentes = filaEsperaService.contar(
+            FilaEsperaFiltroDTO.de(FilaEsperaService.STATUS_DA_FILA, urgentes, null), cpf);
+        Map<Long, Long> pacientesPendentesPorUnidade =
+            filaEsperaService.contarPorUnidade(FilaEsperaFiltroDTO.de(pendente, null, null), cpf);
 
         return new DashboardResumoDTO(
             totalSolicitacoes,
@@ -418,7 +445,10 @@ public class SolicitacaoService {
             totalConcluidas,
             totalUrgentes,
             totalGel,
-            pendentesPorUnidade
+            pendentesPorUnidade,
+            pacientesPendentes,
+            pacientesUrgentes,
+            pacientesPendentesPorUnidade
         );
     }
 
@@ -568,34 +598,58 @@ public class SolicitacaoService {
                 .map(SolicitacaoSimpleViewDTO::fromSolicitacao);
     }
 
-    public Page<PendenciasPacienteProjection> buscarPendentesPorUnidade(int page, int size, Long unidadeId, String termo) {
+    // As cinco listas abaixo sao as que os cards do dashboard abrem. Todas passam
+    // pelo mesmo escopo de listagem do resumo: sem isso a unidade via o numero
+    // certo no card e, ao clicar, a lista do municipio inteiro.
+
+    public Page<PendenciasPacienteProjection> buscarPendentesPorUnidade(int page, int size, Long unidadeId, String termo, String callerCpf) {
         Pageable pageable = PageRequest.of(page, size, Sort.by("nomePaciente").ascending());
-        return solicitacaoRepository.listarPacientesPendentes(unidadeId, "AGUARDANDO", termo, pageable);
+        EscopoListagem escopo = unidadeAcessoService.escopoDeListagem(callerCpf, unidadeId);
+        if (escopo.isSemAcesso()) {
+            return Page.empty(pageable);
+        }
+        return solicitacaoRepository.listarPacientesPendentes(escopo.unidadeId(), "AGUARDANDO", termo, pageable);
     }
 
-    public Page<PacienteProjection> buscarPorStatusAguardando(int page, int size, String termo) {
+    public Page<PacienteProjection> buscarPorStatusAguardando(int page, int size, String termo, String callerCpf) {
         Pageable pagina = PageRequest.of(page, size);
-        return solicitacaoRepository.buscarPorStatus(pagina, termo, StatusDaMarcacao.AGENDADO.name());
+        EscopoListagem escopo = unidadeAcessoService.escopoDeListagem(callerCpf, null);
+        if (escopo.isSemAcesso()) {
+            return Page.empty(pagina);
+        }
+        return solicitacaoRepository.buscarPorStatus(pagina, termo, StatusDaMarcacao.AGENDADO.name(), escopo.unidadeId());
     }
 
-    public Page<PacienteProjection> buscarPorStatusConcluido(int page, int size, String termo) {
+    public Page<PacienteProjection> buscarPorStatusConcluido(int page, int size, String termo, String callerCpf) {
         Pageable pagina = PageRequest.of(page, size);
-        return solicitacaoRepository.buscarConcluidosAgrupados(termo, pagina);
+        EscopoListagem escopo = unidadeAcessoService.escopoDeListagem(callerCpf, null);
+        if (escopo.isSemAcesso()) {
+            return Page.empty(pagina);
+        }
+        return solicitacaoRepository.buscarConcluidosAgrupados(termo, escopo.unidadeId(), pagina);
     }
 
-    public Page<UrgenciaEmergenciaPacienteProjection> buscarPorUrgenteeEmergencia(int page, int size, String termo) {
+    public Page<UrgenciaEmergenciaPacienteProjection> buscarPorUrgenteeEmergencia(int page, int size, String termo, String callerCpf) {
         Pageable pagina = PageRequest.of(page, size);
-        return solicitacaoRepository.listarPacientesUrgenteseEmergencias(pagina, termo);
+        EscopoListagem escopo = unidadeAcessoService.escopoDeListagem(callerCpf, null);
+        if (escopo.isSemAcesso()) {
+            return Page.empty(pagina);
+        }
+        return solicitacaoRepository.listarPacientesUrgenteseEmergencias(pagina, termo, escopo.unidadeId());
     }
 
     public long totalPacientesCadastrados() {
         return solicitacaoRepository.count();
     }
 
-    public Page<PacientesGelProjection> listarPacientesGel(int page, int size, String termo) {
+    public Page<PacientesGelProjection> listarPacientesGel(int page, int size, String termo, String callerCpf) {
         int paginaAtual = Math.max(page, 0);
         int tamanhoPagina = Math.min(Math.max(size, 1), 50);
         Pageable pagina = PageRequest.of(paginaAtual, tamanhoPagina, Sort.by("nomePaciente").ascending());
-        return especialidadeRepository.listarPacientesGel(termo, pagina);
+        EscopoListagem escopo = unidadeAcessoService.escopoDeListagem(callerCpf, null);
+        if (escopo.isSemAcesso()) {
+            return Page.empty(pagina);
+        }
+        return especialidadeRepository.listarPacientesGel(termo, escopo.unidadeId(), pagina);
     }
 }

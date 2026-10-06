@@ -39,7 +39,10 @@ public class SolicitacaoEspecialidadeController {
         return ResponseEntity.ok(views);
     }
 
+    // Mesmos perfis que editam a ficha e as agendas (USER incluido: /agendas usa
+    // este endpoint). GESTOR fica de fora — para ele a ficha e so consulta.
     @PutMapping("/{id}")
+    @PreAuthorize("hasAnyRole('ADMIN', 'ADMIN_UNIDADE', 'USER', 'RECEPCAO', 'ENFERMEIRO', 'MEDICO', 'COORD_TRANSPORTE')")
     public ResponseEntity<SolicitacaoEspecialidadeViewDTO> atualizarEspecialidade(@PathVariable Long id, @RequestBody EspecialidadeUpdateDTO dto){
         SolicitacaoEspecialidadeViewDTO view = service.atualizarStatusEspecialidade(dto, id);
 

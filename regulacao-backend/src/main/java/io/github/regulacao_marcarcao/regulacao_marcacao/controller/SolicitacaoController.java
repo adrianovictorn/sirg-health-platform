@@ -89,20 +89,23 @@ public class SolicitacaoController {
         return ResponseEntity.ok(service.obterResumoDashboard(authentication != null ? authentication.getName() : null));
     }
 
+    // GESTOR le a ficha (chega nela pela fila de espera); a escrita continua negada a ele.
     @GetMapping("/{id}")
-    @PreAuthorize("hasAnyRole('ADMIN', 'ADMIN_UNIDADE', 'USER', 'RECEPCAO', 'ENFERMEIRO', 'MEDICO', 'COORD_TRANSPORTE')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'ADMIN_UNIDADE', 'GESTOR', 'USER', 'RECEPCAO', 'ENFERMEIRO', 'MEDICO', 'COORD_TRANSPORTE')")
     public ResponseEntity<SolicitacaoViewDTO> buscarPorId (@PathVariable Long id, Authentication authentication){
         SolicitacaoViewDTO solicitacao = service.getSolicitacaoById(id, authentication != null ? authentication.getName() : null);
         return ResponseEntity.ok(solicitacao);
     }
 
     @GetMapping("/pacientes/gel")
+    @PreAuthorize("hasAnyRole('ADMIN', 'ADMIN_UNIDADE', 'GESTOR', 'USER', 'RECEPCAO', 'ENFERMEIRO', 'MEDICO', 'COORD_TRANSPORTE')")
     public ResponseEntity<Page<PacientesGelProjection>> listarPacientesGel(
         @RequestParam(name = "page", defaultValue = "0") int page,
         @RequestParam(name = "size", defaultValue = "10") int size,
-        @RequestParam(name = "search", required = false) String search
+        @RequestParam(name = "search", required = false) String search,
+        Authentication authentication
     ){
-        return ResponseEntity.ok(service.listarPacientesGel(page, size, search));
+        return ResponseEntity.ok(service.listarPacientesGel(page, size, search, authentication != null ? authentication.getName() : null));
     }
 
     @PutMapping("/{id}")
@@ -136,12 +139,16 @@ public class SolicitacaoController {
         return ResponseEntity.ok(solicitacoes);
     }
 
+    // Os endpoints /buscar/** ja foram publicos (permitAll): devolviam nome, CPF e
+    // CNS sem login. Agora exigem perfil, e as listas seguem o escopo de unidade.
     @GetMapping("/buscar/{id}")
+    @PreAuthorize("hasAnyRole('ADMIN', 'ADMIN_UNIDADE', 'USER', 'RECEPCAO', 'ENFERMEIRO', 'MEDICO', 'COORD_TRANSPORTE')")
     public ResponseEntity<SolicitacaoAgendamentoViewDTO> buscarPorId2 (@PathVariable Long id){
     return ResponseEntity.ok(service.buscarSolicitacaoPorId(id));
     }
 
     @GetMapping("/buscar/por/nome/cpf")
+    @PreAuthorize("hasAnyRole('ADMIN', 'ADMIN_UNIDADE', 'USER', 'RECEPCAO', 'ENFERMEIRO', 'MEDICO', 'COORD_TRANSPORTE')")
     public ResponseEntity<Page<SolicitacaoSimpleViewDTO>> buscarPorNomeOuCPF(
         @RequestParam(defaultValue = "0", name = "page") int page,
         @RequestParam(defaultValue = "10", name = "size") int size,
@@ -154,40 +161,48 @@ public class SolicitacaoController {
 
 
     @GetMapping("/buscar/por/status/usf")
+    @PreAuthorize("hasAnyRole('ADMIN', 'ADMIN_UNIDADE', 'GESTOR', 'USER', 'RECEPCAO', 'ENFERMEIRO', 'MEDICO', 'COORD_TRANSPORTE')")
     public ResponseEntity<Page<PendenciasPacienteProjection>> buscarPendentes(
         @RequestParam(defaultValue = "0", name = "page") int page,
         @RequestParam(defaultValue = "10", name = "size") int size,
         @RequestParam(required = false, name = "termo") String termo,
-        @RequestParam(required = false, name = "unidadeId") Long unidadeId
+        @RequestParam(required = false, name = "unidadeId") Long unidadeId,
+        Authentication authentication
     ){
-        return ResponseEntity.ok(service.buscarPendentesPorUnidade(page, size, unidadeId, termo));
+        return ResponseEntity.ok(service.buscarPendentesPorUnidade(page, size, unidadeId, termo, authentication != null ? authentication.getName() : null));
     }
 
     @GetMapping("/buscar/por/urgentes")
+    @PreAuthorize("hasAnyRole('ADMIN', 'ADMIN_UNIDADE', 'GESTOR', 'USER', 'RECEPCAO', 'ENFERMEIRO', 'MEDICO', 'COORD_TRANSPORTE')")
     public ResponseEntity<Page<UrgenciaEmergenciaPacienteProjection>> buscarUrgenteseEmergencia(
         @RequestParam(defaultValue = "0", name = "page") int page,
         @RequestParam(defaultValue = "10", name = "size") int size,
-        @RequestParam(required = false, name = "termo") String termo
+        @RequestParam(required = false, name = "termo") String termo,
+        Authentication authentication
     ){
-        return ResponseEntity.ok(service.buscarPorUrgenteeEmergencia(page, size, termo));
+        return ResponseEntity.ok(service.buscarPorUrgenteeEmergencia(page, size, termo, authentication != null ? authentication.getName() : null));
     }
 
     @GetMapping("/buscar/por/agendados")
+    @PreAuthorize("hasAnyRole('ADMIN', 'ADMIN_UNIDADE', 'GESTOR', 'USER', 'RECEPCAO', 'ENFERMEIRO', 'MEDICO', 'COORD_TRANSPORTE')")
     public ResponseEntity<Page<PacienteProjection>> buscarPorAgendados(
         @RequestParam(defaultValue = "0", name = "page") int page,
         @RequestParam(defaultValue = "10", name = "size") int size,
-        @RequestParam(required = false, name = "termo") String termo
+        @RequestParam(required = false, name = "termo") String termo,
+        Authentication authentication
     ){
-        return ResponseEntity.ok(service.buscarPorStatusAguardando(page, size, termo));
+        return ResponseEntity.ok(service.buscarPorStatusAguardando(page, size, termo, authentication != null ? authentication.getName() : null));
     }
 
     @GetMapping("/buscar/por/concluido")
+    @PreAuthorize("hasAnyRole('ADMIN', 'ADMIN_UNIDADE', 'GESTOR', 'USER', 'RECEPCAO', 'ENFERMEIRO', 'MEDICO', 'COORD_TRANSPORTE')")
     public ResponseEntity<Page<PacienteProjection>> buscarPorConcluido(
         @RequestParam(defaultValue = "0", name = "page") int page,
         @RequestParam(defaultValue = "10", name = "size") int size,
-        @RequestParam(required = false, name = "termo") String termo
+        @RequestParam(required = false, name = "termo") String termo,
+        Authentication authentication
     ){
-        return ResponseEntity.ok(service.buscarPorStatusConcluido(page, size, termo));
+        return ResponseEntity.ok(service.buscarPorStatusConcluido(page, size, termo, authentication != null ? authentication.getName() : null));
     }
 
 }

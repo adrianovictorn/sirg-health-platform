@@ -72,13 +72,7 @@ public class UnidadeAcessoService {
         if (perfil == null) {
             return UnidadeContexto.GLOBAL;
         }
-        if (perfil == Roles.ADMIN) {
-            return UnidadeContexto.GLOBAL;
-        }
-        // GESTOR acompanha o desempenho COMPARANDO unidades, então é global por
-        // definição — inclusive quando tem unidade de lotação, que para ele é só
-        // lotação administrativa e não deve estreitar o que ele enxerga.
-        if (perfil == Roles.GESTOR) {
+        if (isPerfilGlobal(perfil)) {
             return UnidadeContexto.GLOBAL;
         }
         if (user.getUnidade() != null) {
@@ -91,6 +85,93 @@ public class UnidadeAcessoService {
                             + "Solicite ao administrador do sistema o vínculo da sua unidade.");
         }
         return UnidadeContexto.GLOBAL;
+    }
+
+    /**
+     * Perfis que enxergam todas as unidades por definição, com ou sem lotação.
+     *
+     * ADMIN administra o município. GESTOR acompanha o desempenho COMPARANDO
+     * unidades — a unidade de lotação dele é só administrativa e não deve
+     * estreitar o que ele enxerga. Predicado único, usado por {@link #contextoDe}
+     * e por {@link #escopoDeListagem}, para as duas regras não divergirem.
+     */
+    private boolean isPerfilGlobal(Roles perfil) {
+        return perfil == Roles.ADMIN || perfil == Roles.GESTOR;
+    }
+
+    /**
+     * Escopo de uma LISTAGEM ou CONTAGEM nominal de pacientes (fila de espera,
+     * resumo do dashboard e as listas que os cards abrem).
+     *
+     * Diferente de {@link UnidadeContexto}: aqui quem não tem unidade de lotação
+     * não cai em "global" — fica sem acesso, em vez de ver o município inteiro.
+     */
+    public record EscopoListagem(Tipo tipo, Long unidadeId) {
+        public enum Tipo { GLOBAL, UNIDADE, SEM_ACESSO }
+
+        public static EscopoListagem global() {
+            return new EscopoListagem(Tipo.GLOBAL, null);
+        }
+
+        public static EscopoListagem unidade(Long unidadeId) {
+            return new EscopoListagem(Tipo.UNIDADE, unidadeId);
+        }
+
+        public static EscopoListagem semAcesso() {
+            return new EscopoListagem(Tipo.SEM_ACESSO, null);
+        }
+
+        public boolean isGlobal() {
+            return tipo == Tipo.GLOBAL;
+        }
+
+        public boolean isSemAcesso() {
+            return tipo == Tipo.SEM_ACESSO;
+        }
+    }
+
+    /**
+     * Resolve o que o chamador pode LISTAR. Fronteira com o restante da classe:
+     * listagem e contagem nominal usam este método; escrita e acesso por id
+     * continuam em {@link #contextoDe}, {@link #resolverUnidadeAlvo} e
+     * {@link #exigirAcessoA}.
+     *
+     * <ul>
+     *   <li>ADMIN e GESTOR — todas as unidades, ou só a {@code unidadeSolicitada}
+     *       quando informada.</li>
+     *   <li>Demais perfis com lotação — sempre a própria unidade; pedir outra é
+     *       negado (403), nunca atendido em silêncio.</li>
+     *   <li>Demais perfis sem lotação — sem acesso (lista vazia, contagem zero).
+     *       Exceção: COORD_TRANSPORTE, que opera o transporte do município inteiro
+     *       e mantém a visão global que já tinha.</li>
+     *   <li>CPF nulo ou usuário inexistente — sem acesso (falha fechada, ao
+     *       contrário de {@link #contextoDe}).</li>
+     * </ul>
+     */
+    @Transactional(readOnly = true)
+    public EscopoListagem escopoDeListagem(String cpf, Long unidadeSolicitada) {
+        if (cpf == null) {
+            return EscopoListagem.semAcesso();
+        }
+        User user = userRepository.findByCpf(cpf).orElse(null);
+        if (user == null) {
+            return EscopoListagem.semAcesso();
+        }
+        Roles perfil = perfilEfetivo(user);
+        boolean semLotacao = user.getUnidade() == null;
+        if (isPerfilGlobal(perfil) || (perfil == Roles.COORD_TRANSPORTE && semLotacao)) {
+            return unidadeSolicitada == null
+                    ? EscopoListagem.global()
+                    : EscopoListagem.unidade(unidadeSolicitada);
+        }
+        if (semLotacao) {
+            return EscopoListagem.semAcesso();
+        }
+        Long lotacao = user.getUnidade().getId();
+        if (unidadeSolicitada != null && !lotacao.equals(unidadeSolicitada)) {
+            throw new AccessDeniedException("Acesso negado aos dados de outra unidade.");
+        }
+        return EscopoListagem.unidade(lotacao);
     }
 
     /**

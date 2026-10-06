@@ -6,6 +6,7 @@
   import Content from '$lib/Content.svelte';
   import { toast } from 'svelte-sonner';
   import { cnesPertenceAOutraUnidade, divergeDosDadosAtuais, mesclarCamposCnes } from '$lib/unidadeCnes.js';
+  import { formatarDataHora } from '$lib/datas.js';
 
   const unidadeId = $page.params.id;
 
@@ -165,7 +166,7 @@
             Busca os dados do estabelecimento na base do CNES e preenche os campos abaixo —
             confira antes de salvar, nada é gravado automaticamente.
             {#if sincronizadoCnesEm}
-              <br />Última sincronização: {new Date(sincronizadoCnesEm).toLocaleString('pt-BR')}.
+              <br />Última sincronização: {formatarDataHora(sincronizadoCnesEm)}.
             {/if}
           </p>
         </div>

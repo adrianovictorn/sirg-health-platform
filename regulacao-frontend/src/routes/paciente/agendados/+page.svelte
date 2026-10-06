@@ -1,6 +1,7 @@
 ﻿<script lang="ts">
   import { onDestroy, onMount } from "svelte";
   import { getApi, patchApi } from "$lib/api";
+  import { formatarData } from "$lib/datas.js";
   import type { PacienteProjection } from "$lib/models/PacienteProjection";
   import RoleBasedMenu from "$lib/RoleBasedMenu.svelte";
   import UserMenu from "$lib/UserMenu.svelte";
@@ -35,13 +36,6 @@
   let lastFetchToken: symbol | null = null;
 
   const DEBOUNCE_MS = 300;
-
-  function formatarData(dataString: string | null): string {
-    if (!dataString) return "N/A";
-    const data = new Date(dataString);
-    data.setDate(data.getDate() + 1);
-    return data.toLocaleDateString("pt-BR");
-  }
 
   function triggerFetch(pageToLoad: number) {
     currentPage = Math.max(pageToLoad, 1);
