@@ -489,6 +489,62 @@ public class CotaUnidadeService {
     }
 
     /**
+     * Resultado de {@link #simularConsumo}. {@code corrigivel}: a recusa vem de
+     * um dado da requisicao (cota escolhida, profissional nao escolhido), e nao
+     * de falta de vaga. {@code cotasAReservar}: ids das cotas que o consumo real
+     * debitaria — o chamador soma 1 em cada uma ao aceitar o item.
+     */
+    public record SimulacaoConsumo(boolean viavel, boolean corrigivel, String motivo, CotaUnidade cotaUsada,
+            List<Long> cotasAReservar) {
+    }
+
+    /**
+     * Diz o que {@link #resolverCotaParaAgendamento} + {@link #incrementarUtilizacao}
+     * fariam com um item, SEM consumir nada — usado pela pre-verificacao do
+     * agendamento em lote. Mesmas cotas, mesma regra de isolamento por
+     * profissional; a unica diferenca e que o saldo e lido em vez de debitado.
+     *
+     * <p>{@code reservadoNoLote}: vagas ja contadas para itens anteriores do
+     * mesmo lote, por id de cota. Sem isso, dois itens que disputam a ultima
+     * vaga de uma cota de grupo pareceriam ambos viaveis. Este metodo nao altera
+     * o mapa.
+     *
+     * <p>Devolve o resultado em vez de lancar: uma excecao que atravessa o proxy
+     * transacional marcaria a transacao do chamador como rollback-only.
+     */
+    @Transactional(readOnly = true)
+    public SimulacaoConsumo simularConsumo(Long unidadeId, Long especialidadeId, LocalDate data,
+            Long cotaEscolhidaId, Map<Long, Integer> reservadoNoLote) {
+        if (unidadeId == null || data == null) {
+            return new SimulacaoConsumo(true, false, null, null, List.of());
+        }
+
+        CotaUnidade cotaUsada;
+        try {
+            cotaUsada = resolverCotaParaAgendamento(unidadeId, especialidadeId, data, cotaEscolhidaId);
+        } catch (IllegalArgumentException e) {
+            return new SimulacaoConsumo(false, true, e.getMessage(), null, List.of());
+        }
+
+        List<CotaUnidade> aConsumir = cotasParaConsumo(cotasAplicaveis(unidadeId, especialidadeId, data),
+                cotaUsada != null ? cotaUsada.getId() : null);
+        for (CotaUnidade cota : aConsumir) {
+            // Mesmo criterio do WHERE de consumirVaga: ativa e com saldo.
+            if (!cota.isAtivo() || cota.getQuantidadeUtilizada() >= cota.getQuantidadeTotal()) {
+                return new SimulacaoConsumo(false, false, mensagemEsgotada(cota), cotaUsada, List.of());
+            }
+            int reservado = reservadoNoLote != null ? reservadoNoLote.getOrDefault(cota.getId(), 0) : 0;
+            if (cota.getQuantidadeUtilizada() + reservado >= cota.getQuantidadeTotal()) {
+                return new SimulacaoConsumo(false, false,
+                        "Cota sem vaga para mais um item deste agendamento — a ultima vaga ja foi "
+                                + "usada por outro item do mesmo lote.",
+                        cotaUsada, List.of());
+            }
+        }
+        return new SimulacaoConsumo(true, false, null, cotaUsada, aConsumir.stream().map(CotaUnidade::getId).toList());
+    }
+
+    /**
      * Devolve as vagas consumidas por um agendamento cancelado, excluido ou
      * remanejado (overload sem profissional/cota especifica — ver
      * {@link #estornarUtilizacao(Long, Long, LocalDate, Long)}).

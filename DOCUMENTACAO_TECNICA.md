@@ -647,6 +647,100 @@ recusado, solicitação sem agendamento não aparece.
 
 ---
 
+### 3.15d Custo e Teto Financeiro (V105–V107)
+
+Preço por especialidade, valor da época em cada item agendado e um limite em reais por
+unidade. **Todo valor em reais é restrito a ADMIN e GESTOR**, e só sai por `/api/custos/**`
+(§7.10i). Perfil de unidade não vê preço, custo, saldo nem limite — nem na tela, nem no JSON.
+
+**Campos de custo em `Especialidade` (V105):**
+
+| Campo | Descrição |
+|-------|-----------|
+| `valorUnitario` | `NUMERIC(12,2)`, anulável. **Nulo = sem preço, não R$ 0,00**: a especialidade continua utilizável em tudo e só fica fora dos totais |
+| `codigoSus` | Código SIGTAP, 10 dígitos com zero à esquerda. **Não é único**: o catálogo tem conceitos duplicados (`GLICOSE` e `GLICEMIA_JEJUM`, `PSA_TOTAL` e `PSA_LIVRE`) que apontam para o mesmo procedimento |
+| `valorOrigem` | `MANUAL` ou `IMPORTACAO` — a importação avisa antes de sobrescrever um preço digitado |
+| `valorAtualizadoEm` / `valorAtualizadoPor` | Quando e quem alterou o preço |
+
+> **`codigo_sus` é campo novo, não substitui `especialidade.codigo`.** O código atual é a
+> chave do agendamento entre a tela `/agendar` e o backend, é usado na criação de
+> solicitação e em seis consultas `codigo IN`, e alimenta o backfill da coluna legada. Trocar
+> o seu significado quebraria tudo isso — e a unicidade dele, já que o SIGTAP se repete.
+
+> **Estes campos nunca entram em `EspecialidadeViewDTO` nem em `EspecialidadeSimpleViewDTO`**,
+> que são devolvidos a qualquer usuário autenticado. O `EspecialidadeMapper` os ignora
+> explicitamente. `SegurancaEndpointsIT.precoNaoVazaForaDeCustos` quebra o build se vazarem.
+
+**Valor da época em `SolicitacaoEspecialidade` (V106):**
+
+`valorUnitarioAgendado` guarda o preço **no momento do agendamento**. O painel soma esta
+coluna (agendado e concluído), não o preço atual: um reajuste não altera períodos passados.
+Sem backfill — agendamento anterior à V106 fica nulo e **fora dos totais**, contado à parte.
+Cancelar o agendamento apaga o valor (o item volta para a fila).
+
+**`TetoFinanceiro` (V107):** tabela `teto_financeiro`
+
+| Campo | Descrição |
+|-------|-----------|
+| `unidade` | Unidade limitada (NOT NULL) |
+| `grupoEspecialidades` | `GrupoRelatorio` cujas especialidades debitam — na prática, Laboratório. O ADMIN escolhe ao liberar; nada fica fixo em código |
+| `periodo` | Mês da **data agendada**, `YYYY-MM` |
+| `valorTotal` / `valorUtilizado` | `NUMERIC(14,2)`. `valorUtilizado` é `updatable = false` na entidade: só muda por UPDATE atômico |
+| `ativo`, `criadoEm`, `criadoPor`, `version` | Controle; `@Version` protege a edição pelo ADMIN |
+
+`UNIQUE (unidade_id, grupo_especialidades_id, periodo)`.
+
+**Regras do teto** (`TetoFinanceiroService`, chamado por `AgendamentoService`):
+
+- **Convive com a cota sem tocar nela.** Cota limita em quantidade, teto em valor; as duas
+  incidem juntas. `CotaUnidadeService` não sabe que o teto existe.
+- **Débito** ao agendar: um único `UPDATE ... WHERE valor_utilizado + :v <= valor_total` por
+  teto, com a **soma** dos itens do agendamento. Zero linhas afetadas → `IllegalStateException`
+  (409) e a transação inteira desfaz, **inclusive a cota já consumida**.
+- **Estorno** ao cancelar (`deleteAgendamento`) e ao remover da solicitação um item agendado
+  (`removerEspecialidade`): devolve o valor **gravado no item**, ao teto **gravado no item**
+  (`teto_financeiro_id`). Nunca recalcula — o preço e o grupo podem ter mudado.
+- **Sem teto cadastrado não há restrição**, como na cota. Especialidade sem preço não debita.
+- **ADMIN e GESTOR debitam sem bloqueio** — diferença deliberada em relação à cota, onde eles
+  não consomem. O gasto precisa aparecer no saldo; o teto pode ser ultrapassado. O critério
+  é `UnidadeAcessoService.isAdminOuGestor`, **mais estreito** que o `isAcessoGlobal` da cota:
+  perfil de unidade sem lotação não consome cota, mas é barrado pelo teto.
+- **Remover item só devolve se ele estiver `AGENDADO`.** Item que virou falta (`CANCELADO`)
+  ou `REALIZADO` mantém o teto e o valor gravados; removê-lo não devolve saldo.
+- **Falta não devolve** (segue a cota: `faltouProcedimento` não estorna).
+- **A mensagem de bloqueio não cita nenhum valor em reais.** Quem a recebe é o perfil de
+  unidade.
+
+> **O débito do teto usa SQL nativo sem `clearAutomatically`**, ao contrário de `consumirVaga`.
+> Limpar o contexto ali desanexaria a solicitação que o agendamento ainda vai salvar. Por
+> isso o custo é registrado **depois** do laço de itens, quando todo o consumo de cota já
+> aconteceu, e preço e grupo são lidos por consulta escalar **antes** do laço.
+
+**Painel** (`CustoPainelService`): três visões, só agregados, nenhum dado de paciente.
+
+| Visão | O que soma |
+|-------|-----------|
+| Estimado da fila | Itens `AGUARDANDO`, `RETORNO`, `RETORNO_POLICLINICA` × **preço atual**. `GEL` fica fora. Não depende do período |
+| Agendado | Itens `AGENDADO` com data agendada no período × valor da época |
+| Concluído | Itens `REALIZADO` com data agendada no período × valor da época. Não existe data de conclusão no sistema |
+
+Solicitação sem unidade aparece numa linha própria ("Sem unidade"), para a soma por unidade
+fechar com o total.
+
+**Importação de preços** (`CustoImportacaoService` + `PlanilhaCustoLeitorService`): duas
+etapas, como a do CNES — prévia sem gravar, confirmação que reconfere tudo. Aceita `.xlsx` e
+`.csv`. Casa **só** por código SUS já gravado ou por nome normalizado idêntico e único (sem
+acento, caixa, pontuação e espaços); o resto o operador escolhe. Preço ou código já gravado
+só é substituído com confirmação por linha. Nunca cria nem renomeia especialidade.
+Idempotente. A planilha inicial do cliente está em
+`docs/especificacoes/anexos/precos-exames-laboratoriais.csv`.
+
+> **Por que não é uma migration:** a mesma migration roda nos dois municípios, que têm
+> cadastros diferentes, e os nomes da planilha têm erros de digitação. Preço na
+> especialidade errada vira número financeiro errado no painel, e nada acusa.
+
+---
+
 ### 3.16 Profissional
 
 **Tabela:** `profissional`  
@@ -919,6 +1013,41 @@ Usuário → POST /api/agendamentos/{solicitacaoId} { examesSelecionados, data, 
   Cota esgotada ⇒ GlobalExceptionHandler ⇒ 409 { message: "Cota esgotada para ..." }
 ```
 
+O POST é **tudo-ou-nada**: qualquer item barrado desfaz o agendamento inteiro. Em lote, o
+laço inicializa a especialidade de todos os itens da ficha antes de consumir a primeira cota —
+`consumirVaga` limpa o contexto de persistência (`clearAutomatically`) e, sem isso, o segundo
+item estourava `LazyInitializationException`.
+
+### 5.3a Pré-verificação do lote (agendar só os itens possíveis)
+
+```
+Tela /agendar → POST /api/agendamentos/{solicitacaoId}/verificar   (mesmo corpo do POST acima)
+  → AgendamentoController.verificarAgendamento()   [perfis que operam a ficha; GESTOR não]
+  → AgendamentoService.verificarAgendamentoParaMultiplosExames()   [@Transactional(readOnly)]
+    → exige acesso à unidade da solicitação (órfã passa)
+    → erros do agendamento inteiro são lançados como no POST (404/400/403)
+    → Para cada exame, na MESMA ordem de checagem do POST, sem gravar:
+        · capacidade global, item pendente, cota liberada (ADMIN_UNIDADE)
+        · cotaUnidadeService.simularConsumo(...)  — lê o saldo, contando o que os itens
+          anteriores do mesmo lote já ocupariam
+        · hora e profissional informados
+    → Teto financeiro sobre o conjunto de itens aceitos (tetoFinanceiroService.motivoSeNaoComporta)
+  → return 200 { itens: [{ codigo, nome, podeAgendar, corrigivel, motivo }], bloqueioDoLote }
+```
+
+- **Não grava nada:** não cria agendamento, não consome cota, não debita teto, não publica evento.
+- **É consultiva.** Quem decide é o POST, que revalida tudo; se a vaga for tomada entre a
+  verificação e a gravação, o POST responde o 409 de sempre.
+- **`corrigivel`:** o item só não entra por um dado que o operador ajusta na tela (cota escolhida,
+  profissional, hora). A tela pede a correção em vez de oferecer agendar sem ele.
+- **`bloqueioDoLote`:** o teto continua tudo-ou-nada. Se não comporta os itens aceitos, nada seria
+  gravado; a mensagem não cita valores.
+- **Na tela:** todos aceitos → grava direto, sem etapa extra. Parte de fora → diálogo com o que
+  entra, o que fica de fora e o motivo; ao confirmar, o POST vai só com os itens aceitos e o
+  comprovante lista só eles. Verificação indisponível (rede, 403) → a tela segue pelo POST.
+- **As checagens por item espelham as do POST.** Regra nova no laço do POST precisa entrar também
+  na verificação; `AgendamentoVerificacaoIT` compara os dois.
+
 ### 5.3b Fluxo de Cancelamento (estorno de cota)
 
 ```
@@ -1091,6 +1220,13 @@ Próxima requisição do usuário desativado:
 | V86 | `unidade.tipo` (`SOLICITANTE`/`EXECUTANTE`/`AMBOS`, default `AMBOS`) + dados cadastrais do CNES; índice `ix_unidade_tipo_ativo` |
 | V87 | Tabela `cbo`, **sem seed** — ver §3.16b |
 | V88 | `profissional.cpf` (UNIQUE parcial) + tabela `profissional_vinculo`; backfill dos vínculos a partir de `profissional.unidade_id` |
+| V101 | WhatsApp: `whatsapp_mensagem` (fila e registro de envios, sem texto nem telefone) e `whatsapp_config` (chave do envio, nasce desligada) — ver §7.10h |
+| V102 | `especialidade.sensivel` e `solicitacao.whatsapp_opt_out` / `whatsapp_opt_out_em` |
+| V103 | `whatsapp_lote_lembrete` — dias em que o lote de lembretes rodou |
+| V104 | `whatsapp_recebidas_dia` — só a contagem diária de mensagens recebidas de pacientes |
+| V105 | Custo: `especialidade.valor_unitario`, `codigo_sus` (10 dígitos, **não único**), `valor_origem`, `valor_atualizado_em`, `valor_atualizado_por_id`. **Nenhum preço embutido** — ver §3.15d |
+| V106 | `solicitacao_especialidade.valor_unitario_agendado` — valor da época, **sem backfill** |
+| V107 | Tabela `teto_financeiro` (unidade + grupo de especialidades + mês, UNIQUE) e `solicitacao_especialidade.teto_financeiro_id` |
 
 > **Limite do backfill (V73/V76/V77):** só é possível vincular a unidade quando
 > `usf_origem` está preenchido **e** casa com alguma unidade cadastrada. O que sobra é
@@ -1243,6 +1379,7 @@ separados por vírgula. Valor inválido → 400.
 | DELETE | `/agendamentos/{id}` | Remove |
 | GET | `/agendamentos/dia` | Agenda do dia |
 | POST | `/agendamentos/multi` | Agendamento múltiplo |
+| POST | `/agendamentos/{solicitacaoId}/verificar` | Pré-verificação do lote: o que seria agendado e o que ficaria de fora, sem gravar (§5.3a) |
 
 ---
 
@@ -1400,6 +1537,133 @@ payload carrega dado de paciente.
    retentativa.
 
 Decisões e o que ficou de fora: `docs/decisoes/0002-webhook-whatsapp-por-instancia.md`.
+
+Desde a V104 o POST autenticado também chama `WhatsAppStatusService.processar`, que atualiza o
+registro de envios (§7.10h). Ele nunca lança: o `200` para a Meta não depende dele.
+
+### 7.10h Envio de mensagens pelo WhatsApp (`/whatsapp`)
+
+Painel de admin. **Tudo aqui é só `ADMIN`** (`@PreAuthorize` na classe `WhatsAppAdminController`).
+
+| Método | Endpoint | Descrição |
+|---|---|---|
+| GET | `/whatsapp/config` | Estado: configurado, webhook ligado, envio ligado, quem/quando alterou, limite diário, enviadas hoje, modo de teste |
+| PUT | `/whatsapp/config/envio` | `{ "ligado": true }` ou `false`. Ligar sem credenciais na instância: `409` |
+| GET | `/whatsapp/mensagens?de=&ate=&tipo=&resultado=&page=&size=` | Lista de operação, paginada, mais recentes primeiro |
+| GET | `/whatsapp/indicadores?de=&ate=` | Volume no período: enviadas, entregues, lidas, falhas, não enviadas por motivo, cobráveis por categoria, recebidas |
+| POST | `/whatsapp/mensagens/reenviar` | `{ agendamentoId, tipo }` — `CONFIRMACAO` ou `LEMBRETE`. Envio desligado: `409` |
+| POST | `/whatsapp/lembretes/executar` | Roda agora o lote de lembretes. Envio desligado: `409` |
+
+Sem `de`/`ate`, o período são os últimos 7 dias. As datas são do fuso `America/Bahia`.
+
+**Quando uma mensagem é gerada**
+
+| Operação | Mensagem |
+|---|---|
+| `AgendamentoService.criarAgendamentoParaMultiplosExames` | `CONFIRMACAO` — ou `REMARCACAO`, se havia cancelamento pendente de algum dos mesmos itens |
+| `AgendamentoService.deleteAgendamento` | `CANCELAMENTO`, que espera 10 min na fila |
+| Lote diário das 8h, ou "Rodar lembretes agora" | `LEMBRETE` para atendimentos de daqui a 3 dias |
+| Reenvio pelo painel | `CONFIRMACAO` ou `LEMBRETE`, origem `MANUAL` |
+
+Não geram mensagem: paciente faltou, troca manual de status, procedimento realizado, remoção de
+item, cancelamento de ocorrência de agenda, remanejamento de vagas, eventos da federação e
+transporte sanitário.
+
+**Caminho de uma mensagem**
+
+1. O service de negócio publica um evento (só ids e data) na **última linha** do método
+   transacional. Erro de regra (409 de cota, 404) sai antes e nada é publicado.
+2. `WhatsAppAgendamentoListener` roda em `AFTER_COMMIT` e chama `WhatsAppMensagemService`, que
+   grava uma linha `PENDENTE` em transação nova (`REQUIRES_NEW`). Sem HTTP. Qualquer erro é
+   engolido e logado — o agendamento já está gravado.
+3. `WhatsAppEnvioJob` (a cada 30s, lotes de 20) reivindica a linha (`PENDENTE` → `ENVIANDO`),
+   **remonta o conteúdo** relendo agendamento e paciente, reaplica todas as regras e chama a
+   Graph API. Três transações curtas, com a chamada HTTP fora de transação.
+4. O webhook de status leva a linha de `ENVIADO` a `ENTREGUE` e `LIDO`.
+
+**Regras reaplicadas no envio** (`WhatsAppMensagemService.preparar`), na ordem — a primeira que
+barrar vira `NAO_ENVIADO` com o motivo:
+
+| Motivo | Quando |
+|---|---|
+| `NAO_CONFIGURADO` | A instância ficou sem credenciais com mensagem na fila |
+| `ENVIO_DESLIGADO` | Chave desligada |
+| `DATA_PASSADA` | A data do atendimento é anterior a hoje (excluir ou lançar agendamento antigo não avisa o paciente) |
+| `AGENDAMENTO_REMOVIDO` | Agendamento excluído, ou sem nenhum item `AGENDADO` |
+| `PACIENTE_DE_OUTRO_MUNICIPIO` | `origemMunicipioId` diferente do município local |
+| `OPT_OUT` | Paciente pediu para não receber, nesta ficha ou em outra com o mesmo CPF |
+| `SEM_TELEFONE` / `TELEFONE_INVALIDO` | Ver normalização abaixo |
+| `FORA_DA_LISTA_DE_TESTE` | Há lista de números de teste e o número não está nela |
+| `LIMITE_DIARIO` | Mensagens aceitas hoje atingiram `limite-diario`. Não é reenviada sozinha depois |
+| `SUBSTITUIDO_POR_REMARCACAO` | Cancelamento descartado porque o item foi reagendado |
+
+**Telefone** (`TelefoneWhatsAppNormalizador`): remove máscara, zero inicial e `55`; insere o nono
+dígito em celular antigo de 10 dígitos; exige DDD válido. Fixo e número **sem DDD** não enviam —
+o DDD local não é presumido, porque número errado é dado de saúde no celular de outra pessoa.
+
+**Conteúdo** (`WhatsAppConteudoService`) — mesma origem dos campos do comprovante:
+
+| Variável | Origem | Se ausente |
+|---|---|---|
+| Nome | primeiro nome de `Solicitacao.nomePaciente` | "Paciente" |
+| Atendimento | nomes das especialidades; mais de 3 vira "N exames/procedimentos" | "atendimento agendado" |
+| Local | `localAgendamento` + cidade, ou o enum legado | "local informado no comprovante" |
+| Horário, Profissional | só com **um** item no agendamento (como no comprovante) | "conforme o turno" / "a definir pela unidade" |
+| Turno | `TurnoEnum` | "não informado" |
+
+Com **qualquer item `sensivel`**, o atendimento vira "atendimento especializado" e nem o local
+nem o profissional são citados. CPF, CNS, quem agendou e a observação do operador nunca entram — o service nem os lê.
+
+**Templates** (categoria utilidade, `pt_BR`; nomes configuráveis em
+`app.whatsapp.envio.template.*`): `sirg_confirmacao_agendamento` (também na remarcação),
+`sirg_lembrete_agendamento`, `sirg_cancelamento_agendamento`. Texto e ordem das variáveis em
+`INFRA.md`. **A ordem das variáveis no código e no template aprovado precisa ser a mesma.**
+
+**Erros da Meta** (`WhatsAppCloudApiClient`): conexão que nem chegou a ser estabelecida, `429`
+e `5xx` voltam para a fila, no máximo 3 tentativas. `4xx`, timeout de leitura e conexão que caiu
+depois de estabelecida viram `FALHOU` e **não** são repetidos — a Meta pode ter aceitado, e
+repetir duplicaria a mensagem. Guarda-se só o código do
+erro (`META_131026`, `HTTP_503`), nunca a mensagem, que pode trazer o número.
+
+**Lembrete** (`WhatsAppLembreteService`): no dia H entram os atendimentos de H+3 que já
+existiam às 8h de H. Se não há registro de lote em H-1, entram também os de H+2 (recuperação
+de um dia). O índice único em `chave_idempotencia` impede duplicata; o reenvio manual grava a
+chave nula de propósito.
+
+**Quatro armadilhas:**
+
+1. **A JVM do container roda em UTC.** Regra de data usa `WhatsAppEnvioProperties.FUSO`.
+   `LocalDate.now()` puro erra o dia entre 21h e 0h de Brasília.
+2. **Listener `AFTER_COMMIT` que grava precisa de `REQUIRES_NEW`.** Sem isso o INSERT se perde
+   sem erro. Os ITs `@Transactional` não pegam isso (nunca há commit) — por isso
+   `WhatsAppEnvioFluxoIT` não é `@Transactional` e limpa os dados à mão.
+3. **Antes de excluir o agendamento, ler só os ids** (`findIdsByAgendamentoSolicitacaoId`).
+   Carregar as entidades quebra o flush da exclusão em solicitação sem unidade.
+4. **O agendador do Spring tem uma thread.** Tarefa agendada nova e lenta atrasa o despacho.
+
+Decisões e o que ficou de fora: `docs/decisoes/0003-envio-whatsapp-fila-em-banco-e-registro-de-status.md`.
+
+---
+
+### 7.10i Custos (`/custos`)
+
+Tudo aqui é valor em reais: **ADMIN e GESTOR leem, só ADMIN escreve.** Os demais perfis
+recebem 403 em todas as rotas. Regras e modelo em §3.15d.
+
+| Método | Endpoint | Acesso | Descrição |
+|--------|----------|--------|-----------|
+| GET | `/custos/especialidades` | ADMIN, GESTOR | Especialidades com preço e código SUS. Filtros: `nome` (nome ou código SUS), `grupoRelatorioId`, `somenteSemPreco`, `page`, `size` |
+| PUT | `/custos/especialidades/{id}` | ADMIN | Grava `{ codigoSus, valorUnitario }`. Nulo limpa. Código com 9 dígitos recebe o zero à esquerda; outro tamanho → 400 |
+| POST | `/custos/importacao` | ADMIN | `multipart/form-data`, campo `arquivo` (`.xlsx` ou `.csv`). Devolve a prévia, **sem gravar** |
+| POST | `/custos/importacao/confirmar` | ADMIN | `{ itens: [{ linha, especialidadeId, codigoSus, valorUnitario, sobrescrever }] }`. Item que não dá para gravar é pulado com aviso |
+| GET | `/custos/painel` | ADMIN, GESTOR | `unidadeId`, `grupoRelatorioId`, `categoria`, `dataDe`, `dataAte` (sem período: mês corrente). Total, por unidade e por especialidade |
+| GET | `/custos/tetos` | ADMIN, GESTOR | Tetos de um mês (`periodo=YYYY-MM`; sem ele, o mês corrente) |
+| POST | `/custos/tetos` | ADMIN | `{ unidadeIds, grupoEspecialidadesId, periodo, valorTotal }` — libera em lote. Se alguma unidade já tem teto do grupo no mês, **nada** é criado (409) |
+| PUT | `/custos/tetos/{id}` | ADMIN | `{ valorTotal, ativo, version }`. Reduzir abaixo do já utilizado → 409 |
+
+O `@PreAuthorize` é a barreira: o escopo de listagem do painel também daria visão global a
+`COORD_TRANSPORTE` sem lotação. Telas: `/custos`, `/custos/especialidades`, `/custos/tetos`
+(ADMIN e GESTOR) e `/admin/custos/importar` (ADMIN).
 
 ---
 
@@ -1939,6 +2203,15 @@ app.municipio.queue-name=fila_conceicao_do_almeida
 app.notifications.ignore-self-executor=false
 app.whatsapp.verify-token=
 app.whatsapp.app-secret=
+app.whatsapp.envio.access-token=
+app.whatsapp.envio.phone-number-id=
+app.whatsapp.envio.api-version=v23.0
+app.whatsapp.envio.limite-diario=200
+app.whatsapp.envio.numeros-teste=
+app.whatsapp.envio.cancelamento-atraso-minutos=10
+app.whatsapp.envio.template.confirmacao=sirg_confirmacao_agendamento
+app.whatsapp.envio.template.cancelamento=sirg_cancelamento_agendamento
+app.whatsapp.envio.template.lembrete=sirg_lembrete_agendamento
 ```
 
 **Variáveis a alterar em produção:**
@@ -1948,6 +2221,11 @@ app.whatsapp.app-secret=
 - `app.municipio.*` — identificador único por instância
 - `app.whatsapp.*` — opcionais; vazias desligam o webhook do WhatsApp (§7.10g). Em produção vêm
   de `WHATSAPP_VERIFY_TOKEN` e `WHATSAPP_APP_SECRET` no `.env` da VPS. Nunca commitar valor real.
+- `app.whatsapp.envio.*` — opcionais; sem `access-token` e `phone-number-id` o envio fica "não
+  configurado" (§7.10h). Em produção vêm de `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`,
+  `WHATSAPP_LIMITE_DIARIO` e `WHATSAPP_NUMEROS_TESTE`. Outras, sem variável própria no compose:
+  `base-url`, `timeout-conexao-ms`, `timeout-leitura-ms`, `idioma`, `intervalo-ms`,
+  `lembrete-cron` e `agendador-ligado` (os testes usam `false`).
 
 ---
 

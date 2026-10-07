@@ -6,7 +6,9 @@ public record EspecialidadeUpdateDTO(
     String categoria, 
     Long grupoRelatorioId,
     Boolean ativo,
-    Integer vagas
+    Integer vagas,
+    /** V102: nao citar em mensagens de WhatsApp. Nulo = nao mexe. */
+    Boolean sensivel
 ) {
     
 }

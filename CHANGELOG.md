@@ -4,6 +4,111 @@
 
 ### Novidades
 
+- **Custos: preco por especialidade, painel e teto financeiro (`/custos`, `/api/custos/**`).**
+  Cada especialidade pode ter um **valor unitario** e um **codigo SUS** (SIGTAP). Com isso o
+  sistema mostra quanto custa a fila, o que foi agendado e o que foi realizado, e permite
+  limitar em reais o que cada unidade agenda de laboratorio no mes.
+
+  **So ADMIN e GESTOR veem valores.** Nenhum perfil de unidade ve preco, custo, saldo ou
+  limite — nem na tela, nem na resposta da API. GESTOR acompanha; so ADMIN altera preco,
+  importa planilha e libera teto.
+
+  **Nada muda ate alguem cadastrar preco e teto.** Subir esta versao nao cria preco nem teto
+  nenhum. Especialidade sem preco continua funcionando como antes e so fica fora dos totais
+  (aparece como "sem preco", nunca como R$ 0,00). Unidade sem teto nao tem limite de valor.
+
+  **Precos (`Gerenciamento de Unidades > Precos das Especialidades`).** Digitados na tela ou importados de
+  planilha (`Gerenciamento de Unidades > Importar Precos`, .xlsx ou .csv). A importacao primeiro mostra o que
+  casou com o cadastro e o que nao casou, e so grava o que for marcado. Nao casa por nome
+  parecido, nao substitui preco ja gravado sem confirmacao e nao cria especialidade. A tabela
+  de exames laboratoriais enviada pela cliente esta transcrita em
+  `docs/especificacoes/anexos/precos-exames-laboratoriais.csv`.
+
+  **Valor da epoca.** O agendamento guarda o preco do dia em que foi marcado. Reajustar um
+  preco vale para os proximos agendamentos e nao altera meses passados. Agendamentos feitos
+  antes desta versao nao tem valor gravado e ficam fora dos totais.
+
+  **Painel (`Gerenciamento de Unidades > Painel de Custos`).** Tres numeros, no total, por unidade e por
+  especialidade: custo estimado da fila (pelo preco atual), custo agendado e custo concluido
+  (pelo valor da epoca, no mes da data agendada). So numeros agregados, sem dado de paciente.
+
+  **Teto financeiro (`Gerenciamento de Unidades > Tetos Financeiros`).** Um valor em reais por unidade, por mes
+  e por grupo de especialidades (na pratica, Laboratorio). Cada exame agendado debita o seu
+  preco; cancelar devolve. Sem saldo, a unidade recebe "Teto financeiro ... esgotado", **sem
+  nenhum valor na mensagem**. Agendamento feito por ADMIN ou GESTOR debita, mas nao e
+  bloqueado. Falta do paciente nao devolve (igual a cota). O teto convive com a cota em
+  quantidade: as duas regras valem juntas.
+
+  **Codigo SUS e campo novo.** O codigo que a especialidade ja tinha continua igual.
+
+- **Agendar so os itens possiveis de um lote (`/agendar`).** Ao marcar varios exames,
+  procedimentos ou consultas da mesma ficha, a tela agora confere as vagas antes de gravar. Se
+  algum item nao puder ser agendado (cota esgotada, sem cota liberada, capacidade do dia, item que
+  ja nao esta pendente), abre um aviso com **o que sera agendado, o que fica de fora e o motivo de
+  cada um**. O operador escolhe entre voltar ou agendar somente os demais; os itens de fora
+  continuam na fila.
+
+  **Quando todos os itens cabem, nada muda:** o agendamento e gravado direto, sem etapa a mais.
+
+  **O comprovante e a mensagem ao paciente trazem so o que foi agendado.**
+
+  **Item que depende de correcao nao e deixado de fora.** Profissional nao escolhido ou hora fora
+  do periodo da cota aparecem como "precisa de correcao": o operador ajusta e envia de novo.
+
+  **O teto financeiro continua valendo para o agendamento inteiro.** Se o teto nao comportar os
+  itens possiveis, nada e agendado e a tela avisa — sem citar valores.
+
+  A conferencia e so uma consulta (`POST /api/agendamentos/{solicitacaoId}/verificar`): nao
+  reserva vaga. Se outra unidade usar a vaga nesse intervalo, o agendamento e recusado como antes
+  e basta enviar de novo.
+
+- **Mensagens de WhatsApp para o paciente (`/admin/whatsapp`, `/api/whatsapp/**`).**
+  O sistema passa a avisar o paciente pelo WhatsApp do numero do municipio:
+  **confirmacao** quando e agendado para consulta ou exame, **remarcacao**, **cancelamento** e
+  **lembrete** 3 dias antes. Transporte sanitario fica para a proxima entrega.
+
+  **Nasce desligado.** Subir esta versao nao envia nada: precisa das credenciais no `.env`
+  (`WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`), dos tres templates aprovados pela Meta
+  e de um ADMIN ligar a chave em **Painel Admin > WhatsApp**. Checklist em `INFRA.md`. Instancia
+  sem credenciais opera exatamente como antes.
+
+  **O agendamento nao depende do WhatsApp.** A mensagem so entra numa fila depois que o
+  agendamento esta gravado, e quem fala com a Meta e uma tarefa separada. Meta lenta ou fora
+  do ar nao atrasa nem desfaz agendamento, e nao mexe em cota.
+
+  **O que a mensagem diz:** primeiro nome, atendimento, local, data, dia da semana, horario,
+  turno e profissional. **Nunca** CPF, CNS, quem agendou ou a observacao do operador.
+
+  **Especialidade sensivel.** O cadastro de especialidade ganhou a marcacao "Sensivel": as
+  marcadas saem como "atendimento especializado", sem o local. **Nenhuma vem marcada — revise o
+  catalogo antes de ligar o envio.**
+
+  **Paciente pode sair.** A ficha do paciente ganhou "Nao enviar mensagens por WhatsApp", que
+  vale para todas as fichas do mesmo CPF.
+
+  **Remarcar** (excluir e agendar de novo em ate 10 minutos) gera uma unica mensagem de
+  remarcacao. Por isso todo aviso de cancelamento sai com cerca de 10 minutos de atraso.
+
+  **Lembrete:** lote as 8h para quem tem atendimento daqui a 3 dias. Se o lote da vespera nao
+  rodou, inclui os de daqui a 2 dias. Nunca dois lembretes para o mesmo agendamento.
+
+  **Painel:** chave de ligar/desligar o envio (nao afeta o recebimento do webhook), volume por
+  periodo (enviadas, entregues, lidas, falhas, nao enviadas por motivo, cobraveis, recebidas),
+  lista de mensagens, reenvio da confirmacao ou do lembrete de um agendamento e "rodar
+  lembretes agora". A lista nao mostra nome nem telefone inteiro. So ADMIN.
+
+  **Travas:** limite diario (padrao 200) e lista de numeros de teste — enquanto preenchida, so
+  eles recebem.
+
+  **Telefone:** aceita mascara, 55 e celular antigo sem o nono digito. Fixo e numero sem DDD
+  nao recebem e aparecem no painel como "Telefone invalido ou sem DDD".
+
+  **O webhook passa a gravar** o status de entrega de cada mensagem e a contagem diaria de
+  mensagens recebidas. O texto das respostas dos pacientes continua sem ser guardado: **o
+  numero ainda nao e canal de atendimento.**
+
+  Migrations V101 a V104, todas aditivas.
+
 - **Webhook do WhatsApp (`GET` e `POST /api/webhooks/whatsapp`).**
   Primeira fatia da integracao com a WhatsApp Business Cloud API (Meta): a rota que o painel da
   Meta pede em "URL de callback". Publica, sem JWT — autenticada pelo verify token (GET) e pela
@@ -79,6 +184,13 @@
   Emergencia" contam **pacientes** (mesma query da fila), nao pedidos — o valor exibido cai.
   O resumo ganhou os campos `pacientesPendentes`, `pacientesUrgentes` e
   `pacientesPendentesPorUnidade`; os campos antigos continuam no contrato.
+
+- **Agendar varios itens da mesma ficha de uma vez falhava para a unidade com cota.** Ao marcar
+  dois ou mais exames, procedimentos ou consultas no mesmo agendamento, a tela mostrava um erro
+  sem explicacao sempre que a ficha tinha outro item fora do lote. Era
+  `LazyInitializationException`: o consumo da cota do 1o item limpa o contexto de persistencia e o
+  2o item era procurado numa lista ja desanexada. ADMIN e GESTOR nao eram afetados, nem o
+  agendamento de um item so. Nada muda em cota, teto ou contrato; continua tudo-ou-nada.
 
 ---
 

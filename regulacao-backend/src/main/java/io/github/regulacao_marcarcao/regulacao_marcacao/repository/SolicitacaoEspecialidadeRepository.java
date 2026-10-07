@@ -28,6 +28,7 @@ import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.Re
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.RelatorioGrupoPendenteProjection;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.TempoEsperaEspecialidadeProjection;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.TempoEsperaGeralProjection;
+import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.TetoEstornoProjection;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.UnidadePendentesProjection;
 
 public interface SolicitacaoEspecialidadeRepository extends JpaRepository<SolicitacaoEspecialidade, Long> {
@@ -68,9 +69,40 @@ public interface SolicitacaoEspecialidadeRepository extends JpaRepository<Solici
 
     List<SolicitacaoEspecialidade> findByAgendamentoSolicitacaoId(Long agendamentoId);
 
-    @Modifying
-    @Query("UPDATE SolicitacaoEspecialidade se SET se.agendamentoSolicitacao = NULL, se.status = 'AGUARDANDO' WHERE se.agendamentoSolicitacao.id = :agendamentoId")
+    /**
+     * So os ids, SEM carregar as entidades no contexto de persistencia. Usado
+     * antes de excluir o agendamento: uma entidade carregada continuaria
+     * apontando para o agendamento removido e quebraria o flush.
+     */
+    @Query("SELECT se.id FROM SolicitacaoEspecialidade se WHERE se.agendamentoSolicitacao.id = :agendamentoId")
+    List<Long> findIdsByAgendamentoSolicitacaoId(@Param("agendamentoId") Long agendamentoId);
+
+    // V106/V107: desvincular tambem apaga o valor da epoca e o teto debitado — o
+    // item volta para a fila e deixa de ser custo agendado. O estorno do teto e
+    // feito ANTES desta chamada (AgendamentoService#deleteAgendamento).
+    //
+    // clearAutomatically: o UPDATE em massa nao atualiza as entidades ja carregadas,
+    // que continuariam apontando para o agendamento prestes a ser removido e
+    // quebrariam o flush da exclusao. Depois desta chamada o contexto esta limpo.
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("UPDATE SolicitacaoEspecialidade se SET se.agendamentoSolicitacao = NULL, se.status = 'AGUARDANDO', "
+            + "se.valorUnitarioAgendado = NULL, se.tetoFinanceiro = NULL "
+            + "WHERE se.agendamentoSolicitacao.id = :agendamentoId")
     void desvincularAgendamento(@Param("agendamentoId") Long agendamentoId);
+
+    /**
+     * Quanto cada teto financeiro foi debitado por um agendamento (V107), por
+     * consulta escalar — sem carregar entidades. Base do estorno no cancelamento.
+     */
+    @Query("""
+            SELECT se.tetoFinanceiro.id AS tetoId, SUM(se.valorUnitarioAgendado) AS valor
+            FROM SolicitacaoEspecialidade se
+            WHERE se.agendamentoSolicitacao.id = :agendamentoId
+              AND se.tetoFinanceiro IS NOT NULL
+              AND se.valorUnitarioAgendado IS NOT NULL
+            GROUP BY se.tetoFinanceiro.id
+            """)
+    List<TetoEstornoProjection> somarDebitoPorTeto(@Param("agendamentoId") Long agendamentoId);
 
     @Query("SELECT se FROM SolicitacaoEspecialidade se " +
         "JOIN FETCH se.solicitacao s " +

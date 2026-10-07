@@ -21,6 +21,7 @@
     grupoRelatorio: GrupoRelatorioSimpleViewDTO
     ativo: boolean
     vagas?: number
+    sensivel?: boolean
   }
 
   type Categoria = 'ESPECIALIDADE_MEDICA' | 'EXAME_OU_PROCEDIMENTO' 
@@ -33,6 +34,8 @@
   let grupoRelatorioId = $state<number | null> (null)
   let vagas = $state<number>(0);
   let ativo = $state(true);
+  // V102: nome pode revelar condicao de saude — nao e citado nas mensagens de WhatsApp.
+  let sensivel = $state(false);
   let lista = $state<EspecialidadeViewDTO[]>([])
   let erro = $state<string | null>(null);
   let termoBusca = $state('');
@@ -78,7 +81,8 @@
       categoria: categoria,
       grupoRelatorioId: grupoRelatorioId,
       vagas: vagas,
-      ativo: ativo
+      ativo: ativo,
+      sensivel: sensivel
       
     }
     try {
@@ -94,6 +98,7 @@
       grupoRelatorioId = null
       vagas = 0
       ativo = true
+      sensivel = false
       modoEdicao = false
       idEmEdicao = 0
       carregarLista()
@@ -118,7 +123,7 @@
     isLoading = true;
     erro = null;
     try {
-      const res = await criarEspecialidadeCatalogo({ codigo: codigo?.trim() || undefined, nome: nome?.trim(), categoria, grupoRelatorioId, vagas, ativo });
+      const res = await criarEspecialidadeCatalogo({ codigo: codigo?.trim() || undefined, nome: nome?.trim(), categoria, grupoRelatorioId, vagas, ativo, sensivel });
       if (res.ok) {
         nome = '';
         codigo = '';
@@ -126,6 +131,7 @@
         grupoRelatorioId = null;
         vagas = 0;
         ativo = true;
+        sensivel = false;
         await carregarLista();
       } else {
         const body = await res.json().catch(() => ({}));
@@ -164,6 +170,7 @@
     categoria = especialidade.categoria as Categoria
     grupoRelatorioId = especialidade.grupoRelatorio?.id ?? null
     vagas = especialidade.vagas ?? 0
+    sensivel = especialidade.sensivel === true
     console.log(`ID VINDO DO GRUPO RELATÓRIO: ${grupoRelatorioId}`)
   } 
 
@@ -235,11 +242,20 @@
               <label class="text-sm font-medium text-gray-700 mb-1">Vagas (0 = sem limite)</label>
               <input type="number" min="0" class="border border-gray-300 rounded-lg p-2" bind:value={vagas} />
             </div>
-            <div class="flex items-center">
+            <div class="flex flex-wrap items-start gap-x-8 gap-y-3 md:pt-6">
               <label class="inline-flex items-center space-x-2">
                 <input type="checkbox" bind:checked={ativo} />
                 <span>Ativo</span>
               </label>
+              <div>
+                <label class="inline-flex items-center space-x-2 cursor-pointer">
+                  <input type="checkbox" bind:checked={sensivel} aria-describedby="especialidade-sensivel-dica" />
+                  <span>Sensível</span>
+                </label>
+                <p id="especialidade-sensivel-dica" class="text-xs text-gray-600 mt-1">
+                  As mensagens de WhatsApp não citam o nome nem o local desta especialidade.
+                </p>
+              </div>
             </div>
           </div>
           {#if !modoEdicao}
@@ -281,6 +297,7 @@
                 <th class="py-2 px-2">Grupo</th>
                 <th class="py-2 px-2">Vagas</th>
                 <th class="py-2 px-2">Ativo</th>
+                <th class="py-2 px-2">Sensível</th>
                 <th class="py-2 px-2 text-center">Ações</th>
               </tr>
             </thead>
@@ -292,6 +309,7 @@
                   <td class="py-2 px-2">{e.grupoRelatorio?.nome ?? '-'}</td>
                   <td class="py-2 px-2">{e.vagas ?? 0}</td>
                   <td class="py-2 px-2">{e.ativo ? 'Sim' : 'Não'}</td>
+                  <td class="py-2 px-2">{e.sensivel ? 'Sim' : 'Não'}</td>
                   <td>
                     <div>
                       <button type="button" aria-label="editar" title="Editar" onclick={() => selecionarEspecialidade(e)} class="cursor-pointer">

@@ -29,6 +29,11 @@ dúvidas são fatias futuras, cada uma com seu próprio `/feature`.
 **2. Nada é gravado.** O evento autenticado é resumido em log (tipo, id da conta, campo,
 quantidades) e descartado. Sem migration, sem entidade.
 
+> **Revogada em parte por [[0003-envio-whatsapp-fila-em-banco-e-registro-de-status]]:** os
+> status de entrega passaram a atualizar o registro de envios, e as mensagens recebidas entram
+> numa contagem diária. Texto, remetente e id das mensagens de pacientes continuam sem ser
+> gravados.
+
 **3. A integração é por instância.** Cada município terá o próprio número; a instância só
 recebe os próprios eventos e não há roteamento entre VPS. Hoje só São Felipe está ligada.
 

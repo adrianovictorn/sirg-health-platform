@@ -7,7 +7,9 @@ public record EspecialidadeCreateDTO(
     String nome, 
     ItemCategoria categoria, 
     Long grupoRelatorioId,
-    Integer vagas
+    Integer vagas,
+    /** V102: nao citar em mensagens de WhatsApp. Nulo = false. */
+    Boolean sensivel
 ) {
     
 }

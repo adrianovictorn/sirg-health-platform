@@ -73,6 +73,7 @@ public class SolicitacaoService {
     private final UnidadeRepository unidadeRepository;
     private final UnidadeAcessoService unidadeAcessoService;
     private final FilaEsperaService filaEsperaService;
+    private final TetoFinanceiroService tetoFinanceiroService;
 
     // Delega ao UnidadeAcessoService, que concentra a regra de segregação por unidade
     // (inclusive o perfil ADMIN_UNIDADE, restrito à própria unidade de lotação).
@@ -108,6 +109,7 @@ public class SolicitacaoService {
         solicitacao.setCpfPaciente(dto.cpfPaciente());
         solicitacao.setCns(dto.cns());
         solicitacao.setTelefone(dto.telefone());
+        aplicarOptOutWhatsApp(solicitacao, dto.whatsappOptOut());
         solicitacao.setNomePai(dto.nomePai());
         solicitacao.setNomeMae(dto.nomeMae());
         solicitacao.setEndereco(dto.endereco());
@@ -156,6 +158,21 @@ public class SolicitacaoService {
         return SolicitacaoViewDTO.fromSolicitacao(saved);
     }
 
+    /**
+     * Opt-out do WhatsApp (V102). {@code null} = nao mexe: o PUT de CIDs da ficha
+     * do paciente nao envia o campo e nao pode desfazer a escolha do paciente.
+     */
+    private void aplicarOptOutWhatsApp(Solicitacao solicitacao, Boolean optOut) {
+        if (optOut == null) {
+            return;
+        }
+        boolean atual = Boolean.TRUE.equals(solicitacao.getWhatsappOptOut());
+        if (optOut != atual) {
+            solicitacao.setWhatsappOptOutEm(optOut ? java.time.Instant.now() : null);
+        }
+        solicitacao.setWhatsappOptOut(optOut);
+    }
+
     @Transactional
     public SolicitacaoViewDTO updateSolicitacao(Long id, SolicitacaoUpdateDTO dto, String callerCpf) {
         Solicitacao solicitacao = solicitacaoRepository.findById(id)
@@ -179,6 +196,7 @@ public class SolicitacaoService {
         solicitacao.setNomePaciente(dto.nomePaciente());
         solicitacao.setCns(dto.cns());
         solicitacao.setTelefone(dto.telefone());
+        aplicarOptOutWhatsApp(solicitacao, dto.whatsappOptOut());
         solicitacao.setNomePai(dto.nomePai());
         solicitacao.setNomeMae(dto.nomeMae());
         solicitacao.setEndereco(dto.endereco());
@@ -567,6 +585,14 @@ public class SolicitacaoService {
                         "Especialidade de solicitação com ID " + id + " não encontrada."));
         if (se.getSolicitacao() != null) {
             exigirAcessoASolicitacao(se.getSolicitacao(), callerCpf);
+        }
+        // Teto financeiro (V107): item AGENDADO que debitou um teto devolve o valor
+        // antes de sumir — depois da exclusao nao ha mais como saber o que estornar.
+        // So AGENDADO: falta (CANCELADO) e procedimento REALIZADO mantem o teto e o
+        // valor gravados no item, e remove-los nao pode devolver saldo a unidade.
+        if (se.getStatus() == StatusDaMarcacao.AGENDADO
+                && se.getTetoFinanceiro() != null && se.getValorUnitarioAgendado() != null) {
+            tetoFinanceiroService.estornar(se.getTetoFinanceiro().getId(), se.getValorUnitarioAgendado());
         }
         especialidadeRepository.deleteById(id);
     }

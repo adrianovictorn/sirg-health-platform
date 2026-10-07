@@ -71,7 +71,7 @@ class SolicitacaoServiceCpfTest {
         return new SolicitacaoCreateDTO(
                 null, "Paciente Teste", cpf, "700000000000000", null,
                 "Pai Teste", "Mae Teste", "Rua Teste", null, null, null,
-                null, List.of(), recemNascido);
+                null, List.of(), recemNascido, null);
     }
 
     // ==================================================================
@@ -139,7 +139,7 @@ class SolicitacaoServiceCpfTest {
     private SolicitacaoUpdateDTO updateDto(String cpf) {
         return new SolicitacaoUpdateDTO(
                 null, "Paciente Teste", cpf, null, "700000000000000", null,
-                "Pai Teste", "Mae Teste", "Rua Teste", null, null, null, null, null);
+                "Pai Teste", "Mae Teste", "Rua Teste", null, null, null, null, null, null);
     }
 
     private Solicitacao solicitacaoExistente(Long id, String cpfAtual) {

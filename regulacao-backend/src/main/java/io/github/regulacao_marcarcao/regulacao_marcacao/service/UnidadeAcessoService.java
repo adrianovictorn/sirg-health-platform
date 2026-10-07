@@ -214,6 +214,25 @@ public class UnidadeAcessoService {
     }
 
     /**
+     * True só para os perfis ADMIN e GESTOR (perfil ativo na requisição). Mais
+     * estreito que {@link #isAcessoGlobal}, que também vale para quem não tem
+     * unidade de lotação: usado pelo teto financeiro, onde só esses dois perfis
+     * agendam sem ser barrados. CPF nulo ou usuário inexistente é false.
+     */
+    @Transactional(readOnly = true)
+    public boolean isAdminOuGestor(String cpf) {
+        if (cpf == null) {
+            return false;
+        }
+        return userRepository.findByCpf(cpf)
+                .map(user -> {
+                    Roles perfil = perfilEfetivo(user);
+                    return perfil != null && isPerfilGlobal(perfil);
+                })
+                .orElse(false);
+    }
+
+    /**
      * True especificamente para o perfil ADMIN_UNIDADE — usado onde a regra não é
      * "global ou não" (que também incluiria GESTOR), mas depende do perfil exato,
      * como o bloqueio de agendamento sem cota liberada.

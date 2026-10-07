@@ -35,5 +35,7 @@ public record SolicitacaoCreateDTO(
     LocalDate dataMalote,
     List<Long> cids,
     List<SolicitacaoEspecialidadeCreateDTO> especialidades,
-    boolean recemNascido
+    boolean recemNascido,
+    /** V102: paciente nao quer mensagens por WhatsApp. Nulo = false. */
+    Boolean whatsappOptOut
 ) { }

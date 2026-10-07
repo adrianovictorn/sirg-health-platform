@@ -294,6 +294,31 @@ export const MENU_SECTIONS = [
             href: "/admin/profissionais",
             roles: ["ADMIN"],
           },
+          // Custos: so ADMIN e GESTOR veem valores (o backend barra os demais em
+          // /api/custos/**). GESTOR acompanha; so ADMIN altera preco, importa
+          // planilha e libera teto — por isso "Importar Preços" e so dele.
+          // Para o GESTOR este grupo aparece so com os tres links de custo: ele
+          // nao tem acesso a nenhuma tela de gerenciamento de unidades acima.
+          {
+            label: "Painel de Custos",
+            href: "/custos",
+            roles: ["ADMIN", "GESTOR"],
+          },
+          {
+            label: "Tetos Financeiros",
+            href: "/custos/tetos",
+            roles: ["ADMIN", "GESTOR"],
+          },
+          {
+            label: "Preços das Especialidades",
+            href: "/custos/especialidades",
+            roles: ["ADMIN", "GESTOR"],
+          },
+          {
+            label: "Importar Preços",
+            href: "/admin/custos/importar",
+            roles: ["ADMIN"],
+          },
         ],
       },
     ],
@@ -381,6 +406,7 @@ export const MENU_SECTIONS = [
             href: "/admin/notificacoes",
             roles: ["ADMIN"],
           },
+          { label: "WhatsApp", href: "/admin/whatsapp", roles: ["ADMIN"] },
         ],
       },
       {

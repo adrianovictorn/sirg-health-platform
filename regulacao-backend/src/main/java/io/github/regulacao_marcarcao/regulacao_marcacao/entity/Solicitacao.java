@@ -64,6 +64,14 @@ public class Solicitacao {
     @Column(name = "telefone", nullable = true, length = 15)
     private String telefone;
 
+    /** Paciente pediu para nao receber mensagens por WhatsApp (V102). */
+    @Column(name = "whatsapp_opt_out", nullable = false)
+    private Boolean whatsappOptOut = false;
+
+    /** Quando o opt-out foi marcado; nulo se nunca foi ou se foi desmarcado. */
+    @Column(name = "whatsapp_opt_out_em")
+    private java.time.Instant whatsappOptOutEm;
+
     // Dados cadastrais obrigatórios do paciente (V80).
     // Colunas nullable no banco para preservar os registros legados; a
     // obrigatoriedade é garantida na validação dos DTOs de entrada.

@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.*;
 
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.agendamentoDTO.AgendamentoSendDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.agendamentoDTO.AgendamentoSolicitacaoSimpleViewDTO;
+import io.github.regulacao_marcarcao.regulacao_marcacao.dto.agendamentoDTO.AgendamentoVerificacaoDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.agendamentoDTO.ContagemPainelDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.agendamentoDTO.MultiAgendamentoCreateDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.agendamentoDTO.PacienteAgendadoDTO;
@@ -72,6 +73,22 @@ public class AgendamentoController {
         String callerCpf = authentication != null ? authentication.getName() : null;
         AgendamentoSolicitacaoSimpleViewDTO agendamentoCriado = agendamentoService.criarAgendamentoParaMultiplosExames(solicitacaoId, dto, callerCpf);
         return new ResponseEntity<>(agendamentoCriado, HttpStatus.CREATED);
+    }
+
+    /**
+     * Pre-verificacao do agendamento em lote: mesmo corpo do POST acima, devolve
+     * item a item o que seria agendado e o que ficaria de fora. Nao grava nada.
+     * Restrito a quem opera a ficha, e o service exige acesso a unidade dela —
+     * a resposta fala da cota e do teto daquela unidade.
+     */
+    @PostMapping("/{solicitacaoId}/verificar")
+    @PreAuthorize("hasAnyRole('ADMIN', 'ADMIN_UNIDADE', 'USER', 'RECEPCAO', 'ENFERMEIRO', 'MEDICO', 'COORD_TRANSPORTE')")
+    public ResponseEntity<AgendamentoVerificacaoDTO> verificarAgendamento(
+            @PathVariable Long solicitacaoId,
+            @RequestBody MultiAgendamentoCreateDTO dto,
+            Authentication authentication) {
+        String callerCpf = authentication != null ? authentication.getName() : null;
+        return ResponseEntity.ok(agendamentoService.verificarAgendamentoParaMultiplosExames(solicitacaoId, dto, callerCpf));
     }
 
     /**

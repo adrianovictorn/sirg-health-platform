@@ -45,5 +45,10 @@ public record SolicitacaoUpdateDTO(
     LocalDate dataMalote,
     List<Long> cids,
     List<AgendamentoSolicitacao> agendamentoSolicitacaos,
-    List<SolicitacaoEspecialidade> solicitacoesEspecialidade
+    List<SolicitacaoEspecialidade> solicitacoesEspecialidade,
+    /**
+     * V102: paciente nao quer mensagens por WhatsApp. Nulo = NAO MEXE — ha telas
+     * que enviam PUT parcial (ex.: salvar CIDs) e nao podem desfazer o opt-out.
+     */
+    Boolean whatsappOptOut
 ) { }

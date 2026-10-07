@@ -1,7 +1,12 @@
 package io.github.regulacao_marcarcao.regulacao_marcacao.service;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 import org.springframework.data.domain.Page;
@@ -12,6 +17,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.agendamentoDTO.AgendamentoSendDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.agendamentoDTO.AgendamentoSolicitacaoSimpleViewDTO;
+import io.github.regulacao_marcarcao.regulacao_marcacao.dto.agendamentoDTO.AgendamentoVerificacaoDTO;
+import io.github.regulacao_marcarcao.regulacao_marcacao.dto.agendamentoDTO.AgendamentoVerificacaoDTO.ItemVerificadoDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.agendamentoDTO.AgendamentoViewDto;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.agendamentoDTO.MultiAgendamentoCreateDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.solicitacoesDTO.AgendamentoSolicitacaoCreateDTO;
@@ -21,6 +28,7 @@ import io.github.regulacao_marcarcao.regulacao_marcacao.entity.CotaUnidade;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.LocalAgendamento;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.Solicitacao;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.SolicitacaoEspecialidade;
+import io.github.regulacao_marcarcao.regulacao_marcacao.entity.TetoFinanceiro;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.enums.LocalDeAgendamentoEnum;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.enums.StatusDaMarcacao;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.AgendamentoSolicitacaoRepository;
@@ -30,7 +38,12 @@ import io.github.regulacao_marcarcao.regulacao_marcacao.repository.LocalAgendame
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.ProfissionalRepository;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.SolicitacaoEspecialidadeRepository;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.SolicitacaoRepository;
+import io.github.regulacao_marcarcao.regulacao_marcacao.repository.TetoFinanceiroRepository;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.UserRepository;
+import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.EspecialidadeCustoProjection;
+import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.TetoEstornoProjection;
+import io.github.regulacao_marcarcao.regulacao_marcacao.service.whatsapp.evento.AgendamentoCanceladoEvent;
+import io.github.regulacao_marcarcao.regulacao_marcacao.service.whatsapp.evento.AgendamentoCriadoEvent;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 
@@ -46,9 +59,12 @@ public class AgendamentoService {
     private final UserRepository userRepository;
     private final ProfissionalRepository profissionalRepository;
     private final CotaUnidadeService cotaUnidadeService;
+    private final TetoFinanceiroService tetoFinanceiroService;
+    private final TetoFinanceiroRepository tetoFinanceiroRepository;
     private final UnidadeAcessoService unidadeAcessoService;
     private final io.github.regulacao_marcarcao.regulacao_marcacao.config.InstanceContext instanceContext;
     private final org.springframework.amqp.rabbit.core.RabbitTemplate rabbitTemplate;
+    private final org.springframework.context.ApplicationEventPublisher eventPublisher;
 
     /**
      * Retorna todas as solicitações com ao menos uma especialidade com status AGUARDANDO.
@@ -222,6 +238,24 @@ public class AgendamentoService {
         boolean adminUnidade = unidadeAcessoService.isAdminUnidade(callerCpf);
         Long unidadeId = solicitacao.getUnidade() != null ? solicitacao.getUnidade().getId() : null;
 
+        // Custo (V106/V107): preco e grupo de cada exame, lidos ANTES do laco por
+        // consulta escalar — o consumo da cota limpa o contexto de persistencia, e
+        // ler o preco pela entidade depois disso estouraria LazyInitializationException.
+        Map<String, EspecialidadeCustoProjection> custoPorCodigo = new HashMap<>();
+        for (EspecialidadeCustoProjection custo : especialidadeRepository.buscarCustoPorCodigos(
+                dto.examesSelecionados().stream().map(c -> c.trim().toUpperCase()).toList())) {
+            custoPorCodigo.put(custo.getCodigo(), custo);
+        }
+        List<ItemComCusto> itensComCusto = new ArrayList<>();
+
+        // Lote: o laco abaixo procura cada exame percorrendo TODOS os itens da ficha
+        // e lendo o codigo da especialidade (LAZY). O consumo da cota do 1o item limpa
+        // o contexto de persistencia; a partir do 2o, um item fora do lote ainda nao
+        // inicializado estourava LazyInitializationException. Inicializa todos ANTES
+        // do laco, enquanto o contexto esta integro.
+        solicitacao.getEspecialidades()
+                .forEach(e -> org.hibernate.Hibernate.initialize(e.getEspecialidadeSolicitada()));
+
         for (String nomeExame : dto.examesSelecionados()) {
             SolicitacaoEspecialidade especialidadeParaAgendar = solicitacao.getEspecialidades().stream()
                     .filter(e -> {
@@ -291,7 +325,26 @@ public class AgendamentoService {
             // 3. Atualiza o status e associa o agendamento.
             especialidadeParaAgendar.setStatus(StatusDaMarcacao.AGENDADO);
             especialidadeParaAgendar.setAgendamentoSolicitacao(agendamentoSalvo);
+
+            // Zera o custo de um agendamento anterior deste item (ex.: voltou para a
+            // fila por troca manual de status): o que vale e o preco de agora.
+            especialidadeParaAgendar.setValorUnitarioAgendado(null);
+            especialidadeParaAgendar.setTetoFinanceiro(null);
+            EspecialidadeCustoProjection custo = custoPorCodigo.get(nomeExame.trim().toUpperCase());
+            if (custo != null && custo.getValorUnitario() != null) {
+                itensComCusto.add(new ItemComCusto(
+                        especialidadeParaAgendar, custo.getValorUnitario(), custo.getGrupoId()));
+            }
         }
+
+        // 3.1 Custo: grava o valor da epoca e debita o teto financeiro. Depois do
+        // laco de proposito — todo o consumo de cota ja aconteceu, e nada aqui limpa
+        // o contexto de persistencia. Teto sem saldo lanca 409 e a transacao inteira
+        // desfaz, inclusive a cota consumida acima.
+        // So ADMIN e GESTOR nao sao barrados pelo teto. Criterio mais estreito que o
+        // da cota (adminGlobal), que tambem isenta quem nao tem unidade de lotacao.
+        registrarCustoEDebitarTeto(itensComCusto, unidadeId, dto.dataAgendada(),
+                !unidadeAcessoService.isAdminOuGestor(callerCpf));
 
         // 4. Salva a solicitação para persistir as alterações nas especialidades
         solicitacaoRepository.save(solicitacao);
@@ -305,7 +358,219 @@ public class AgendamentoService {
         // LazyInitializationException ao montar a resposta. Recarrega antes de ler.
         AgendamentoSolicitacao agendamentoAtual = agendamentoRepository.findById(agendamentoSalvo.getId())
                 .orElse(agendamentoSalvo);
+
+        // WhatsApp: so um aviso, consumido DEPOIS do commit (ver WhatsAppAgendamentoListener).
+        // Ultima linha de proposito — qualquer 409/404 acima sai antes e nada e publicado.
+        eventPublisher.publishEvent(new AgendamentoCriadoEvent(
+                agendamentoSalvo.getId(), solicitacaoId, dto.dataAgendada(),
+                especialidadesAgendadas.stream().map(SolicitacaoEspecialidade::getId).toList()));
+
         return AgendamentoSolicitacaoSimpleViewDTO.fromAgendamentoSolicitacao(agendamentoAtual, especialidadesAgendadas);
+    }
+
+    /**
+     * Pre-verificacao do agendamento em lote: diz, item a item, o que
+     * {@link #criarAgendamentoParaMultiplosExames} faria com a mesma requisicao,
+     * SEM gravar nada — nao cria agendamento, nao consome cota, nao debita teto,
+     * nao publica evento. A tela usa o resultado para perguntar ao operador se
+     * agenda so os itens possiveis.
+     *
+     * <p>E consultiva. Quem decide e o POST, que revalida tudo: se a vaga for
+     * tomada entre a verificacao e a gravacao, o POST responde o 409 de sempre.
+     *
+     * <p>ATENCAO: as checagens por item espelham, na mesma ordem, as do laco de
+     * {@code criarAgendamentoParaMultiplosExames}. Regra nova la precisa entrar
+     * aqui tambem (AgendamentoVerificacaoIT compara os dois).
+     *
+     * <p>Erros do agendamento inteiro (solicitacao inexistente, local invalido,
+     * acesso) sao lancados como no POST, nao viram "item de fora".
+     */
+    @Transactional(readOnly = true)
+    public AgendamentoVerificacaoDTO verificarAgendamentoParaMultiplosExames(Long solicitacaoId,
+            MultiAgendamentoCreateDTO dto, String callerCpf) {
+        Solicitacao solicitacao = solicitacaoRepository.findById(solicitacaoId)
+                .orElseThrow(() -> new EntityNotFoundException("Solicitação não encontrada com o ID: " + solicitacaoId));
+
+        // Responde sobre cota e teto da unidade da ficha: so para quem a opera.
+        // Solicitacao orfa (sem unidade) nao tem cota nem teto a expor.
+        Long unidadeId = solicitacao.getUnidade() != null ? solicitacao.getUnidade().getId() : null;
+        if (unidadeId != null) {
+            unidadeAcessoService.exigirAcessoA(callerCpf, unidadeId);
+        }
+
+        if (dto.localAgendamentoId() != null && dto.localAgendado() != null) {
+            throw new IllegalArgumentException("Informe apenas 'localAgendamentoId' ou 'localAgendado'.");
+        }
+        resolveLocal(dto.localAgendamentoId());
+
+        boolean adminGlobal = isAdminGlobal(callerCpf);
+        boolean adminUnidade = unidadeAcessoService.isAdminUnidade(callerCpf);
+
+        Map<String, EspecialidadeCustoProjection> custoPorCodigo = new HashMap<>();
+        for (EspecialidadeCustoProjection custo : especialidadeRepository.buscarCustoPorCodigos(
+                dto.examesSelecionados().stream().map(c -> c.trim().toUpperCase()).toList())) {
+            custoPorCodigo.put(custo.getCodigo(), custo);
+        }
+
+        // Acumulados do proprio lote: o que os itens ja aceitos ocupariam.
+        Map<String, Long> aceitosPorCodigo = new HashMap<>();
+        Map<Long, Integer> cotaReservada = new HashMap<>();
+        Map<Long, BigDecimal> totalPorTeto = new LinkedHashMap<>();
+        List<SolicitacaoEspecialidade> itensJaUsados = new ArrayList<>();
+        List<ItemVerificadoDTO> itens = new ArrayList<>();
+
+        for (String nomeExame : dto.examesSelecionados()) {
+            String codigo = nomeExame.trim().toUpperCase();
+
+            SolicitacaoEspecialidade item = solicitacao.getEspecialidades().stream()
+                    .filter(e -> !itensJaUsados.contains(e) && ehPendenteCom(e, nomeExame))
+                    .findFirst()
+                    .orElse(null);
+            String nome = item != null && item.getEspecialidadeSolicitada() != null
+                    ? item.getEspecialidadeSolicitada().getNome()
+                    : nomeExame;
+
+            // Capacidade global da especialidade na data.
+            if (!codigo.isBlank()) {
+                var especialidadesDB = especialidadeRepository.findByCodigoIn(List.of(codigo));
+                long capacidade = especialidadesDB.stream().mapToLong(e -> e.getVagas() != null ? e.getVagas() : 0).sum();
+                long jaAgendados = solicitacaoEspecialidadeRepository.countAgendadasPorDataECodigos(dto.dataAgendada(), List.of(codigo));
+                long solicitados = aceitosPorCodigo.getOrDefault(codigo, 0L) + 1;
+                if (capacidade > 0 && (jaAgendados + solicitados > capacidade)) {
+                    itens.add(ItemVerificadoDTO.recusado(nomeExame, nome,
+                            "Capacidade excedida para " + codigo + " em " + dto.dataAgendada() + ". Vagas=" + capacidade
+                                    + ", agendados=" + jaAgendados + ", solicitados=" + solicitados));
+                    continue;
+                }
+            }
+
+            if (item == null) {
+                itens.add(ItemVerificadoDTO.recusado(nomeExame, nome,
+                        "Exame pendente '" + nomeExame + "' não encontrado na solicitação."));
+                continue;
+            }
+
+            List<Long> cotasAReservar = List.of();
+            if (!adminGlobal && unidadeId != null) {
+                Long especialidadeId = item.getEspecialidadeSolicitada() != null
+                        ? item.getEspecialidadeSolicitada().getId()
+                        : null;
+
+                if (adminUnidade && !cotaUnidadeService.existeCotaAtivaAplicavel(unidadeId, especialidadeId, dto.dataAgendada())) {
+                    itens.add(ItemVerificadoDTO.recusado(nomeExame, nome,
+                            "Nao ha cota liberada para esta especialidade nesta unidade — agendamento bloqueado."));
+                    continue;
+                }
+
+                Long cotaEscolhidaId = dto.cotasSelecionadas() != null
+                        ? dto.cotasSelecionadas().get(nomeExame)
+                        : null;
+                CotaUnidadeService.SimulacaoConsumo simulacao = cotaUnidadeService.simularConsumo(
+                        unidadeId, especialidadeId, dto.dataAgendada(), cotaEscolhidaId, cotaReservada);
+                if (!simulacao.viavel()) {
+                    itens.add(simulacao.corrigivel()
+                            ? ItemVerificadoDTO.corrigivel(nomeExame, nome, simulacao.motivo())
+                            : ItemVerificadoDTO.recusado(nomeExame, nome, simulacao.motivo()));
+                    continue;
+                }
+
+                java.time.LocalTime horaInformada = dto.horariosSelecionados() != null
+                        ? dto.horariosSelecionados().get(nomeExame)
+                        : null;
+                if (horaInformada != null) {
+                    try {
+                        validarHoraDentroDoPeriodoDaCota(simulacao.cotaUsada(), horaInformada, nomeExame);
+                    } catch (IllegalArgumentException e) {
+                        itens.add(ItemVerificadoDTO.corrigivel(nomeExame, nome, e.getMessage()));
+                        continue;
+                    }
+                }
+
+                Long profissionalSelecionadoId = dto.profissionaisSelecionados() != null
+                        ? dto.profissionaisSelecionados().get(nomeExame)
+                        : null;
+                if (profissionalSelecionadoId != null && !profissionalRepository.existsById(profissionalSelecionadoId)) {
+                    itens.add(ItemVerificadoDTO.corrigivel(nomeExame, nome,
+                            "Profissional nao encontrado: " + profissionalSelecionadoId));
+                    continue;
+                }
+                cotasAReservar = simulacao.cotasAReservar();
+            }
+
+            // Item aceito: passa a ocupar capacidade, cota e teto para os proximos.
+            itensJaUsados.add(item);
+            aceitosPorCodigo.merge(codigo, 1L, Long::sum);
+            cotasAReservar.forEach(cotaId -> cotaReservada.merge(cotaId, 1, Integer::sum));
+            EspecialidadeCustoProjection custo = custoPorCodigo.get(codigo);
+            if (custo != null && custo.getValorUnitario() != null) {
+                tetoFinanceiroService.buscarTetoAplicavel(unidadeId, custo.getGrupoId(), dto.dataAgendada())
+                        .ifPresent(tetoId -> totalPorTeto.merge(tetoId, custo.getValorUnitario(), BigDecimal::add));
+            }
+            itens.add(ItemVerificadoDTO.viavel(nomeExame, nome));
+        }
+
+        // Teto: tudo-ou-nada sobre o conjunto que seria agendado, como no POST.
+        String bloqueioDoLote = null;
+        if (!unidadeAcessoService.isAdminOuGestor(callerCpf)) {
+            for (Map.Entry<Long, BigDecimal> entrada : totalPorTeto.entrySet()) {
+                var motivo = tetoFinanceiroService.motivoSeNaoComporta(entrada.getKey(), entrada.getValue());
+                if (motivo.isPresent()) {
+                    bloqueioDoLote = motivo.get();
+                    break;
+                }
+            }
+        }
+
+        return new AgendamentoVerificacaoDTO(itens, bloqueioDoLote);
+    }
+
+    /** Mesmo criterio do filtro do laco de {@code criarAgendamentoParaMultiplosExames}. */
+    private boolean ehPendenteCom(SolicitacaoEspecialidade e, String nomeExame) {
+        String atual = e.getEspecialidadeSolicitada() != null ? e.getEspecialidadeSolicitada().getCodigo() : e.getEspecialidadeCodigoLegacy();
+        return atual != null && atual.equalsIgnoreCase(nomeExame)
+                && (e.getStatus() == StatusDaMarcacao.AGUARDANDO
+                    || e.getStatus() == StatusDaMarcacao.RETORNO
+                    || e.getStatus() == StatusDaMarcacao.RETORNO_POLICLINICA
+                    || e.getStatus() == StatusDaMarcacao.GEL);
+    }
+
+    /** Item que esta sendo agendado e tem preco: o que entra no custo e pode debitar teto. */
+    private record ItemComCusto(SolicitacaoEspecialidade item, BigDecimal valorUnitario, Long grupoId) {
+    }
+
+    /**
+     * Grava em cada item o preco do momento do agendamento (V106) e debita o teto
+     * financeiro da unidade (V107).
+     *
+     * <p>O valor da epoca e gravado para TODOS os perfis e mesmo sem unidade ou
+     * sem teto: e o que o painel de custos soma. Ja o teto so existe por
+     * unidade + grupo de especialidades + mes da data agendada; sem teto
+     * cadastrado nao ha restricao, como na cota.
+     *
+     * <p>Um unico debito por teto, com a soma dos itens do agendamento: ou o
+     * agendamento inteiro cabe no saldo, ou nenhum item entra.
+     *
+     * @param bloquear false para quem nao e barrado (ADMIN, GESTOR): debita sem checar saldo
+     */
+    private void registrarCustoEDebitarTeto(List<ItemComCusto> itens, Long unidadeId, LocalDate dataAgendada,
+            boolean bloquear) {
+        Map<Long, List<ItemComCusto>> porTeto = new LinkedHashMap<>();
+        for (ItemComCusto item : itens) {
+            item.item().setValorUnitarioAgendado(item.valorUnitario());
+            tetoFinanceiroService.buscarTetoAplicavel(unidadeId, item.grupoId(), dataAgendada)
+                    .ifPresent(tetoId -> porTeto.computeIfAbsent(tetoId, id -> new ArrayList<>()).add(item));
+        }
+
+        for (Map.Entry<Long, List<ItemComCusto>> entrada : porTeto.entrySet()) {
+            BigDecimal total = entrada.getValue().stream()
+                    .map(ItemComCusto::valorUnitario)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+            tetoFinanceiroService.debitar(entrada.getKey(), total, bloquear);
+
+            // Referencia sem carregar a entidade: so o id importa para gravar a FK.
+            TetoFinanceiro teto = tetoFinanceiroRepository.getReferenceById(entrada.getKey());
+            entrada.getValue().forEach(item -> item.item().setTetoFinanceiro(teto));
+        }
     }
 
     /**
@@ -416,16 +681,39 @@ public class AgendamentoService {
 
         exigirAcessoAoAgendamento(agendamento, callerCpf);
 
+        // WhatsApp: fotografa o agendamento ANTES de qualquer alteracao — o estorno
+        // abaixo limpa o contexto de persistencia e, ao final, a linha nao existe mais.
+        // So ids, por consulta escalar: carregar as especialidades aqui as deixaria
+        // gerenciadas e apontando para o agendamento que sera removido.
+        AgendamentoCanceladoEvent cancelamento = new AgendamentoCanceladoEvent(
+                agendamento.getId(),
+                agendamento.getSolicitacao().getId(),
+                agendamento.getDataAgendada(),
+                solicitacaoEspecialidadeRepository.findIdsByAgendamentoSolicitacaoId(id));
+
         // Devolve à cota as vagas que este agendamento havia consumido, ANTES de
         // desvincular as especialidades (depois disso não há mais como saber quais
         // especialidades pertenciam ao agendamento).
         estornarCotasDoAgendamento(agendamento);
 
+        // Devolve ao teto financeiro o que este agendamento debitou (V107) — tambem
+        // antes de desvincular, que apaga o valor e o teto gravados em cada item.
+        // Consulta escalar: nao carrega nenhuma entidade no contexto ja limpo.
+        for (TetoEstornoProjection estorno : solicitacaoEspecialidadeRepository.somarDebitoPorTeto(id)) {
+            tetoFinanceiroService.estornar(estorno.getTetoId(), estorno.getValor());
+        }
+
         // Salva as alterações nas especialidades
         solicitacaoEspecialidadeRepository.desvincularAgendamento(id);
 
-        // Agora, deleta o agendamento
-        agendamentoRepository.delete(agendamento);
+        // Agora, deleta o agendamento. Pelo id, e nao pela entidade: desvincularAgendamento
+        // limpou o contexto de persistencia. Sem essa limpeza, as especialidades carregadas
+        // pelo estorno de cota continuavam gerenciadas e apontando para o agendamento
+        // removido, e o flush falhava sempre que nenhuma cota era estornada (unidade sem
+        // cota aplicavel) — so o clear do devolverVaga escondia o problema.
+        agendamentoRepository.deleteById(id);
+
+        eventPublisher.publishEvent(cancelamento);
     }
 
     /**

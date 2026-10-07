@@ -3,6 +3,7 @@
   import { getApi, postApi } from '$lib/api';
   import { listarEspecialidadesCatalogo } from '$lib/especialidadesApi.js';
   import { formatarHora } from '$lib/cotas.js';
+  import { analisarVerificacao, montarBodyViaveis } from '$lib/agendamentoParcial.js';
   import RoleBasedMenu from '$lib/RoleBasedMenu.svelte';
   import UserMenu from '$lib/UserMenu.svelte';
   import LoadingSpinner from '$lib/LoadingSpinner.svelte';
@@ -528,6 +529,88 @@
   }
 
   let solicitacaoDetalhe = $state<SolicitacaoDetalhe | null>(null);
+
+  // Lote parcial: resposta de POST agendamentos/{id}/verificar e o diálogo que
+  // ela abre quando nem todos os itens podem ser agendados.
+  type ItemVerificado = { codigo: string; nome: string; podeAgendar: boolean; corrigivel: boolean; motivo: string | null };
+  type VerificacaoAgendamento = { itens: ItemVerificado[]; bloqueioDoLote: string | null };
+  type DadosDoEnvio = {
+    solicitacaoId: SolicitacaoDetalhe['id'];
+    nomePaciente: SolicitacaoDetalhe['nomePaciente'];
+    cpfPaciente: SolicitacaoDetalhe['cpfPaciente'];
+    usfOrigem: SolicitacaoDetalhe['usfOrigem'];
+    unidadeNome: SolicitacaoDetalhe['unidadeNome'];
+    cns: SolicitacaoDetalhe['cns'];
+    dataAgendada: string;
+    turno: 'MANHA' | 'TARDE';
+    localLabel: string;
+    observacoes: string;
+  };
+  type ConfirmacaoParcial = {
+    solicitacaoId: string;
+    body: Record<string, unknown>;
+    paciente: DadosDoEnvio;
+    situacao: 'CORRIGIR' | 'NENHUM' | 'BLOQUEADO' | 'PARCIAL' | 'TUDO_OK';
+    viaveis: ItemVerificado[];
+    corrigiveis: ItemVerificado[];
+    recusados: ItemVerificado[];
+    bloqueioDoLote: string | null;
+  };
+  let verificando = $state(false);
+  let confirmacaoParcial = $state<ConfirmacaoParcial | null>(null);
+
+  /**
+   * Acessibilidade do diálogo de lote parcial — só foco e teclado, nenhuma regra.
+   * Ao abrir, o foco vai para o elemento marcado com `data-foco-inicial` (o
+   * "Voltar", nunca o confirmar); Tab fica preso dentro do diálogo; Esc chama
+   * `aoFechar`; ao fechar, o foco volta para onde estava.
+   */
+  function dialogoModal(node: HTMLElement, aoFechar: () => void) {
+    const focoAnterior = document.activeElement as HTMLElement | null;
+    const focaveis = () =>
+      Array.from(
+        node.querySelectorAll<HTMLElement>('button:not([disabled]), [href], [tabindex]:not([tabindex="-1"])')
+      );
+
+    (node.querySelector<HTMLElement>('[data-foco-inicial]') ?? node).focus();
+
+    function aoTeclar(evento: KeyboardEvent) {
+      if (evento.key === 'Escape') {
+        evento.preventDefault();
+        aoFechar();
+        return;
+      }
+      if (evento.key !== 'Tab') return;
+
+      const lista = focaveis();
+      if (lista.length === 0) {
+        evento.preventDefault();
+        node.focus();
+        return;
+      }
+      const primeiro = lista[0];
+      const ultimo = lista[lista.length - 1];
+      const ativo = document.activeElement;
+      if (!node.contains(ativo)) {
+        evento.preventDefault();
+        primeiro.focus();
+      } else if (evento.shiftKey && (ativo === primeiro || ativo === node)) {
+        evento.preventDefault();
+        ultimo.focus();
+      } else if (!evento.shiftKey && ativo === ultimo) {
+        evento.preventDefault();
+        primeiro.focus();
+      }
+    }
+
+    document.addEventListener('keydown', aoTeclar);
+    return {
+      destroy() {
+        document.removeEventListener('keydown', aoTeclar);
+        if (focoAnterior?.isConnected) focoAnterior.focus();
+      }
+    };
+  }
   let carregandoDetalhe = $state(false);
   async function selecionarSolicitacao(solicitacao: SolicitacaoResumo) {
     const cpfLabel = solicitacao.cpfPaciente || 'CPF não informado';
@@ -651,8 +734,9 @@
     return found.cidadeNome ? `${found.nomeLocal} - ${found.cidadeNome}` : found.nomeLocal;
   }
 
-  function enviarAgendamento(event: SubmitEvent) {
+  async function enviarAgendamento(event: SubmitEvent) {
     event.preventDefault();
+    if (verificando) return;
 
     if (!solicitacaoDetalhe) {
       alert('Por favor, selecione uma solicitação válida.');
@@ -721,27 +805,111 @@
 
     body.localAgendamentoId = localIdNumber !== null ? localIdNumber : null;
 
+    // Lote parcial: antes de gravar, pergunta ao backend o que aconteceria com
+    // cada item. É só uma consulta — quem decide é o POST. Se ela não responder
+    // (rede, backend antigo, sem acesso à unidade), segue direto para o POST,
+    // que é o comportamento de sempre.
+    const idDaSolicitacao = solicitacaoId;
+    const examesDoLote = [...examesSelecionados];
+    // Fotografia do que está sendo agendado, tirada no clique: o formulário
+    // continua editável enquanto a verificação e o POST estão em andamento, e o
+    // comprovante tem que sair com o paciente e a data que foram de fato enviados.
+    const paciente: DadosDoEnvio = {
+      solicitacaoId: solicitacaoDetalhe.id,
+      nomePaciente: solicitacaoDetalhe.nomePaciente,
+      cpfPaciente: solicitacaoDetalhe.cpfPaciente,
+      usfOrigem: solicitacaoDetalhe.usfOrigem,
+      unidadeNome: solicitacaoDetalhe.unidadeNome,
+      cns: solicitacaoDetalhe.cns,
+      dataAgendada,
+      turno,
+      localLabel: getLocalLabel(localAgendamentoId),
+      observacoes
+    };
+    let verificacao: VerificacaoAgendamento | null = null;
+    verificando = true;
     try {
-      postApi(`agendamentos/${solicitacaoId}`, body).then(async (resposta) => {
+      const resposta = await postApi(`agendamentos/${idDaSolicitacao}/verificar`, body);
+      if (resposta.ok) {
+        verificacao = await resposta.json();
+      }
+    } catch {
+      /* segue para o POST */
+    } finally {
+      verificando = false;
+    }
+
+    if (!verificacao) {
+      gravarAgendamento(idDaSolicitacao, body, examesDoLote, [], paciente);
+      return;
+    }
+
+    const analise = analisarVerificacao(verificacao);
+    if (analise.situacao === 'TUDO_OK') {
+      gravarAgendamento(idDaSolicitacao, body, examesDoLote, [], paciente);
+      return;
+    }
+    // Qualquer outra situação exige que o operador leia antes: o diálogo mostra
+    // o que entra, o que fica de fora e por quê.
+    confirmacaoParcial = { solicitacaoId: idDaSolicitacao, body, paciente, ...analise } as ConfirmacaoParcial;
+  }
+
+  /** Operador confirmou: grava só os itens que podem ser agendados. */
+  function confirmarAgendamentoParcial() {
+    const pendente = confirmacaoParcial;
+    if (!pendente || pendente.situacao !== 'PARCIAL') return;
+    const codigosViaveis = pendente.viaveis.map((item) => item.codigo);
+    confirmacaoParcial = null;
+    gravarAgendamento(
+      pendente.solicitacaoId,
+      montarBodyViaveis(pendente.body, codigosViaveis),
+      codigosViaveis,
+      pendente.recusados,
+      pendente.paciente
+    );
+  }
+
+  /**
+   * Envia o POST e trata o resultado. `examesEnviados` são os códigos que estão
+   * neste POST — o comprovante sai SÓ com eles, nunca com o que está marcado na
+   * tela, que pode incluir itens que ficaram de fora do lote.
+   */
+  function gravarAgendamento(
+    idDaSolicitacao: string,
+    body: Record<string, unknown>,
+    examesEnviados: string[],
+    itensDeFora: ItemVerificado[],
+    enviado: DadosDoEnvio
+  ) {
+    try {
+      postApi(`agendamentos/${idDaSolicitacao}`, body).then(async (resposta) => {
         if (resposta.ok) {
-          alert('Agendamento realizado com sucesso!');
+          if (itensDeFora.length > 0) {
+            alert(
+              `Agendamento realizado: ${examesEnviados.length} de ${examesEnviados.length + itensDeFora.length} itens.\n\n`
+              + `Continuam na fila, sem agendamento:\n`
+              + itensDeFora.map((item) => `• ${getEspecialidadeLabel(item.codigo)}`).join('\n')
+            );
+          } else {
+            alert('Agendamento realizado com sucesso!');
+          }
 
           // Profissional real do paciente (V100): vem da resposta do POST,
           // que já resolve override do operador ou o da cota — evita depender
           // de estado local desatualizado no comprovante.
           const profissionalUnico = await (async () => {
-            if (examesSelecionados.length !== 1) return null;
+            if (examesEnviados.length !== 1) return null;
             try {
               const dados = await resposta.clone().json();
               const especialidade = (dados.especialidades ?? []).find(
-                (e: { codigo: string }) => e.codigo?.toUpperCase() === examesSelecionados[0].toUpperCase()
+                (e: { codigo: string }) => e.codigo?.toUpperCase() === examesEnviados[0].toUpperCase()
               );
               if (especialidade?.profissionalExecutanteNome) {
                 return especialidade.profissionalExecutanteNome as string;
               }
             } catch { /* segue para o fallback abaixo */ }
-            return profissionalExibidoParaExame(examesSelecionados[0])?.nome
-              ?? cotasComProfissional(examesSelecionados[0])[0]?.profissionalNome
+            return profissionalExibidoParaExame(examesEnviados[0])?.nome
+              ?? cotasComProfissional(examesEnviados[0])[0]?.profissionalNome
               ?? null;
           })();
 
@@ -749,33 +917,24 @@
           // inclui a hora calculada (cota dinâmica), sobrescrita ou a hora manual
           // validada — evita depender de estado local desatualizado no comprovante.
           const horarioInfo = await (async () => {
-            if (examesSelecionados.length !== 1) return null;
+            if (examesEnviados.length !== 1) return null;
             try {
               const dados = await resposta.clone().json();
               const especialidade = (dados.especialidades ?? []).find(
-                (e: { codigo: string }) => e.codigo?.toUpperCase() === examesSelecionados[0].toUpperCase()
+                (e: { codigo: string }) => e.codigo?.toUpperCase() === examesEnviados[0].toUpperCase()
               );
               if (especialidade?.horaAgendada) {
                 return formatarHora(especialidade.horaAgendada);
               }
             } catch { /* segue para o fallback abaixo */ }
-            const cota = cotaResolvida(examesSelecionados[0]);
+            const cota = cotaResolvida(examesEnviados[0]);
             if (!cota) return null;
-            return cota.horarioDinamico ? null : horarioManualPorExame[examesSelecionados[0].toUpperCase()] || null;
+            return cota.horarioDinamico ? null : horarioManualPorExame[examesEnviados[0].toUpperCase()] || null;
           })();
 
           await gerarComprovantePDF({
-            solicitacaoId: solicitacaoDetalhe.id,
-            nomePaciente: solicitacaoDetalhe.nomePaciente,
-            cpfPaciente: solicitacaoDetalhe.cpfPaciente,
-            usfOrigem: solicitacaoDetalhe.usfOrigem,
-            unidadeNome: solicitacaoDetalhe.unidadeNome,
-            cns: solicitacaoDetalhe.cns,
-            examesNomes: examesSelecionados.map((exame) => getEspecialidadeLabel(exame)),
-            dataAgendada,
-            turno,
-            localLabel: getLocalLabel(localAgendamentoId),
-            observacoes,
+            ...enviado,
+            examesNomes: examesEnviados.map((exame) => getEspecialidadeLabel(exame)),
             profissionalNome: profissionalUnico,
             agendadoPorNome: get(usuarioLogado)?.nome ?? null,
             horarioInfo
@@ -1184,9 +1343,9 @@ USG DE PRÓSTATA</option>
                   <button
                     type="submit"
                     class="w-full bg-emerald-800 text-white py-3 rounded-lg hover:bg-emerald-900 transition mt-6 disabled:bg-gray-400"
-                    disabled={examesSelecionados.length === 0}
+                    disabled={examesSelecionados.length === 0 || verificando}
                   >
-                    Agendar Exames Selecionados
+                    {verificando ? 'Verificando vagas...' : 'Agendar Exames Selecionados'}
                   </button>
                 {/if}
               </div>
@@ -1197,6 +1356,168 @@ USG DE PRÓSTATA</option>
     </main>
   </div>
 </div>
+
+<!-- Lote parcial: o que entra, o que fica de fora e por quê. Bloqueia a tela de
+     propósito — enquanto está aberto o operador não muda paciente, exames nem data,
+     então o que ele confirma é exatamente o que foi verificado. -->
+{#if confirmacaoParcial}
+  {@const c = confirmacaoParcial}
+  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-2 sm:p-4">
+    <!-- Cabeçalho e rodapé fixos; só o miolo rola. Assim os botões nunca somem,
+         mesmo com lista longa ou tela baixa. -->
+    <div
+      class="flex max-h-[calc(100dvh-1rem)] w-full max-w-4xl flex-col rounded-2xl bg-white shadow-xl focus:outline-none sm:max-h-[calc(100dvh-2rem)]"
+      role="alertdialog"
+      aria-modal="true"
+      aria-labelledby="confirmacao-parcial-titulo"
+      aria-describedby="confirmacao-parcial-resumo"
+      tabindex="-1"
+      use:dialogoModal={() => (confirmacaoParcial = null)}
+    >
+      <div class="flex shrink-0 items-start gap-3 border-b border-gray-200 px-4 py-4 sm:px-6">
+        <span
+          class="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-full {c.situacao === 'PARCIAL' ||
+          c.situacao === 'CORRIGIR'
+            ? 'bg-amber-100 text-amber-800'
+            : 'bg-red-100 text-red-800'}"
+          aria-hidden="true"
+        >
+          <svg class="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 9v4m0 4h.01M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+          </svg>
+        </span>
+        <div class="min-w-0">
+          <h2 id="confirmacao-parcial-titulo" class="text-lg font-semibold text-gray-900">
+            {#if c.situacao === 'PARCIAL'}
+              Nem todos os itens podem ser agendados
+            {:else if c.situacao === 'CORRIGIR'}
+              Corrija os itens abaixo para agendar
+            {:else if c.situacao === 'BLOQUEADO'}
+              Agendamento bloqueado
+            {:else}
+              Nenhum item pode ser agendado
+            {/if}
+          </h2>
+          <p class="mt-1 text-sm font-medium text-gray-900">Paciente: {c.paciente.nomePaciente}</p>
+          <p id="confirmacao-parcial-resumo" class="mt-1 text-sm text-gray-700">
+            {#if c.situacao === 'PARCIAL'}
+              <strong class="font-semibold text-red-800">
+                {c.recusados.length}
+                {c.recusados.length === 1 ? 'item fica de fora' : 'itens ficam de fora'}
+              </strong>
+              e {c.recusados.length === 1 ? 'continua' : 'continuam'} na fila.
+              {c.viaveis.length === 1 ? 'Será agendado' : 'Serão agendados'} só {c.viaveis.length} de {c.viaveis.length +
+                c.recusados.length}. Leia os motivos antes de confirmar.
+            {:else if c.situacao === 'CORRIGIR'}
+              Nada foi gravado. Volte, corrija o que está indicado e envie de novo.
+            {:else}
+              Nada foi gravado.
+            {/if}
+          </p>
+        </div>
+      </div>
+
+      <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+      <div
+        class="min-h-0 flex-1 space-y-6 overflow-y-auto overscroll-contain px-4 py-4 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-emerald-700 sm:px-6"
+        role="group"
+        aria-label="Detalhes dos itens"
+        tabindex="0"
+      >
+        {#if c.bloqueioDoLote}
+          <div class="rounded-lg border border-l-4 border-red-300 border-l-red-700 bg-red-50 p-4">
+            <p class="text-xs font-semibold uppercase tracking-wide text-red-800">Motivo do bloqueio</p>
+            <p class="mt-1 text-base font-medium text-red-900">{c.bloqueioDoLote}</p>
+          </div>
+        {/if}
+
+        {#if c.corrigiveis.length > 0}
+          <section aria-labelledby="confirmacao-parcial-corrigir">
+            <h3 id="confirmacao-parcial-corrigir" class="flex items-center gap-2 text-sm font-semibold text-amber-900">
+              <svg class="h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" />
+              </svg>
+              Precisa de correção ({c.corrigiveis.length})
+            </h3>
+            <ul class="mt-2 grid grid-cols-1 gap-2 lg:grid-cols-2">
+              {#each c.corrigiveis as item (item.codigo)}
+                <li class="rounded-lg border border-l-4 border-amber-300 border-l-amber-600 bg-amber-50 p-3">
+                  <p class="text-sm font-semibold text-gray-900">{getEspecialidadeLabel(item.codigo)}</p>
+                  <p class="mt-1 text-sm text-amber-950">
+                    <span class="font-medium">O que corrigir:</span>
+                    {item.motivo}
+                  </p>
+                </li>
+              {/each}
+            </ul>
+          </section>
+        {/if}
+
+        {#if c.recusados.length > 0}
+          <section aria-labelledby="confirmacao-parcial-fora">
+            <h3 id="confirmacao-parcial-fora" class="flex items-center gap-2 text-sm font-semibold text-red-800">
+              <svg class="h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="12" cy="12" r="9" />
+                <path d="m15 9-6 6m0-6 6 6" />
+              </svg>
+              {c.situacao === 'PARCIAL' ? 'Ficam de fora e continuam na fila' : 'Não podem ser agendados'} ({c.recusados.length})
+            </h3>
+            <ul class="mt-2 grid grid-cols-1 gap-2 lg:grid-cols-2">
+              {#each c.recusados as item (item.codigo)}
+                <li class="rounded-lg border border-l-4 border-red-300 border-l-red-700 bg-red-50 p-3">
+                  <p class="text-sm font-semibold text-gray-900">{getEspecialidadeLabel(item.codigo)}</p>
+                  <p class="mt-1 text-sm text-red-900">
+                    <span class="font-medium">Motivo:</span>
+                    {item.motivo}
+                  </p>
+                </li>
+              {/each}
+            </ul>
+          </section>
+        {/if}
+
+        {#if c.situacao === 'PARCIAL'}
+          <section aria-labelledby="confirmacao-parcial-entram">
+            <h3 id="confirmacao-parcial-entram" class="flex items-center gap-2 text-sm font-semibold text-emerald-800">
+              <svg class="h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="12" cy="12" r="9" />
+                <path d="m8.5 12.5 2.5 2.5 4.5-5" />
+              </svg>
+              Serão agendados ({c.viaveis.length})
+            </h3>
+            <ul class="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+              {#each c.viaveis as item (item.codigo)}
+                <li class="rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm font-medium text-gray-900">
+                  {getEspecialidadeLabel(item.codigo)}
+                </li>
+              {/each}
+            </ul>
+          </section>
+        {/if}
+      </div>
+
+      <div class="flex shrink-0 flex-col-reverse gap-3 border-t border-gray-200 bg-gray-50 px-4 py-4 sm:flex-row sm:items-center sm:justify-end sm:px-6 rounded-b-2xl">
+        <button
+          type="button"
+          data-foco-inicial
+          class="min-h-11 rounded-lg border border-gray-500 bg-white px-5 py-2 font-medium text-gray-800 transition hover:bg-gray-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-700"
+          onclick={() => (confirmacaoParcial = null)}
+        >
+          {c.situacao === 'CORRIGIR' ? 'Voltar e corrigir' : 'Voltar'}
+        </button>
+        {#if c.situacao === 'PARCIAL'}
+          <button
+            type="button"
+            class="min-h-11 rounded-lg bg-emerald-800 px-5 py-2 font-medium text-white transition hover:bg-emerald-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-700"
+            onclick={confirmarAgendamentoParcial}
+          >
+            Agendar somente {c.viaveis.length} de {c.viaveis.length + c.recusados.length} itens
+          </button>
+        {/if}
+      </div>
+    </div>
+  </div>
+{/if}
 
 <style>
   .form-checkbox {

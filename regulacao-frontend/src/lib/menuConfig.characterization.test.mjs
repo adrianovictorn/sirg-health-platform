@@ -156,3 +156,87 @@ test("Nenhuma role ve /liberacao-agenda depois de oculta (ADMIN incluido)", () =
     );
   }
 });
+
+// Custos: valor em reais so para ADMIN e GESTOR. GESTOR acompanha (painel, tetos,
+// precos); importar planilha e escrita, so ADMIN. Nenhum perfil de unidade ve esses links.
+const ROTAS_DE_CUSTO_LEITURA = [
+  "/custos",
+  "/custos/tetos",
+  "/custos/especialidades",
+];
+
+test("Custos: ADMIN e GESTOR veem painel, tetos e precos", () => {
+  for (const role of ["ADMIN", "GESTOR"]) {
+    const hrefs = hrefsVisiveis(role);
+    for (const rota of ROTAS_DE_CUSTO_LEITURA) {
+      assert.ok(hrefs.has(rota), `${role} deveria ver ${rota}`);
+    }
+  }
+});
+
+test("Custos: so ADMIN ve a importacao de precos", () => {
+  assert.ok(hrefsVisiveis("ADMIN").has("/admin/custos/importar"));
+  assert.ok(!hrefsVisiveis("GESTOR").has("/admin/custos/importar"));
+});
+
+test("Custos: perfis de unidade e os demais nao veem nenhuma rota de custo", () => {
+  for (const role of [
+    "ADMIN_UNIDADE",
+    "RECEPCAO",
+    "ENFERMEIRO",
+    "MEDICO",
+    "USER",
+    "PACIENTE",
+    "COORD_TRANSPORTE",
+  ]) {
+    const hrefs = hrefsVisiveis(role);
+    for (const rota of [...ROTAS_DE_CUSTO_LEITURA, "/admin/custos/importar"]) {
+      assert.ok(!hrefs.has(rota), `${role} nao deveria ver ${rota}`);
+    }
+  }
+});
+
+// Caracterizacao anterior a mover os links de custo para dentro de
+// "Gerenciamento de Unidades": o GESTOR nao tem acesso a nenhuma tela de
+// gerenciamento de unidades, e isso nao pode mudar por ele passar a ver o grupo.
+test("GESTOR nao ve nenhuma das rotas de gerenciamento de unidades", () => {
+  const hrefs = hrefsVisiveis("GESTOR");
+  for (const rota of ROTAS_GERENCIAMENTO_UNIDADES) {
+    assert.ok(!hrefs.has(rota), `GESTOR nao deveria ver ${rota}`);
+  }
+});
+
+// Os links de custo sao itens do grupo "Gerenciamento de Unidades", depois dos
+// cinco de unidades. Excecao deliberada a regra do cabecalho deste arquivo (que
+// nao testa posicao): a composicao deste grupo e exatamente o que o ajuste mudou.
+function hrefsDoGrupo(role, key) {
+  for (const section of buildMenuForRole(role)) {
+    for (const item of section.items) {
+      if (item.type === "group" && item.key === key) {
+        return item.items.map((link) => link.href);
+      }
+    }
+  }
+  return null;
+}
+
+test('Grupo "Gerenciamento de Unidades": para o GESTOR, so os tres links de custo', () => {
+  assert.deepEqual(
+    hrefsDoGrupo("GESTOR", "gerenciamento-unidades"),
+    ROTAS_DE_CUSTO_LEITURA,
+  );
+});
+
+test('Grupo "Gerenciamento de Unidades": para o ADMIN, unidades e depois custos', () => {
+  assert.deepEqual(hrefsDoGrupo("ADMIN", "gerenciamento-unidades"), [
+    ...ROTAS_GERENCIAMENTO_UNIDADES,
+    ...ROTAS_DE_CUSTO_LEITURA,
+    "/admin/custos/importar",
+  ]);
+});
+
+test('O grupo proprio "Custos" nao existe mais para nenhum perfil', () => {
+  for (const role of ["ADMIN", ...OUTRAS_ROLES, "COORD_TRANSPORTE"]) {
+    assert.equal(hrefsDoGrupo(role, "custos"), null, role);
+  }
+});
