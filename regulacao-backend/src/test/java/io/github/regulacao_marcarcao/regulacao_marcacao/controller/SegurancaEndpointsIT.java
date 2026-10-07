@@ -150,6 +150,58 @@ class SegurancaEndpointsIT {
     }
 
     @Test
+    @DisplayName("Painel do WhatsApp: so ADMIN le, liga o envio ou dispara mensagem")
+    void painelDoWhatsAppSoParaAdmin() throws Exception {
+        List<org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder> rotas = List.of(
+                get("/api/whatsapp/config"),
+                get("/api/whatsapp/mensagens"),
+                get("/api/whatsapp/indicadores"),
+                put("/api/whatsapp/config/envio").contentType(MediaType.APPLICATION_JSON).content("{\"ligado\":true}"),
+                post("/api/whatsapp/mensagens/reenviar").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"agendamentoId\":1,\"tipo\":\"CONFIRMACAO\"}"),
+                post("/api/whatsapp/lembretes/executar"));
+
+        for (var rota : rotas) {
+            assertThat(statusDe(rota)).as("sem login").isIn(401, 403);
+        }
+        for (Roles role : List.of(Roles.GESTOR, Roles.ADMIN_UNIDADE, Roles.USER, Roles.RECEPCAO, Roles.PACIENTE)) {
+            RequestPostProcessor usuario = como(role);
+            for (var rota : rotas) {
+                assertThat(statusDe(rota.with(usuario))).as(role.name()).isEqualTo(403);
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("Painel do WhatsApp sem credenciais: ADMIN ve 'nao configurado' e nao consegue ligar nem disparar")
+    void painelDoWhatsAppSemCredenciais() throws Exception {
+        RequestPostProcessor admin = como(Roles.ADMIN);
+
+        mockMvc.perform(get("/api/whatsapp/config").with(admin))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.configurado").value(false))
+                .andExpect(jsonPath("$.envioLigado").value(false))
+                .andExpect(jsonPath("$.accessToken").doesNotExist());
+        mockMvc.perform(get("/api/whatsapp/mensagens").with(admin))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content").isArray());
+        mockMvc.perform(get("/api/whatsapp/indicadores").with(admin))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.total").isNumber());
+
+        mockMvc.perform(put("/api/whatsapp/config/envio").with(admin)
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"ligado\":true}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message").exists());
+        mockMvc.perform(post("/api/whatsapp/lembretes/executar").with(admin))
+                .andExpect(status().isConflict());
+        mockMvc.perform(post("/api/whatsapp/mensagens/reenviar").with(admin)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"agendamentoId\":1,\"tipo\":\"CONFIRMACAO\"}"))
+                .andExpect(status().isConflict());
+    }
+
+    @Test
     @DisplayName("PACIENTE nao acessa as listas nominais")
     void pacienteNaoAcessaAsListas() throws Exception {
         RequestPostProcessor paciente = como(Roles.PACIENTE);

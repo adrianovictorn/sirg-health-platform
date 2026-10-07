@@ -31,6 +31,8 @@ import io.github.regulacao_marcarcao.regulacao_marcacao.repository.ProfissionalR
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.SolicitacaoEspecialidadeRepository;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.SolicitacaoRepository;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.UserRepository;
+import io.github.regulacao_marcarcao.regulacao_marcacao.service.whatsapp.evento.AgendamentoCanceladoEvent;
+import io.github.regulacao_marcarcao.regulacao_marcacao.service.whatsapp.evento.AgendamentoCriadoEvent;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 
@@ -49,6 +51,7 @@ public class AgendamentoService {
     private final UnidadeAcessoService unidadeAcessoService;
     private final io.github.regulacao_marcarcao.regulacao_marcacao.config.InstanceContext instanceContext;
     private final org.springframework.amqp.rabbit.core.RabbitTemplate rabbitTemplate;
+    private final org.springframework.context.ApplicationEventPublisher eventPublisher;
 
     /**
      * Retorna todas as solicitações com ao menos uma especialidade com status AGUARDANDO.
@@ -305,6 +308,13 @@ public class AgendamentoService {
         // LazyInitializationException ao montar a resposta. Recarrega antes de ler.
         AgendamentoSolicitacao agendamentoAtual = agendamentoRepository.findById(agendamentoSalvo.getId())
                 .orElse(agendamentoSalvo);
+
+        // WhatsApp: so um aviso, consumido DEPOIS do commit (ver WhatsAppAgendamentoListener).
+        // Ultima linha de proposito — qualquer 409/404 acima sai antes e nada e publicado.
+        eventPublisher.publishEvent(new AgendamentoCriadoEvent(
+                agendamentoSalvo.getId(), solicitacaoId, dto.dataAgendada(),
+                especialidadesAgendadas.stream().map(SolicitacaoEspecialidade::getId).toList()));
+
         return AgendamentoSolicitacaoSimpleViewDTO.fromAgendamentoSolicitacao(agendamentoAtual, especialidadesAgendadas);
     }
 
@@ -416,6 +426,16 @@ public class AgendamentoService {
 
         exigirAcessoAoAgendamento(agendamento, callerCpf);
 
+        // WhatsApp: fotografa o agendamento ANTES de qualquer alteracao — o estorno
+        // abaixo limpa o contexto de persistencia e, ao final, a linha nao existe mais.
+        // So ids, por consulta escalar: carregar as especialidades aqui as deixaria
+        // gerenciadas e apontando para o agendamento que sera removido.
+        AgendamentoCanceladoEvent cancelamento = new AgendamentoCanceladoEvent(
+                agendamento.getId(),
+                agendamento.getSolicitacao().getId(),
+                agendamento.getDataAgendada(),
+                solicitacaoEspecialidadeRepository.findIdsByAgendamentoSolicitacaoId(id));
+
         // Devolve à cota as vagas que este agendamento havia consumido, ANTES de
         // desvincular as especialidades (depois disso não há mais como saber quais
         // especialidades pertenciam ao agendamento).
@@ -426,6 +446,8 @@ public class AgendamentoService {
 
         // Agora, deleta o agendamento
         agendamentoRepository.delete(agendamento);
+
+        eventPublisher.publishEvent(cancelamento);
     }
 
     /**

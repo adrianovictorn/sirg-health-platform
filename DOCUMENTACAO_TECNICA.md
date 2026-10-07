@@ -1091,6 +1091,10 @@ Próxima requisição do usuário desativado:
 | V86 | `unidade.tipo` (`SOLICITANTE`/`EXECUTANTE`/`AMBOS`, default `AMBOS`) + dados cadastrais do CNES; índice `ix_unidade_tipo_ativo` |
 | V87 | Tabela `cbo`, **sem seed** — ver §3.16b |
 | V88 | `profissional.cpf` (UNIQUE parcial) + tabela `profissional_vinculo`; backfill dos vínculos a partir de `profissional.unidade_id` |
+| V101 | WhatsApp: `whatsapp_mensagem` (fila e registro de envios, sem texto nem telefone) e `whatsapp_config` (chave do envio, nasce desligada) — ver §7.10h |
+| V102 | `especialidade.sensivel` e `solicitacao.whatsapp_opt_out` / `whatsapp_opt_out_em` |
+| V103 | `whatsapp_lote_lembrete` — dias em que o lote de lembretes rodou |
+| V104 | `whatsapp_recebidas_dia` — só a contagem diária de mensagens recebidas de pacientes |
 
 > **Limite do backfill (V73/V76/V77):** só é possível vincular a unidade quando
 > `usf_origem` está preenchido **e** casa com alguma unidade cadastrada. O que sobra é
@@ -1400,6 +1404,111 @@ payload carrega dado de paciente.
    retentativa.
 
 Decisões e o que ficou de fora: `docs/decisoes/0002-webhook-whatsapp-por-instancia.md`.
+
+Desde a V104 o POST autenticado também chama `WhatsAppStatusService.processar`, que atualiza o
+registro de envios (§7.10h). Ele nunca lança: o `200` para a Meta não depende dele.
+
+### 7.10h Envio de mensagens pelo WhatsApp (`/whatsapp`)
+
+Painel de admin. **Tudo aqui é só `ADMIN`** (`@PreAuthorize` na classe `WhatsAppAdminController`).
+
+| Método | Endpoint | Descrição |
+|---|---|---|
+| GET | `/whatsapp/config` | Estado: configurado, webhook ligado, envio ligado, quem/quando alterou, limite diário, enviadas hoje, modo de teste |
+| PUT | `/whatsapp/config/envio` | `{ "ligado": true }` ou `false`. Ligar sem credenciais na instância: `409` |
+| GET | `/whatsapp/mensagens?de=&ate=&tipo=&resultado=&page=&size=` | Lista de operação, paginada, mais recentes primeiro |
+| GET | `/whatsapp/indicadores?de=&ate=` | Volume no período: enviadas, entregues, lidas, falhas, não enviadas por motivo, cobráveis por categoria, recebidas |
+| POST | `/whatsapp/mensagens/reenviar` | `{ agendamentoId, tipo }` — `CONFIRMACAO` ou `LEMBRETE`. Envio desligado: `409` |
+| POST | `/whatsapp/lembretes/executar` | Roda agora o lote de lembretes. Envio desligado: `409` |
+
+Sem `de`/`ate`, o período são os últimos 7 dias. As datas são do fuso `America/Bahia`.
+
+**Quando uma mensagem é gerada**
+
+| Operação | Mensagem |
+|---|---|
+| `AgendamentoService.criarAgendamentoParaMultiplosExames` | `CONFIRMACAO` — ou `REMARCACAO`, se havia cancelamento pendente de algum dos mesmos itens |
+| `AgendamentoService.deleteAgendamento` | `CANCELAMENTO`, que espera 10 min na fila |
+| Lote diário das 8h, ou "Rodar lembretes agora" | `LEMBRETE` para atendimentos de daqui a 3 dias |
+| Reenvio pelo painel | `CONFIRMACAO` ou `LEMBRETE`, origem `MANUAL` |
+
+Não geram mensagem: paciente faltou, troca manual de status, procedimento realizado, remoção de
+item, cancelamento de ocorrência de agenda, remanejamento de vagas, eventos da federação e
+transporte sanitário.
+
+**Caminho de uma mensagem**
+
+1. O service de negócio publica um evento (só ids e data) na **última linha** do método
+   transacional. Erro de regra (409 de cota, 404) sai antes e nada é publicado.
+2. `WhatsAppAgendamentoListener` roda em `AFTER_COMMIT` e chama `WhatsAppMensagemService`, que
+   grava uma linha `PENDENTE` em transação nova (`REQUIRES_NEW`). Sem HTTP. Qualquer erro é
+   engolido e logado — o agendamento já está gravado.
+3. `WhatsAppEnvioJob` (a cada 30s, lotes de 20) reivindica a linha (`PENDENTE` → `ENVIANDO`),
+   **remonta o conteúdo** relendo agendamento e paciente, reaplica todas as regras e chama a
+   Graph API. Três transações curtas, com a chamada HTTP fora de transação.
+4. O webhook de status leva a linha de `ENVIADO` a `ENTREGUE` e `LIDO`.
+
+**Regras reaplicadas no envio** (`WhatsAppMensagemService.preparar`), na ordem — a primeira que
+barrar vira `NAO_ENVIADO` com o motivo:
+
+| Motivo | Quando |
+|---|---|
+| `NAO_CONFIGURADO` | A instância ficou sem credenciais com mensagem na fila |
+| `ENVIO_DESLIGADO` | Chave desligada |
+| `DATA_PASSADA` | A data do atendimento é anterior a hoje (excluir ou lançar agendamento antigo não avisa o paciente) |
+| `AGENDAMENTO_REMOVIDO` | Agendamento excluído, ou sem nenhum item `AGENDADO` |
+| `PACIENTE_DE_OUTRO_MUNICIPIO` | `origemMunicipioId` diferente do município local |
+| `OPT_OUT` | Paciente pediu para não receber, nesta ficha ou em outra com o mesmo CPF |
+| `SEM_TELEFONE` / `TELEFONE_INVALIDO` | Ver normalização abaixo |
+| `FORA_DA_LISTA_DE_TESTE` | Há lista de números de teste e o número não está nela |
+| `LIMITE_DIARIO` | Mensagens aceitas hoje atingiram `limite-diario`. Não é reenviada sozinha depois |
+| `SUBSTITUIDO_POR_REMARCACAO` | Cancelamento descartado porque o item foi reagendado |
+
+**Telefone** (`TelefoneWhatsAppNormalizador`): remove máscara, zero inicial e `55`; insere o nono
+dígito em celular antigo de 10 dígitos; exige DDD válido. Fixo e número **sem DDD** não enviam —
+o DDD local não é presumido, porque número errado é dado de saúde no celular de outra pessoa.
+
+**Conteúdo** (`WhatsAppConteudoService`) — mesma origem dos campos do comprovante:
+
+| Variável | Origem | Se ausente |
+|---|---|---|
+| Nome | primeiro nome de `Solicitacao.nomePaciente` | "Paciente" |
+| Atendimento | nomes das especialidades; mais de 3 vira "N exames/procedimentos" | "atendimento agendado" |
+| Local | `localAgendamento` + cidade, ou o enum legado | "local informado no comprovante" |
+| Horário, Profissional | só com **um** item no agendamento (como no comprovante) | "conforme o turno" / "a definir pela unidade" |
+| Turno | `TurnoEnum` | "não informado" |
+
+Com **qualquer item `sensivel`**, o atendimento vira "atendimento especializado" e nem o local
+nem o profissional são citados. CPF, CNS, quem agendou e a observação do operador nunca entram — o service nem os lê.
+
+**Templates** (categoria utilidade, `pt_BR`; nomes configuráveis em
+`app.whatsapp.envio.template.*`): `sirg_confirmacao_agendamento` (também na remarcação),
+`sirg_lembrete_agendamento`, `sirg_cancelamento_agendamento`. Texto e ordem das variáveis em
+`INFRA.md`. **A ordem das variáveis no código e no template aprovado precisa ser a mesma.**
+
+**Erros da Meta** (`WhatsAppCloudApiClient`): conexão que nem chegou a ser estabelecida, `429`
+e `5xx` voltam para a fila, no máximo 3 tentativas. `4xx`, timeout de leitura e conexão que caiu
+depois de estabelecida viram `FALHOU` e **não** são repetidos — a Meta pode ter aceitado, e
+repetir duplicaria a mensagem. Guarda-se só o código do
+erro (`META_131026`, `HTTP_503`), nunca a mensagem, que pode trazer o número.
+
+**Lembrete** (`WhatsAppLembreteService`): no dia H entram os atendimentos de H+3 que já
+existiam às 8h de H. Se não há registro de lote em H-1, entram também os de H+2 (recuperação
+de um dia). O índice único em `chave_idempotencia` impede duplicata; o reenvio manual grava a
+chave nula de propósito.
+
+**Quatro armadilhas:**
+
+1. **A JVM do container roda em UTC.** Regra de data usa `WhatsAppEnvioProperties.FUSO`.
+   `LocalDate.now()` puro erra o dia entre 21h e 0h de Brasília.
+2. **Listener `AFTER_COMMIT` que grava precisa de `REQUIRES_NEW`.** Sem isso o INSERT se perde
+   sem erro. Os ITs `@Transactional` não pegam isso (nunca há commit) — por isso
+   `WhatsAppEnvioFluxoIT` não é `@Transactional` e limpa os dados à mão.
+3. **Antes de excluir o agendamento, ler só os ids** (`findIdsByAgendamentoSolicitacaoId`).
+   Carregar as entidades quebra o flush da exclusão em solicitação sem unidade.
+4. **O agendador do Spring tem uma thread.** Tarefa agendada nova e lenta atrasa o despacho.
+
+Decisões e o que ficou de fora: `docs/decisoes/0003-envio-whatsapp-fila-em-banco-e-registro-de-status.md`.
 
 ---
 
@@ -1939,6 +2048,15 @@ app.municipio.queue-name=fila_conceicao_do_almeida
 app.notifications.ignore-self-executor=false
 app.whatsapp.verify-token=
 app.whatsapp.app-secret=
+app.whatsapp.envio.access-token=
+app.whatsapp.envio.phone-number-id=
+app.whatsapp.envio.api-version=v23.0
+app.whatsapp.envio.limite-diario=200
+app.whatsapp.envio.numeros-teste=
+app.whatsapp.envio.cancelamento-atraso-minutos=10
+app.whatsapp.envio.template.confirmacao=sirg_confirmacao_agendamento
+app.whatsapp.envio.template.cancelamento=sirg_cancelamento_agendamento
+app.whatsapp.envio.template.lembrete=sirg_lembrete_agendamento
 ```
 
 **Variáveis a alterar em produção:**
@@ -1948,6 +2066,11 @@ app.whatsapp.app-secret=
 - `app.municipio.*` — identificador único por instância
 - `app.whatsapp.*` — opcionais; vazias desligam o webhook do WhatsApp (§7.10g). Em produção vêm
   de `WHATSAPP_VERIFY_TOKEN` e `WHATSAPP_APP_SECRET` no `.env` da VPS. Nunca commitar valor real.
+- `app.whatsapp.envio.*` — opcionais; sem `access-token` e `phone-number-id` o envio fica "não
+  configurado" (§7.10h). Em produção vêm de `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`,
+  `WHATSAPP_LIMITE_DIARIO` e `WHATSAPP_NUMEROS_TESTE`. Outras, sem variável própria no compose:
+  `base-url`, `timeout-conexao-ms`, `timeout-leitura-ms`, `idioma`, `intervalo-ms`,
+  `lembrete-cron` e `agendador-ligado` (os testes usam `false`).
 
 ---
 

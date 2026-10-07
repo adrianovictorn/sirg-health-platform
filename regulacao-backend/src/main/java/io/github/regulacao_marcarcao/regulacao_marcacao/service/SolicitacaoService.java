@@ -108,6 +108,7 @@ public class SolicitacaoService {
         solicitacao.setCpfPaciente(dto.cpfPaciente());
         solicitacao.setCns(dto.cns());
         solicitacao.setTelefone(dto.telefone());
+        aplicarOptOutWhatsApp(solicitacao, dto.whatsappOptOut());
         solicitacao.setNomePai(dto.nomePai());
         solicitacao.setNomeMae(dto.nomeMae());
         solicitacao.setEndereco(dto.endereco());
@@ -156,6 +157,21 @@ public class SolicitacaoService {
         return SolicitacaoViewDTO.fromSolicitacao(saved);
     }
 
+    /**
+     * Opt-out do WhatsApp (V102). {@code null} = nao mexe: o PUT de CIDs da ficha
+     * do paciente nao envia o campo e nao pode desfazer a escolha do paciente.
+     */
+    private void aplicarOptOutWhatsApp(Solicitacao solicitacao, Boolean optOut) {
+        if (optOut == null) {
+            return;
+        }
+        boolean atual = Boolean.TRUE.equals(solicitacao.getWhatsappOptOut());
+        if (optOut != atual) {
+            solicitacao.setWhatsappOptOutEm(optOut ? java.time.Instant.now() : null);
+        }
+        solicitacao.setWhatsappOptOut(optOut);
+    }
+
     @Transactional
     public SolicitacaoViewDTO updateSolicitacao(Long id, SolicitacaoUpdateDTO dto, String callerCpf) {
         Solicitacao solicitacao = solicitacaoRepository.findById(id)
@@ -179,6 +195,7 @@ public class SolicitacaoService {
         solicitacao.setNomePaciente(dto.nomePaciente());
         solicitacao.setCns(dto.cns());
         solicitacao.setTelefone(dto.telefone());
+        aplicarOptOutWhatsApp(solicitacao, dto.whatsappOptOut());
         solicitacao.setNomePai(dto.nomePai());
         solicitacao.setNomeMae(dto.nomeMae());
         solicitacao.setEndereco(dto.endereco());

@@ -68,6 +68,14 @@ public interface SolicitacaoEspecialidadeRepository extends JpaRepository<Solici
 
     List<SolicitacaoEspecialidade> findByAgendamentoSolicitacaoId(Long agendamentoId);
 
+    /**
+     * So os ids, SEM carregar as entidades no contexto de persistencia. Usado
+     * antes de excluir o agendamento: uma entidade carregada continuaria
+     * apontando para o agendamento removido e quebraria o flush.
+     */
+    @Query("SELECT se.id FROM SolicitacaoEspecialidade se WHERE se.agendamentoSolicitacao.id = :agendamentoId")
+    List<Long> findIdsByAgendamentoSolicitacaoId(@Param("agendamentoId") Long agendamentoId);
+
     @Modifying
     @Query("UPDATE SolicitacaoEspecialidade se SET se.agendamentoSolicitacao = NULL, se.status = 'AGUARDANDO' WHERE se.agendamentoSolicitacao.id = :agendamentoId")
     void desvincularAgendamento(@Param("agendamentoId") Long agendamentoId);

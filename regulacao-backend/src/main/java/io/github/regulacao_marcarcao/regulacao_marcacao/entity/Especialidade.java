@@ -43,5 +43,13 @@ public class Especialidade {
 
     @Column(name = "vagas", nullable = false)
     private Integer vagas = 0;
+
+    /**
+     * Especialidade cujo nome pode revelar condicao de saude (V102). Quando
+     * {@code true}, as mensagens de WhatsApp nao citam o nome, o local nem o
+     * profissional.
+     */
+    @Column(name = "sensivel", nullable = false)
+    private Boolean sensivel = false;
 }
 

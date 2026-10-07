@@ -10,7 +10,8 @@ public record EspecialidadeViewDTO(
         ItemCategoria categoria,
         GrupoRelatorioSimpleViewDTO grupoRelatorio,
         Boolean ativo,
-        Integer vagas
+        Integer vagas,
+        Boolean sensivel
 ) {
     
 }

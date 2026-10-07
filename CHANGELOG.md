@@ -4,6 +4,53 @@
 
 ### Novidades
 
+- **Mensagens de WhatsApp para o paciente (`/admin/whatsapp`, `/api/whatsapp/**`).**
+  O sistema passa a avisar o paciente pelo WhatsApp do numero do municipio:
+  **confirmacao** quando e agendado para consulta ou exame, **remarcacao**, **cancelamento** e
+  **lembrete** 3 dias antes. Transporte sanitario fica para a proxima entrega.
+
+  **Nasce desligado.** Subir esta versao nao envia nada: precisa das credenciais no `.env`
+  (`WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`), dos tres templates aprovados pela Meta
+  e de um ADMIN ligar a chave em **Painel Admin > WhatsApp**. Checklist em `INFRA.md`. Instancia
+  sem credenciais opera exatamente como antes.
+
+  **O agendamento nao depende do WhatsApp.** A mensagem so entra numa fila depois que o
+  agendamento esta gravado, e quem fala com a Meta e uma tarefa separada. Meta lenta ou fora
+  do ar nao atrasa nem desfaz agendamento, e nao mexe em cota.
+
+  **O que a mensagem diz:** primeiro nome, atendimento, local, data, dia da semana, horario,
+  turno e profissional. **Nunca** CPF, CNS, quem agendou ou a observacao do operador.
+
+  **Especialidade sensivel.** O cadastro de especialidade ganhou a marcacao "Sensivel": as
+  marcadas saem como "atendimento especializado", sem o local. **Nenhuma vem marcada — revise o
+  catalogo antes de ligar o envio.**
+
+  **Paciente pode sair.** A ficha do paciente ganhou "Nao enviar mensagens por WhatsApp", que
+  vale para todas as fichas do mesmo CPF.
+
+  **Remarcar** (excluir e agendar de novo em ate 10 minutos) gera uma unica mensagem de
+  remarcacao. Por isso todo aviso de cancelamento sai com cerca de 10 minutos de atraso.
+
+  **Lembrete:** lote as 8h para quem tem atendimento daqui a 3 dias. Se o lote da vespera nao
+  rodou, inclui os de daqui a 2 dias. Nunca dois lembretes para o mesmo agendamento.
+
+  **Painel:** chave de ligar/desligar o envio (nao afeta o recebimento do webhook), volume por
+  periodo (enviadas, entregues, lidas, falhas, nao enviadas por motivo, cobraveis, recebidas),
+  lista de mensagens, reenvio da confirmacao ou do lembrete de um agendamento e "rodar
+  lembretes agora". A lista nao mostra nome nem telefone inteiro. So ADMIN.
+
+  **Travas:** limite diario (padrao 200) e lista de numeros de teste — enquanto preenchida, so
+  eles recebem.
+
+  **Telefone:** aceita mascara, 55 e celular antigo sem o nono digito. Fixo e numero sem DDD
+  nao recebem e aparecem no painel como "Telefone invalido ou sem DDD".
+
+  **O webhook passa a gravar** o status de entrega de cada mensagem e a contagem diaria de
+  mensagens recebidas. O texto das respostas dos pacientes continua sem ser guardado: **o
+  numero ainda nao e canal de atendimento.**
+
+  Migrations V101 a V104, todas aditivas.
+
 - **Webhook do WhatsApp (`GET` e `POST /api/webhooks/whatsapp`).**
   Primeira fatia da integracao com a WhatsApp Business Cloud API (Meta): a rota que o painel da
   Meta pede em "URL de callback". Publica, sem JWT — autenticada pelo verify token (GET) e pela

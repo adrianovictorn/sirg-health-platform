@@ -88,6 +88,10 @@ Svelte 5 com runes (`$state`, `$derived`, `$effect`) — não `export let` nem s
 
 [[diagrama-federacao]], [[10 - Padrões e Arquitetura]] §10.5 e `config/InstanceContext.java` — `getMunicipioLocal()`, `getNomeIdentificador()`, `getQueueName()`. Feature exclusiva de um município é `if` sobre o nome do município local; ver também [[Infraestrutura]].
 
+### WhatsApp e mensagens ao paciente
+
+[[07 - APIs e Endpoints]] §7.10g (webhook) e §7.10h (envio), [[0002-webhook-whatsapp-por-instancia]] e [[0003-envio-whatsapp-fila-em-banco-e-registro-de-status]]. O código está em `service/whatsapp/`. Antes de mexer: a mensagem nunca leva CPF, CNS, quem agendou nem a observação do operador; a fila não guarda texto nem telefone; e nada disso pode rodar dentro da transação do agendamento. Ativação em produção: [[Infraestrutura]].
+
 ### Relatórios e exportação
 
 [[08 - Frontend]] §8.7 — Excel e PDF são gerados **no browser** (ExcelJS, jsPDF). O backend tem POI para o que precisa sair pronto do servidor.
@@ -112,7 +116,7 @@ Ordem de leitura, com o motivo de cada parada:
 
 ---
 
-## Três armadilhas que não se descobre lendo o código devagar
+## Cinco armadilhas que não se descobre lendo o código devagar
 
 Estão documentadas num lugar só cada uma. Quem não leu, erra.
 
@@ -121,6 +125,10 @@ Estão documentadas num lugar só cada uma. Quem não leu, erra.
 **2. Solicitação órfã existe.** Registros antigos com `unidade_id IS NULL` que nenhuma migração conseguiu atribuir (o backfill só resolve quando `usf_origem` casa com unidade cadastrada). É por isso que o controle de acesso por unidade **não bloqueia** esses registros — ver [[06 - Banco de Dados]] §6.3 e [[10 - Padrões e Arquitetura]] §10.0. Filtro novo que ignore isso esconde pacientes reais da tela.
 
 **3. O código IBGE do município na API do CNES tem 6 dígitos**, sem o verificador: São Felipe é `292910`, não `2929107`. Com 7 dígitos a API responde **200 com lista vazia** — falha silenciosa, sem erro nenhum para investigar. Ver [[07 - APIs e Endpoints]] §7.10f.
+
+**4. A JVM do container roda em UTC.** `LocalDate.now()` devolve o dia seguinte entre 21h e 0h de Brasília. Regra que depende de "hoje" usa um fuso explícito — `WhatsAppEnvioProperties.FUSO` ou o `ZoneId` de `AgendaDiaConsolidadaService`. Ver [[07 - APIs e Endpoints]] §7.10h.
+
+**5. Escrita no banco depois do commit some sem erro.** Um `@TransactionalEventListener(AFTER_COMMIT)` que grava precisa de `@Transactional(propagation = REQUIRES_NEW)` no método chamado. Os ITs `@Transactional` não detectam a falta: neles nunca há commit e o listener nem roda. Ver `WhatsAppEnvioFluxoIT`.
 
 ---
 

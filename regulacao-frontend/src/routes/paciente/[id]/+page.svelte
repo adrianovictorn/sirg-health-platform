@@ -124,6 +124,9 @@
     let dataMalote = $state('');
     let observacoes = $state('');
     let telefone = $state('');
+    // Opt-out do WhatsApp (V102). Vai so no salvarPaciente — salvarCids nao o envia,
+    // e o backend trata campo ausente como "nao mexe".
+    let whatsappOptOut = $state(false);
     // Dados cadastrais obrigatórios do paciente (backend valida via @NotBlank no update).
     let nomePai = $state('');
     let nomeMae = $state('');
@@ -215,6 +218,7 @@
         dataMalote = solicitacao.dataMalote;
         observacoes = solicitacao.observacoes;
         telefone = solicitacao.telefone || '';
+        whatsappOptOut = solicitacao.whatsappOptOut === true;
         nomePai = solicitacao.nomePai || '';
         nomeMae = solicitacao.nomeMae || '';
         endereco = solicitacao.endereco || '';
@@ -241,6 +245,7 @@
         cpfPaciente: cpfPaciente ? (cpfPaciente.replace(/\D/g, '') || null) : null,
         cns,
         telefone,
+        whatsappOptOut,
         nomePai,
         nomeMae,
         endereco,
@@ -559,6 +564,11 @@
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-1">Telefone</label>
                     <input type="text" bind:value={telefone} class="w-full border-gray-300 rounded-md shadow-sm focus:border-emerald-500 focus:ring-emerald-500" />
+                    <label class="mt-2 flex items-start gap-2 py-0.5 text-sm text-gray-700 cursor-pointer">
+                        <input type="checkbox" bind:checked={whatsappOptOut} aria-describedby="paciente-whatsapp-dica" class="mt-0.5 h-4 w-4 shrink-0 rounded border-gray-400 text-emerald-600 focus:ring-2 focus:ring-emerald-500 focus:ring-offset-1 disabled:cursor-not-allowed" />
+                        <span class="font-medium">Não enviar mensagens por WhatsApp</span>
+                    </label>
+                    <p id="paciente-whatsapp-dica" class="ml-6 text-xs text-gray-600">Marque se o paciente pediu para não receber avisos. Vale ao salvar.</p>
                 </div>
 
                 <div>

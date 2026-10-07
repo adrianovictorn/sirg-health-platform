@@ -15,6 +15,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 
 import io.github.regulacao_marcarcao.regulacao_marcacao.service.WhatsAppWebhookService;
+import io.github.regulacao_marcarcao.regulacao_marcacao.service.whatsapp.WhatsAppStatusService;
 
 /**
  * Status devolvidos a Meta: 404 com a integracao desligada, 403 quando o token
@@ -26,6 +27,7 @@ class WhatsAppWebhookControllerTest {
     private static final byte[] CORPO = "{}".getBytes();
 
     @Mock private WhatsAppWebhookService service;
+    @Mock private WhatsAppStatusService statusService;
 
     @InjectMocks private WhatsAppWebhookController controller;
 
@@ -61,6 +63,7 @@ class WhatsAppWebhookControllerTest {
 
         assertThat(resposta.getStatusCode()).isEqualTo(HttpStatus.OK);
         verify(service).registrarMetadados(CORPO);
+        verify(statusService).processar(CORPO);
     }
 
     @Test
@@ -72,6 +75,7 @@ class WhatsAppWebhookControllerTest {
 
         assertThat(resposta.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
         verify(service, never()).registrarMetadados(any());
+        verify(statusService, never()).processar(any());
     }
 
     @Test
@@ -83,5 +87,6 @@ class WhatsAppWebhookControllerTest {
         assertThat(controller.receber(CORPO, "sha256=ok").getStatusCode())
                 .isEqualTo(HttpStatus.NOT_FOUND);
         verify(service, never()).registrarMetadados(any());
+        verify(statusService, never()).processar(any());
     }
 }

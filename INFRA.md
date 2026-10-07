@@ -158,6 +158,10 @@ APP_ORIGIN=https://sirgsaofelipe.com
 NGINX_DOMAIN=sirgsaofelipe.com
 WHATSAPP_VERIFY_TOKEN=<gere um valor aleatório — não copie este texto>
 WHATSAPP_APP_SECRET=<chave secreta do app, copiada do painel da Meta>
+WHATSAPP_ACCESS_TOKEN=<token permanente de usuário do sistema>
+WHATSAPP_PHONE_NUMBER_ID=<identificação do número de telefone>
+WHATSAPP_LIMITE_DIARIO=200
+WHATSAPP_NUMEROS_TESTE=<55 + DDD + número, separados por vírgula; vazio = todos recebem>
 ```
 
 ### Webhook do WhatsApp (Meta)
@@ -191,6 +195,122 @@ diferente do configurado.
 O nginx não precisa de mudança: `location /api/` já encaminha a rota. O access log do nginx
 grava a query string do GET de verificação, então o verify token aparece em
 `docker logs sirg_nginx` — troque-o depois se isso incomodar.
+
+### Envio de mensagens pelo WhatsApp
+
+Independente do webhook acima. Sem `WHATSAPP_ACCESS_TOKEN` **e** `WHATSAPP_PHONE_NUMBER_ID`, o
+envio fica "não configurado" e a instância opera como antes. Mesmo configurado, **o envio nasce
+desligado**: quem liga é um ADMIN, em *Painel Admin → WhatsApp*.
+
+| Variável | O que é | Onde pegar |
+|---|---|---|
+| `WHATSAPP_ACCESS_TOKEN` | Token **permanente** de um usuário do sistema, com `whatsapp_business_messaging` e `whatsapp_business_management` | Configurações do negócio → Usuários do sistema → Gerar token. O token do painel de testes expira em 24h — não serve |
+| `WHATSAPP_PHONE_NUMBER_ID` | "Identificação do número de telefone" (não é o número) | Painel do app → WhatsApp → Configuração da API |
+| `WHATSAPP_LIMITE_DIARIO` | Teto de mensagens por dia (padrão 200). O que passar fica como "não enviada" e **não** sai sozinha no dia seguinte | Defina abaixo do limite de conversas que o WhatsApp Manager mostra para o número |
+| `WHATSAPP_NUMEROS_TESTE` | Enquanto preenchida, **só** esses números recebem | Seu celular e o de quem vai conferir |
+
+A versão da Graph API (`app.whatsapp.envio.api-version`, padrão `v23.0`) fica em
+`application.properties`. Confira a versão vigente no painel da Meta ao implantar; versão
+descontinuada faz os envios falharem.
+
+#### Templates a criar no WhatsApp Manager
+
+Categoria **Utilidade**, idioma **Português (BR)**, corpo em texto, sem cabeçalho, rodapé ou
+botões. Troque `[Município]` pelo nome do município. **Não mude a ordem das variáveis** — o
+código as preenche nesta ordem. Sem os três aprovados, as mensagens falham.
+
+**`sirg_confirmacao_agendamento`** (confirmação e remarcação)
+
+```
+Olá, {{1}}. A Central de Regulação de [Município] confirma o seu agendamento.
+
+Atendimento: {{2}}
+Local: {{3}}
+Data: {{4}} ({{5}})
+Horário: {{6}}
+Turno: {{7}}
+Profissional: {{8}}
+
+Observações: confira as orientações no seu comprovante de agendamento ou procure a sua unidade de saúde.
+
+Esta é uma mensagem automática. Em caso de dúvida ou se não puder comparecer, procure a sua unidade de saúde.
+```
+
+1 nome · 2 atendimento · 3 local · 4 data · 5 dia da semana · 6 horário · 7 turno · 8 profissional
+
+**`sirg_lembrete_agendamento`**
+
+```
+Olá, {{1}}. Lembrete da Central de Regulação de [Município]: você tem um atendimento agendado para {{2}} ({{3}}).
+
+Atendimento: {{4}}
+Local: {{5}}
+Horário: {{6}}
+Turno: {{7}}
+Profissional: {{8}}
+
+Leve documento com foto, Cartão do SUS e o comprovante de agendamento. Confira as demais orientações no comprovante.
+
+Esta é uma mensagem automática. Se não puder comparecer, avise a sua unidade de saúde.
+```
+
+1 nome · 2 data · 3 dia da semana · 4 atendimento · 5 local · 6 horário · 7 turno · 8 profissional
+
+**`sirg_cancelamento_agendamento`**
+
+```
+Olá, {{1}}. A Central de Regulação de [Município] informa que o seu agendamento de {{2}} do dia {{3}} ({{4}}) foi cancelado.
+
+Para saber o motivo ou reagendar, procure a sua unidade de saúde.
+
+Esta é uma mensagem automática.
+```
+
+1 nome · 2 tipo ("consulta ou exame") · 3 data · 4 dia da semana
+
+Exemplos para o formulário da Meta: `Maria`, `Cardiologia`, `Policlínica Regional - Santo Antônio
+de Jesus`, `12/10/2026`, `segunda-feira`, `07:30`, `Manhã`, `Dra. Ana Lima`.
+
+Se a Meta aprovar com outro nome, ajuste `app.whatsapp.envio.template.*`.
+
+#### Checklist de ativação
+
+Na ordem. Cada passo tem um motivo; não pule.
+
+1. **Templates aprovados** no WhatsApp Manager (os três acima).
+2. **Catálogo revisado:** em *Cadastrar → Especialidade*, marcar como **Sensível** tudo cujo
+   nome possa revelar condição de saúde (HIV, sífilis, hepatites, psiquiatria, oncologia,
+   infectologia, teste de gravidez...). Nenhuma vem marcada; sem isso o nome do exame sai na
+   mensagem.
+3. **`.env` da VPS** com as quatro variáveis, e `WHATSAPP_NUMEROS_TESTE` **preenchida** com o
+   seu número.
+4. `docker compose -f docker-compose.prod.yaml up -d backend`.
+5. Em *Painel Admin → WhatsApp*, conferir "Modo de teste: Ativo" e **ligar o envio**.
+6. Agendar um paciente de teste cujo telefone seja o seu. A mensagem chega em até um minuto e
+   a linha aparece como "Enviada", depois "Entregue" e "Lida".
+7. Conferir o texto recebido contra o comprovante.
+8. Só então **esvaziar `WHATSAPP_NUMEROS_TESTE`** e recriar o backend. A partir daí os pacientes
+   recebem.
+
+**Para parar tudo na hora:** *Painel Admin → WhatsApp → Desligar envio*. Vale a partir da
+próxima mensagem, sem reiniciar nada. O webhook continua respondendo à Meta.
+
+**Diagnóstico pelo painel**
+
+| O que aparece | Significado |
+|---|---|
+| "Não configurado nesta instância" | Variáveis não chegaram ao container: precisam estar no `.env` **e** em `backend.environment` do compose |
+| Falhou, código `INTERROMPIDO` | A aplicação reiniciou no meio do envio; não foi repetido para não duplicar |
+| Falhou, código `TIMEOUT` | A Meta não respondeu a tempo; pode ter saído. Reenvie pelo painel só se o paciente confirmar que não recebeu |
+| Falhou, código `SEM_CONEXAO` ou `HTTP_5xx` | A Meta estava inacessível nas 3 tentativas |
+| Falhou, código `SEM_RESPOSTA` | A conexão caiu depois de aberta; pode ter saído. Mesma orientação do `TIMEOUT` |
+| Não enviada, "Data do atendimento já passou" | Agendamento antigo foi excluído ou lançado com data retroativa; o paciente não é avisado |
+| Falhou, código `META_<número>` | Erro devolvido pela Cloud API (token inválido, template inexistente ou não aprovado, quantidade de variáveis diferente da do template, número sem WhatsApp). Procure o número na lista de códigos de erro da documentação da Meta |
+| Não enviada, "Fora da lista de teste" | Há números em `WHATSAPP_NUMEROS_TESTE` |
+
+**Custo:** a Meta cobra por mensagem de template entregue, pela categoria e pelo país do
+destinatário. O painel mostra quantas mensagens a Meta marcou como cobráveis no período; o
+valor está no WhatsApp Manager (Insights) e na fatura da conta do WhatsApp Business.
 
 ---
 

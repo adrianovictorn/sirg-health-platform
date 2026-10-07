@@ -381,6 +381,7 @@ export const MENU_SECTIONS = [
             href: "/admin/notificacoes",
             roles: ["ADMIN"],
           },
+          { label: "WhatsApp", href: "/admin/whatsapp", roles: ["ADMIN"] },
         ],
       },
       {

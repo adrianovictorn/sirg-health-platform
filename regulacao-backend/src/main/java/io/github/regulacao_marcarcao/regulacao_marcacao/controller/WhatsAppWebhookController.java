@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import io.github.regulacao_marcarcao.regulacao_marcacao.service.WhatsAppWebhookService;
+import io.github.regulacao_marcarcao.regulacao_marcacao.service.whatsapp.WhatsAppStatusService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
@@ -32,6 +33,7 @@ import lombok.extern.slf4j.Slf4j;
 public class WhatsAppWebhookController {
 
     private final WhatsAppWebhookService whatsAppWebhookService;
+    private final WhatsAppStatusService whatsAppStatusService;
 
     /** Verificacao de inscricao: devolve o challenge em texto puro. */
     @GetMapping
@@ -62,6 +64,8 @@ public class WhatsAppWebhookController {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         }
         whatsAppWebhookService.registrarMetadados(corpo);
+        // Atualiza o registro de envios (entregue, lido, falhou). Nunca lanca.
+        whatsAppStatusService.processar(corpo);
         return ResponseEntity.ok().build();
     }
 }

@@ -51,6 +51,8 @@ public class EspecialidadeService {
             throw new IllegalArgumentException("A quantidade de vagas não pode ser negativa.");
         }
         novaEspecialidade.setVagas(dto.vagas() != null ? dto.vagas() : 0);
+        // Coluna NOT NULL (V102): o mapper copiaria null quando a tela nao envia o campo.
+        novaEspecialidade.setSensivel(Boolean.TRUE.equals(dto.sensivel()));
 
         GrupoRelatorio grupoRelatorio = grupoRelatorioRepository.findById(dto.grupoRelatorioId()).orElseThrow(() -> new EntityNotFoundException("Grupo de Relatório não encontrado !"));
         novaEspecialidade.setGrupoRelatorio(grupoRelatorio);
