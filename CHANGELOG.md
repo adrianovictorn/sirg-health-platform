@@ -4,6 +4,35 @@
 
 ### Novidades
 
+- **Indicadores de gestao (`/indicadores`).** A tela de indicadores foi reorganizada em secoes
+  (Hoje, Agendamentos por grupo, Fila e espera, Profissionais solicitantes) e ganhou um bloco novo,
+  **visivel so para ADMIN e GESTOR**, com filtro de periodo e de unidade. So numeros agregados,
+  nenhum dado de paciente.
+
+  **Fila e operacao.** Quantos pacientes esperam ha ate 30, 31 a 60, 61 a 90 e mais de 90 dias
+  (por unidade, especialidade e prioridade); com quantos dias de antecedencia os atendimentos sao
+  marcados; e o balanco de pedidos novos, agendados e concluidos nos ultimos 12 meses.
+
+  **Cotas.** Utilizacao media, cotas esgotadas e cotas ociosas (periodo encerrado sem uso), e
+  vagas ofertadas x agendadas por profissional e por horario.
+
+  **Custos.** Execucao do teto financeiro com destaque para o que passou de 80%; custo de faltas e
+  cancelamentos; quanto do catalogo e do movimento tem preco; e a evolucao mensal do custo
+  agendado e concluido, com o custo medio por paciente atendido. Os valores em reais continuam
+  saindo so por `/api/custos/**`.
+
+  **WhatsApp.** Quantos agendamentos tiveram o aviso entregue e lido, por que os demais nao
+  receberam, e quantos pacientes tem telefone invalido por unidade. O GESTOR passa a ver esses
+  agregados; o painel de mensagens continua so do ADMIN.
+
+  **Cada cartao diz como ler o numero.** Os limites que importam para decidir: o sistema registra
+  falta como cancelamento (os dois aparecem juntos); agendamento excluido ou remarcado deixa de
+  contar no mes original; cotas nao sao somadas entre si; e o telefone so e avaliado onde o envio
+  do WhatsApp esta ligado — sem isso a tela mostra "nao avaliado", nao 0%.
+
+  Nada muda nos indicadores que ja existiam nem em agendamento, cota ou teto: e so leitura, sem
+  migration. Rotas novas: `/api/indicadores/**` e `/api/custos/indicadores/**`.
+
 - **Custos: preco por especialidade, painel e teto financeiro (`/custos`, `/api/custos/**`).**
   Cada especialidade pode ter um **valor unitario** e um **codigo SUS** (SIGTAP). Com isso o
   sistema mostra quanto custa a fila, o que foi agendado e o que foi realizado, e permite

@@ -404,4 +404,125 @@ class SegurancaEndpointsIT {
                 .andExpect(jsonPath("$.itens[0].podeAgendar").value(true))
                 .andExpect(jsonPath("$.bloqueioDoLote").doesNotExist());
     }
+
+    // ------------------------------------------------------------------
+    // Indicadores gerenciais: so ADMIN e GESTOR
+    // ------------------------------------------------------------------
+
+    /** Builders novos a cada chamada: with() acumula no mesmo builder. */
+    private List<org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder> indicadoresGerenciais() {
+        return List.of(
+                get("/api/indicadores/fila/envelhecimento"),
+                get("/api/indicadores/fila/balanco"),
+                get("/api/indicadores/agendamentos/antecedencia"),
+                get("/api/indicadores/cotas/utilizacao"),
+                get("/api/indicadores/cotas/ocupacao-profissional"),
+                get("/api/indicadores/whatsapp/alcance"),
+                get("/api/indicadores/whatsapp/telefone-invalido"),
+                get("/api/custos/indicadores/teto"),
+                get("/api/custos/indicadores/faltas"),
+                get("/api/custos/indicadores/cobertura"),
+                get("/api/custos/indicadores/evolucao"));
+    }
+
+    @Test
+    @DisplayName("Indicadores gerenciais: sem login nada responde; so ADMIN e GESTOR leem")
+    void indicadoresGerenciaisSoParaGestao() throws Exception {
+        for (var rota : indicadoresGerenciais()) {
+            assertThat(statusDe(rota)).as("sem login").isIn(401, 403);
+        }
+
+        for (Roles role : List.of(Roles.ADMIN, Roles.GESTOR)) {
+            RequestPostProcessor usuario = como(role);
+            for (var rota : indicadoresGerenciais()) {
+                mockMvc.perform(rota.with(usuario)).andExpect(status().isOk());
+            }
+        }
+
+        // Inclui quem hoje alcanca /api/fechamento (RECEPCAO, MEDICO, PACIENTE...) e
+        // COORD_TRANSPORTE, que tem visao global nas listagens: aqui nenhum deles entra.
+        for (Roles role : List.of(Roles.ADMIN_UNIDADE, Roles.RECEPCAO, Roles.ENFERMEIRO, Roles.MEDICO,
+                Roles.USER, Roles.PACIENTE, Roles.COORD_TRANSPORTE)) {
+            RequestPostProcessor usuario = como(role);
+            for (var rota : indicadoresGerenciais()) {
+                assertThat(statusDe(rota.with(usuario))).as(role.name()).isEqualTo(403);
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("Indicadores gerenciais: periodo invalido devolve 400 com mensagem, nunca 500")
+    void indicadoresComPeriodoInvalidoDevolvem400() throws Exception {
+        RequestPostProcessor admin = como(Roles.ADMIN);
+
+        for (String rota : List.of(
+                "/api/indicadores/agendamentos/antecedencia",
+                "/api/indicadores/cotas/utilizacao",
+                "/api/indicadores/whatsapp/alcance",
+                "/api/custos/indicadores/faltas",
+                "/api/custos/indicadores/teto")) {
+            for (String[] periodo : List.of(
+                    new String[] {"2026-13-01", "2026-12-31"},
+                    new String[] {"01/10/2026", "2026-10-31"},
+                    new String[] {"2026-10-31", "2026-10-01"},
+                    new String[] {"2025-01-01", "2026-10-01"})) {
+                mockMvc.perform(get(rota).param("de", periodo[0]).param("ate", periodo[1]).with(admin))
+                        .andExpect(status().isBadRequest())
+                        .andExpect(jsonPath("$.message").exists());
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("WhatsApp: GESTOR le os agregados gerenciais, mas o painel operacional continua so do ADMIN")
+    void gestorLeAlcanceMasNaoOPainelDoWhatsApp() throws Exception {
+        RequestPostProcessor gestor = como(Roles.GESTOR);
+
+        mockMvc.perform(get("/api/indicadores/whatsapp/alcance").with(gestor))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.agendamentos").isNumber())
+                .andExpect(jsonPath("$.configurado").isBoolean())
+                // So contagens: nada que identifique mensagem, agendamento ou paciente.
+                .andExpect(jsonPath("$.telefoneFinal").doesNotExist())
+                .andExpect(jsonPath("$.mensagens").doesNotExist());
+        assertThat(statusDe(get("/api/whatsapp/indicadores").with(gestor))).isEqualTo(403);
+        assertThat(statusDe(get("/api/whatsapp/mensagens").with(gestor))).isEqualTo(403);
+    }
+
+    @Test
+    @DisplayName("Fechamento (caracterizacao): os indicadores antigos seguem respondendo a ADMIN e GESTOR e vedados a ADMIN_UNIDADE")
+    void indicadoresAntigosSeguemComoEstavam() throws Exception {
+        String hoje = java.time.LocalDate.now().toString();
+        List<String> rotas = List.of(
+                "/api/fechamento/total/agendados/dia?data=" + hoje,
+                "/api/fechamento/total/pacientes/novos/dia?data=" + hoje,
+                "/api/fechamento/total/solicitacao/especialidade/dia?data=" + hoje,
+                "/api/fechamento/total/por/especialidade/por/tempo?inicio=2026-01-01&intervalo=2026-02-01",
+                "/api/fechamento/especialidades/pendentes/top10",
+                "/api/fechamento/profissionais/ranking",
+                "/api/fechamento/tempo-espera/geral",
+                "/api/fechamento/tempo-espera/por-especialidade");
+
+        for (Roles role : List.of(Roles.ADMIN, Roles.GESTOR)) {
+            RequestPostProcessor usuario = como(role);
+            for (String rota : rotas) {
+                mockMvc.perform(get(rota).with(usuario)).andExpect(status().isOk());
+            }
+        }
+        RequestPostProcessor adminUnidade = como(Roles.ADMIN_UNIDADE);
+        for (String rota : rotas) {
+            assertThat(statusDe(get(rota).with(adminUnidade))).as(rota).isEqualTo(403);
+        }
+
+        // Nenhum valor em reais sai pelos indicadores antigos, que outros perfis alcancam.
+        RequestPostProcessor recepcao = como(Roles.RECEPCAO);
+        for (String rota : rotas) {
+            String corpo = mockMvc.perform(get(rota).with(recepcao)).andReturn().getResponse().getContentAsString();
+            assertThat(corpo).as(rota)
+                    .doesNotContainIgnoringCase("valorUnitario")
+                    .doesNotContainIgnoringCase("valorTotal")
+                    .doesNotContainIgnoringCase("valorUtilizado")
+                    .doesNotContainIgnoringCase("custoMedio");
+        }
+    }
 }

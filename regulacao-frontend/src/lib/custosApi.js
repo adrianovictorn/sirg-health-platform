@@ -79,6 +79,34 @@ export async function atualizarTetoFinanceiro(id, { valorTotal, ativo, version }
   return res.json();
 }
 
+// ---- Indicadores de custo exibidos em /indicadores (somente leitura)
+
+/** Tetos ativos dos meses que o período cobre e a série dos últimos 12 meses. */
+export async function carregarExecucaoTeto({ unidadeId, de, ate } = {}) {
+  const res = await getApi(`custos/indicadores/teto${query({ unidadeId, de, ate })}`);
+  await exigirOk(res, 'Não foi possível carregar a execução do teto financeiro.');
+  return res.json();
+}
+
+export async function carregarCustoFaltas({ unidadeId, de, ate } = {}) {
+  const res = await getApi(`custos/indicadores/faltas${query({ unidadeId, de, ate })}`);
+  await exigirOk(res, 'Não foi possível carregar o custo de faltas e cancelamentos.');
+  return res.json();
+}
+
+export async function carregarCoberturaPreco({ unidadeId, de, ate } = {}) {
+  const res = await getApi(`custos/indicadores/cobertura${query({ unidadeId, de, ate })}`);
+  await exigirOk(res, 'Não foi possível carregar a cobertura de preço.');
+  return res.json();
+}
+
+/** Últimos 12 meses. Não tem período. */
+export async function carregarEvolucaoCusto({ unidadeId } = {}) {
+  const res = await getApi(`custos/indicadores/evolucao${query({ unidadeId })}`);
+  await exigirOk(res, 'Não foi possível carregar a evolução do custo.');
+  return res.json();
+}
+
 // ---- Formatação e leitura de valores em reais
 
 const FORMATO_REAIS = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });

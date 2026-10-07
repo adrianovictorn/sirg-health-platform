@@ -3,6 +3,9 @@
   import Content from "$lib/Content.svelte";
   import { onMount } from "svelte";
   import ChartBase from "$lib/components/ChartBase.svelte";
+  import LoadingSpinner from "$lib/LoadingSpinner.svelte";
+  import { user } from "$lib/stores/auth.js";
+  import PainelGerencial from "./PainelGerencial.svelte";
 
   type TipoRelatorio = "line" | "bar" | "pie" | "doughnut"
 
@@ -218,7 +221,45 @@
   const espLabels  = $derived(especialidadesProfissional.map(e => e.especialidadeNome))
   const espValues  = $derived(especialidadesProfissional.map(e => e.total))
 
-  const MEDALHAS = ['🥇', '🥈', '🥉']
+  // --- Apresentação (somente visual: não altera dados nem filtros) ---
+  type ItemLista = { nome: string; total: number }
+
+  // Verdadeiro até a primeira carga terminar: separa "carregando" de "sem dados".
+  let cargaInicial = $state(true)
+
+  const hojeExtenso = new Date().toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long", year: "numeric" })
+
+  // Os indicadores de gestão só existem para administrador e gestor. Para os demais
+  // perfis as seções, as âncoras e as chamadas nem são montadas — e, se fossem, o
+  // backend responderia 403: a barreira é lá, isto aqui só evita a chamada inútil.
+  const veGerenciais = $derived($user?.role === "ADMIN" || $user?.role === "GESTOR")
+
+  const SECOES_GERAIS = [
+    { id: "hoje", rotulo: "Hoje" },
+    { id: "agendamentos", rotulo: "Agendamentos por grupo" },
+    { id: "fila-e-espera", rotulo: "Fila e espera" },
+    { id: "profissionais", rotulo: "Profissionais solicitantes" }
+  ]
+  const SECOES_DE_GESTAO = [
+    { id: "gestao-fila", rotulo: "Gestão: fila e operação" },
+    { id: "gestao-cotas", rotulo: "Gestão: cotas" },
+    { id: "gestao-custos", rotulo: "Gestão: custos" },
+    { id: "gestao-whatsapp", rotulo: "Gestão: WhatsApp" }
+  ]
+  const SECOES = $derived(veGerenciais ? [...SECOES_GERAIS, ...SECOES_DE_GESTAO] : SECOES_GERAIS)
+
+  const CAMPO = "w-full border border-gray-300 rounded-lg p-2 bg-white text-gray-900 focus:outline-hidden focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+  const ROTULO = "block text-sm font-semibold text-gray-700 mb-1"
+  const BOTAO_PRIMARIO = "inline-flex items-center justify-center min-h-10 px-4 py-2 rounded-lg bg-emerald-700 text-white text-sm font-semibold hover:bg-emerald-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600 disabled:opacity-60 disabled:cursor-not-allowed transition-colors cursor-pointer"
+  const CARTAO = "bg-white rounded-lg shadow p-4 md:p-6 space-y-5"
+
+  function formatarDataBr(iso: string | null): string {
+    if (!iso) return ""
+    const [ano, mes, dia] = iso.split("-")
+    return `${dia}/${mes}/${ano}`
+  }
+
+  const formatarNumero = (n: number) => Number(n).toLocaleString("pt-BR")
 
   async function buscarRankingProfissionais() {
     rankingCarregando = true
@@ -255,354 +296,561 @@
 
 
   onMount(async () => {
-    await Promise.all([
-      buscarTotalPacientesNovosDoDia(),
-      buscarTotalPacientesAgendadosDoDia(),
-      buscarTotalDeSolicitacaoEspecialidadeDoDia(),
-      buscarTop10PorPeriodo(),
-      buscarTop10Pendentes(),
-      buscarRankingProfissionais(),
-      carregarFiltrosEspera().then(buscarTempoEspera)
-    ]);
+    try {
+      await Promise.all([
+        buscarTotalPacientesNovosDoDia(),
+        buscarTotalPacientesAgendadosDoDia(),
+        buscarTotalDeSolicitacaoEspecialidadeDoDia(),
+        buscarTop10PorPeriodo(),
+        buscarTop10Pendentes(),
+        buscarRankingProfissionais(),
+        carregarFiltrosEspera().then(buscarTempoEspera)
+      ]);
+    } finally {
+      // Só o estado visual de carregamento; as mesmas buscas, na mesma ordem.
+      cargaInicial = false
+    }
   });
 </script>
 <svelte:head>
   <title>Indicadores</title>
 </svelte:head>
+
+<!-- Cabeçalho de um grupo de indicadores. Cada grupo é uma <section> independente:
+     um bloco novo entra como mais um cartão dentro do grupo, ou como um grupo novo. -->
+{#snippet cabecalhoSecao(id: string, titulo: string, descricao: string)}
+  <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+    <h2 id={`${id}-titulo`} class="text-xl font-bold text-gray-900">{titulo}</h2>
+    <p class="text-sm text-gray-700">{descricao}</p>
+  </div>
+{/snippet}
+
+<!-- Número-chave. `valor` nulo = ainda carregando (na primeira carga) ou indisponível. -->
+{#snippet indicador(rotulo: string, valor: string | number | null, detalhe: string, classes: string)}
+  <article class={`rounded-lg p-5 border-l-4 ${classes}`}>
+    <h3 class="text-sm font-semibold text-gray-700">{rotulo}</h3>
+    {#if valor === null && cargaInicial}
+      <div class="mt-2 min-h-10 flex items-center">
+        <LoadingSpinner tamanho={20} inline mensagem="Carregando..." />
+      </div>
+    {:else if valor === null}
+      <p class="text-4xl font-bold tracking-tight text-gray-900 mt-1" aria-hidden="true">—</p>
+      <p class="text-sm font-medium text-amber-800 mt-1">Indisponível no momento.</p>
+    {:else}
+      <p class="text-4xl font-bold tracking-tight text-gray-900 mt-1 tabular-nums break-words">
+        {typeof valor === "number" ? formatarNumero(valor) : valor}
+      </p>
+    {/if}
+    <p class="text-sm text-gray-700 mt-2">{detalhe}</p>
+  </article>
+{/snippet}
+
+<!-- O canvas do gráfico não tem texto: a descrição vai no rótulo e os valores, na lista ao lado. -->
+{#snippet grafico(tipoGrafico: TipoRelatorio, rotulos: string[], numeros: number[], titulo: string, descricao: string)}
+  <div role="img" aria-label={descricao}>
+    <ChartBase type={tipoGrafico} labels={rotulos} values={numeros} title={titulo} />
+  </div>
+{/snippet}
+
+<!-- Mesmos valores do gráfico, em texto: nome, total e barra proporcional ao maior da lista. -->
+{#snippet listaBarras(itens: ItemLista[], numerada: boolean)}
+  {@const maior = Math.max(...itens.map((item) => item.total), 1)}
+  <svelte:element this={numerada ? "ol" : "ul"} class="space-y-3">
+    {#each itens as item, i (i)}
+      <li class="grid grid-cols-[minmax(0,1fr)_auto] items-baseline gap-x-3 gap-y-1 text-sm">
+        <span class="text-gray-900 break-words">
+          {#if numerada}<span class="text-gray-600 tabular-nums">{i + 1}.</span>{/if}
+          {item.nome}
+        </span>
+        <span class="font-bold text-gray-900 tabular-nums">{formatarNumero(item.total)}</span>
+        <span class="col-span-2 block h-2 rounded-full bg-gray-200 overflow-hidden" aria-hidden="true">
+          <span
+            class="block h-full rounded-full bg-emerald-600"
+            style={`width: ${Math.round((item.total / maior) * 100)}%`}
+          ></span>
+        </span>
+      </li>
+    {/each}
+  </svelte:element>
+{/snippet}
+
+{#snippet vazio(mensagem: string)}
+  <p class="text-sm text-gray-700 bg-gray-50 border border-dashed border-gray-300 rounded-lg px-4 py-6 text-center">
+    {mensagem}
+  </p>
+{/snippet}
+
 <Content titleH1="Indicadores" page="/indicadores">
-  <section class="grid grid-cols-1  p-2 m-5 gap-4 bg-white rounded-lg  text-center justify-center items-center">
-    <h2 class="text-3xl font-bold text-gray-800 mt-4 ml-6">
-      Contadores de Produção
-    </h2>
-    <div class="grid grid-cols-1 items-center m-auto md:grid-cols-3">
-    
-          <div class="flex flex-col bg-amber-600 hover:bg-amber-800 rounded-xl border border-gray-400 text-center m-5 p-5 shadow-2xl transition-all duration-200 hover:-translate-y-2 hover:shadow-lg">
-            <h3 class="text-white font-bold font-mono text-xl">Total de Agendados do Dia</h3>
-            <p class="text-white font-bold text-2xl mt-4">{pacientesAgendadosDoDia ?? "-"}</p>
-          </div>
-      
-          <div class=" flex flex-col bg-emerald-600 hover:bg-emerald-800 rounded-xl border border-gray-400 text-center m-5 p-5 shadow-2xl transition-all duration-200 hover:-translate-y-2 hover:shadow-lg">
-            <h3 class="text-white font-bold font-mono text-xl">Total de Pacientes do Dia</h3>
-            <p class="text-white font-bold text-2xl mt-4">{novosPacientesDoDia ?? "-"}</p>
-          </div>
-      
-          <div class= " flex flex-col bg-sky-600 hover:bg-sky-800 rounded-xl border border-gray-400 text-center m-5 p-5 shadow-2xl transition-all duration-300 hover:-translate-y-2 hover:shadow-lg">
-            <h3 class="text-white font-bold font-mono text-xl">Total de Especialidades Dia</h3>
-            <p class="text-white font-bold text-2xl mt-4">{solicitacoesDeEspecialidadeDoDia ?? "-"}</p>
-          </div>
-    </div>
-  </section>
+  <div class="flex-1 bg-gray-100 p-4 md:p-6 space-y-10">
+    <nav aria-label="Seções dos indicadores" class="flex flex-wrap gap-2">
+      {#each SECOES as secao (secao.id)}
+        <a
+          href={`#${secao.id}`}
+          class="inline-flex items-center min-h-9 px-3 py-1.5 rounded-full bg-white border border-gray-300 text-sm font-medium text-gray-800 hover:bg-emerald-50 hover:border-emerald-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600 transition-colors"
+        >
+          {secao.rotulo}
+        </a>
+      {/each}
+    </nav>
 
-  <section class="bg-white rounded-lg m-5 p-6 shadow">
-    <div class="flex items-center justify-between gap-4 flex-wrap">
-      <h2 class="text-2xl font-bold text-gray-800">Top 10 Grupos no 2025 à 2026</h2>
-      <p class="text-sm text-gray-600">
-        {paramsPeriodo.get("inicio")} até {paramsPeriodo.get("intervalo")} (fim exclusivo)
-      </p>
-    </div>
-     <ChartBase
-    type="pie"
-    labels = {labels}
-    values = {values}
-    title = "Top Grupos do período"
-    />
-
-  </section>
-
-
-  
-  
-  <section class="bg-white rounded-lg m-5 p-6 shadow">
-    <div class="flex items-center justify-between gap-4 flex-wrap">
-      <h2 class="text-2xl font-bold text-gray-800">Top 10 Grupos no 2025 à 2026</h2>
-      <p class="text-sm text-gray-600">
-      </p>
-    </div>
-    <ChartBase
-    type="bar"
-    labels = {nomeEspecialidadesPendentes}
-    values = {valoresEspecialidadesPendentes}
-    title = "Top Grupos do período"
-    />
-    
-  </section>
-  <section class="bg-white p-6 m-5 rounded-lg shadow">
-      <h2 class="text-2xl font-bold text-gray-800">Top 10 Grupos no Período</h2>
-    <form onsubmit={() => buscarTop10PorData(inicio, intervalo)} class="grid grid-cols-1  md:grid-cols-5 md:mt-5 md:gap-3">
-
-      <div class="flex flex-col">
-        <label for="">Selecione data inicio</label>
-        <input type="date" bind:value={inicio} class="rounded border-gray-300 w-full">
+    <!-- ═══════════════════════════════════════════════════════════
+         HOJE
+    ════════════════════════════════════════════════════════════════ -->
+    <section id="hoje" aria-labelledby="hoje-titulo" class="space-y-4 scroll-mt-4">
+      {@render cabecalhoSecao("hoje", "Hoje", hojeExtenso)}
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {@render indicador(
+          "Agendados para hoje",
+          pacientesAgendadosDoDia,
+          "Solicitações com atendimento marcado para hoje.",
+          "bg-white shadow border-l-sky-500"
+        )}
+        {@render indicador(
+          "Pacientes novos hoje",
+          novosPacientesDoDia,
+          "Solicitações com data de malote de hoje.",
+          "bg-white shadow border-l-emerald-600"
+        )}
+        {@render indicador(
+          "Especialidades solicitadas hoje",
+          solicitacoesDeEspecialidadeDoDia,
+          "Consultas e exames pedidos, pela data de cadastro.",
+          "bg-white shadow border-l-amber-400"
+        )}
       </div>
+    </section>
 
+    <!-- ═══════════════════════════════════════════════════════════
+         AGENDAMENTOS POR GRUPO
+    ════════════════════════════════════════════════════════════════ -->
+    <section id="agendamentos" aria-labelledby="agendamentos-titulo" class="space-y-4 scroll-mt-4">
+      {@render cabecalhoSecao(
+        "agendamentos",
+        "Agendamentos por grupo",
+        "Consultas e exames agendados, somados por grupo, pela data marcada para o atendimento."
+      )}
 
-      <div class="flex flex-col">
-        <label for="">Selecione data intervalo</label>
-        <input type="date" bind:value={intervalo} class=" border-gray-300 rounded w-full">
-      </div>
-
-      <div class="flex flex-col">
-        <label for="">Selecione o tipo do Gráfico</label>
-        <select name="" id="" bind:value={tipo} class="rounded border-gray-300 w-full">
-          <option value="bar">Barras</option>
-          <option value="pie">Pizza</option>
-          <option value="line">Gráfico de Linha</option>
-          <option value="doughnut">Gráfico de Rosca</option>
-        </select>
-      </div>
-
-      <div class="col-span-2">
-              <button onclick={() => gerarGrafico()} class="text-white md:col-span-2 w-full bg-sky-800 hover:bg-sky-950 rounded flex text-center justify-center m-2 mt-5 p-3 cursor-pointer" >Gerar</button>
-
-      </div>
-
-    </form>
-
-    {#if !exibirGrafico}
-      <p>Selecione o período para exibir o Relatório</p>
-      {:else}
-
-      {#if valores.length === 0}
-        <p class="text-center text-red-600 mt-5">Não há dados para exibir o gráfico</p>
-
-        {:else}
-        <ChartBase 
-          type = {tipo}
-          labels = {nomes}
-          values = {valores}
-          title = "Top Especialidades no período de {inicio} e {intervalo}"
-          />
-      {/if}
-    {/if}
-  </section>
-
-  <!-- ═══════════════════════════════════════════════════════════
-       TEMPO DE ESPERA POR ESPECIALIDADE
-  ════════════════════════════════════════════════════════════════ -->
-  <section class="bg-white rounded-lg m-5 p-6 shadow">
-    <div class="flex items-center gap-3 mb-1">
-      <svg class="w-6 h-6 text-emerald-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-      </svg>
-      <h2 class="text-2xl font-bold text-gray-800">Tempo de Espera por Especialidade</h2>
-    </div>
-    <p class="text-sm text-gray-500 mb-4">
-      Dias entre a data da solicitação e a data do atendimento agendado. Considera apenas solicitações já agendadas no período.
-    </p>
-
-    <!-- Filtros -->
-    <div class="flex flex-wrap gap-3 mb-5 items-end">
-      <div class="flex flex-col">
-        <label class="text-xs text-gray-500 mb-1" for="espera-inicio">De</label>
-        <input id="espera-inicio" type="date" bind:value={esperaInicio} class="border rounded px-2 py-1 text-sm" />
-      </div>
-      <div class="flex flex-col">
-        <label class="text-xs text-gray-500 mb-1" for="espera-fim">Até</label>
-        <input id="espera-fim" type="date" bind:value={esperaFim} class="border rounded px-2 py-1 text-sm" />
-      </div>
-      <div class="flex flex-col">
-        <label class="text-xs text-gray-500 mb-1" for="espera-unidade">Unidade</label>
-        <select id="espera-unidade" bind:value={esperaUnidadeId} class="border rounded px-2 py-1.5 text-sm">
-          <option value="">Todas</option>
-          {#each unidadesEspera as u (u.id)}
-            <option value={u.id}>{u.nome}</option>
-          {/each}
-        </select>
-      </div>
-      <div class="flex flex-col">
-        <label class="text-xs text-gray-500 mb-1" for="espera-especialidade">Especialidade</label>
-        <select id="espera-especialidade" bind:value={esperaEspecialidadeId} class="border rounded px-2 py-1.5 text-sm">
-          <option value="">Todas</option>
-          {#each especialidadesEspera as e (e.id)}
-            <option value={e.id}>{e.nome}</option>
-          {/each}
-        </select>
-      </div>
-      <button
-        onclick={buscarTempoEspera}
-        disabled={esperaCarregando}
-        class="px-4 py-1.5 bg-emerald-700 text-white rounded text-sm hover:bg-emerald-800 disabled:opacity-50 transition-colors">
-        {esperaCarregando ? 'Carregando...' : 'Filtrar'}
-      </button>
-    </div>
-
-    {#if esperaCarregando}
-      <p class="text-center text-gray-400 py-8">Carregando...</p>
-    {:else}
-      <!-- Indicador principal -->
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-        <div class="flex flex-col bg-emerald-700 rounded-xl p-5 text-center shadow">
-          <span class="text-white text-sm uppercase tracking-wide">Tempo Médio de Espera</span>
-          <span class="text-white font-bold text-3xl mt-2">{formatarDias(esperaGeral?.tempoMedioEsperaDias ?? null)}</span>
-        </div>
-        <div class="flex flex-col bg-sky-700 rounded-xl p-5 text-center shadow">
-          <span class="text-white text-sm uppercase tracking-wide">Menor Espera</span>
-          <span class="text-white font-bold text-3xl mt-2">{formatarDias(esperaGeral?.tempoMinimoEsperaDias ?? null)}</span>
-        </div>
-        <div class="flex flex-col bg-amber-700 rounded-xl p-5 text-center shadow">
-          <span class="text-white text-sm uppercase tracking-wide">Maior Espera</span>
-          <span class="text-white font-bold text-3xl mt-2">{formatarDias(esperaGeral?.tempoMaximoEsperaDias ?? null)}</span>
-        </div>
-      </div>
-      <p class="text-xs text-gray-400 text-center -mt-4 mb-6">
-        Baseado em {esperaGeral?.totalAgendados ?? 0} solicitações já agendadas{esperaEspecialidadeId ? ' para a especialidade selecionada' : ''}.
-      </p>
-
-      {#if esperaPorEspecialidade.length === 0}
-        <p class="text-center text-gray-400 py-8">Nenhuma solicitação agendada encontrada para os filtros selecionados.</p>
-      {:else}
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div class="grid grid-cols-1 xl:grid-cols-2 gap-6 items-start">
+        <article class={CARTAO}>
           <div>
-            <h3 class="text-sm font-semibold text-gray-600 uppercase tracking-wide mb-3">Top 10 — Maior Espera Média</h3>
-            <ChartBase type="bar" labels={esperaLabels} values={esperaValores} title="Tempo médio de espera (dias)" />
+            <h3 class="text-lg font-bold text-emerald-800">Período de referência</h3>
+            <p class="text-sm text-gray-700 mt-1">
+              De {formatarDataBr(paramsPeriodo.get("inicio"))} até {formatarDataBr(paramsPeriodo.get("intervalo"))}. O dia
+              final não entra na contagem. Até 10 grupos.
+            </p>
           </div>
-          <div>
-            <h3 class="text-sm font-semibold text-gray-600 uppercase tracking-wide mb-3">Detalhe por Especialidade</h3>
-            <div class="overflow-x-auto max-h-96 overflow-y-auto">
-              <table class="w-full text-sm">
-                <thead class="sticky top-0 bg-white">
-                  <tr class="bg-gray-50 text-left text-gray-600 uppercase text-xs">
-                    <th class="p-2">Especialidade</th>
-                    <th class="p-2 text-center">Agendados</th>
-                    <th class="p-2 text-center">Média</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {#each esperaPorEspecialidade as e (e.especialidadeId)}
-                    <tr class="border-b border-gray-100 hover:bg-gray-50">
-                      <td class="p-2 text-gray-800">{e.especialidadeNome}</td>
-                      <td class="p-2 text-center">{e.totalAgendados}</td>
-                      <td class="p-2 text-center font-bold text-emerald-700">{formatarDias(e.tempoMedioEsperaDias)}</td>
-                    </tr>
-                  {/each}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      {/if}
-    {/if}
-  </section>
 
-  <!-- ═══════════════════════════════════════════════════════════
-       RANK DE PROFISSIONAL SOLICITANTE
-  ════════════════════════════════════════════════════════════════ -->
-  <section class="bg-white rounded-lg m-5 p-6 shadow">
-    <div class="flex items-center gap-3 mb-1">
-      <svg class="w-6 h-6 text-emerald-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-          d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-      </svg>
-      <h2 class="text-2xl font-bold text-gray-800">Rank de Profissionais Solicitantes</h2>
-      <a href="/relatorio/profissional" class="ml-auto text-sm text-emerald-700 hover:text-emerald-900 hover:underline whitespace-nowrap">
-        Ver relatório completo →
-      </a>
-    </div>
-    <p class="text-sm text-gray-500 mb-4">Identifica quais profissionais mais solicitam exames e quais especialidades predominam. Para filtrar por unidade, exportar em Excel ou ver o detalhe de cada solicitação, use o relatório completo.</p>
-
-    <!-- Filtros -->
-    <div class="flex flex-wrap gap-3 mb-5">
-      <div class="flex flex-col">
-        <label class="text-xs text-gray-500 mb-1">De</label>
-        <input type="date" bind:value={rankInicio} class="border rounded px-2 py-1 text-sm" />
-      </div>
-      <div class="flex flex-col">
-        <label class="text-xs text-gray-500 mb-1">Até</label>
-        <input type="date" bind:value={rankFim} class="border rounded px-2 py-1 text-sm" />
-      </div>
-      <div class="flex items-end">
-        <button
-          onclick={buscarRankingProfissionais}
-          disabled={rankingCarregando}
-          class="px-4 py-1.5 bg-emerald-700 text-white rounded text-sm hover:bg-emerald-800 disabled:opacity-50 transition-colors">
-          {rankingCarregando ? 'Carregando...' : 'Filtrar'}
-        </button>
-      </div>
-    </div>
-
-    {#if rankingProfissionais.length === 0 && !rankingCarregando}
-      <p class="text-center text-gray-400 py-8">Nenhum dado encontrado para o período selecionado.</p>
-    {:else}
-      <!-- CAMADA 1 — Lista ranqueada -->
-      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div>
-          <h3 class="text-sm font-semibold text-gray-600 uppercase tracking-wide mb-3">Lista</h3>
-          <div class="space-y-2">
-            {#each rankingProfissionais as prof, i (prof.id)}
-              <button
-                class="w-full text-left flex items-center gap-3 p-3 rounded-lg border transition-all
-                  {profissionalSelecionado?.id === prof.id
-                    ? 'border-emerald-500 bg-emerald-50 shadow-sm'
-                    : 'border-gray-100 hover:border-emerald-300 hover:bg-gray-50'}"
-                onclick={() => selecionarProfissional(prof)}>
-                <!-- Posição -->
-                <span class="text-xl w-8 text-center flex-shrink-0">
-                  {i < 3 ? MEDALHAS[i] : `${i + 1}º`}
-                </span>
-                <!-- Dados -->
-                <div class="flex-1 min-w-0">
-                  <p class="font-semibold text-gray-800 truncate">{prof.nome}</p>
-                  {#if prof.conselho && prof.numeroRegistro}
-                    <p class="text-xs text-gray-400">{prof.conselho} {prof.numeroRegistro}</p>
-                  {/if}
-                </div>
-                <!-- Total -->
-                <div class="flex-shrink-0 text-right">
-                  <span class="text-lg font-bold text-emerald-700">{prof.totalSolicitacoes}</span>
-                  <p class="text-xs text-gray-400">solicitações</p>
-                </div>
-              </button>
-            {/each}
-          </div>
-        </div>
-
-        <!-- CAMADA 2 — Gráfico geral -->
-        <div>
-          <h3 class="text-sm font-semibold text-gray-600 uppercase tracking-wide mb-3">Gráfico Geral</h3>
-          {#if rankValues.length > 0}
-            <ChartBase type="bar" labels={rankLabels} values={rankValues} title="Solicitações por Profissional" />
-          {/if}
-        </div>
-      </div>
-
-      <!-- Especialidades do profissional selecionado -->
-      {#if profissionalSelecionado}
-        <div class="mt-6 pt-5 border-t border-gray-100">
-          <h3 class="text-sm font-semibold text-gray-600 uppercase tracking-wide mb-4">
-            Especialidades — <span class="text-emerald-700">{profissionalSelecionado.nome}</span>
-          </h3>
-
-          {#if especialidadesCarregando}
-            <p class="text-sm text-gray-400">Carregando especialidades...</p>
-          {:else if especialidadesProfissional.length === 0}
-            <p class="text-sm text-gray-400">Nenhuma especialidade registrada para este profissional.</p>
+          {#if top10.length > 0}
+            {@render grafico(
+              "pie",
+              labels,
+              values,
+              "Itens agendados",
+              "Gráfico de pizza dos itens agendados por grupo no período de referência. Os valores estão na lista a seguir."
+            )}
+            {@render listaBarras(top10, false)}
+          {:else if cargaInicial}
+            <LoadingSpinner mensagem="Carregando os agendamentos por grupo..." />
           {:else}
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <!-- Mini lista de especialidades -->
-              <div class="space-y-2">
-                {#each especialidadesProfissional as esp, i (esp.especialidadeNome)}
-                  <div class="flex items-center gap-2">
-                    <span class="text-xs font-mono text-gray-400 w-5">{i + 1}.</span>
-                    <div class="flex-1 bg-gray-100 rounded-full h-6 overflow-hidden">
-                      <div
-                        class="h-full bg-emerald-500 rounded-full flex items-center px-2 transition-all"
-                        style="width: {Math.round((esp.total / especialidadesProfissional[0].total) * 100)}%">
-                      </div>
-                    </div>
-                    <span class="text-xs text-gray-600 truncate max-w-[140px]">{esp.especialidadeNome}</span>
-                    <span class="text-xs font-bold text-gray-700 w-6 text-right">{esp.total}</span>
-                  </div>
-                {/each}
+            {@render vazio("Nenhum agendamento encontrado no período de referência.")}
+          {/if}
+        </article>
+
+        <article class={CARTAO}>
+          <div>
+            <h3 class="text-lg font-bold text-emerald-800">Outro período</h3>
+            <p class="text-sm text-gray-700 mt-1">Escolha as datas e o tipo de gráfico. Até 10 grupos.</p>
+          </div>
+
+          <form onsubmit={() => buscarTop10PorData(inicio, intervalo)} class="space-y-4">
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div>
+                <label for="periodo-inicio" class={ROTULO}>Data inicial</label>
+                <input id="periodo-inicio" type="date" bind:value={inicio} class={CAMPO} />
               </div>
-              <!-- Gráfico de especialidades -->
-              <ChartBase type="doughnut" labels={espLabels} values={espValues}
-                title="Especialidades de {profissionalSelecionado.nome}" />
+
+              <div>
+                <label for="periodo-fim" class={ROTULO}>Data final</label>
+                <input
+                  id="periodo-fim"
+                  type="date"
+                  bind:value={intervalo}
+                  aria-describedby="periodo-fim-dica"
+                  class={CAMPO}
+                />
+              </div>
+
+              <div>
+                <label for="periodo-tipo" class={ROTULO}>Tipo de gráfico</label>
+                <select name="" id="periodo-tipo" bind:value={tipo} class={CAMPO}>
+                  <option value="bar">Barras</option>
+                  <option value="pie">Pizza</option>
+                  <option value="line">Linha</option>
+                  <option value="doughnut">Rosca</option>
+                </select>
+              </div>
+            </div>
+
+            <p id="periodo-fim-dica" class="text-sm text-gray-700">O dia final não entra na contagem.</p>
+
+            <button onclick={() => gerarGrafico()} class={BOTAO_PRIMARIO}>Gerar gráfico</button>
+          </form>
+
+          <div aria-live="polite" class="space-y-5">
+            {#if !exibirGrafico}
+              {@render vazio("Informe as datas e clique em “Gerar gráfico” para ver os agendamentos do período.")}
+            {:else if valores.length === 0}
+              {@render vazio("Nenhum agendamento encontrado entre as datas informadas.")}
+            {:else}
+              {@render grafico(
+                tipo,
+                nomes,
+                valores,
+                "Itens agendados",
+                `Gráfico dos itens agendados por grupo de ${formatarDataBr(inicio)} até ${formatarDataBr(intervalo)}. Os valores estão na lista a seguir.`
+              )}
+              {@render listaBarras(top10PorData, false)}
+            {/if}
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════════════
+         FILA E ESPERA
+    ════════════════════════════════════════════════════════════════ -->
+    <section id="fila-e-espera" aria-labelledby="fila-e-espera-titulo" class="space-y-4 scroll-mt-4">
+      {@render cabecalhoSecao(
+        "fila-e-espera",
+        "Fila e espera",
+        "O que ainda aguarda agendamento e quanto tempo o paciente esperou até ser agendado."
+      )}
+
+      <article class={CARTAO}>
+        <div>
+          <h3 class="text-lg font-bold text-emerald-800">Pedidos aguardando por especialidade</h3>
+          <p class="text-sm text-gray-700 mt-1">
+            As 10 especialidades com menos pedidos aguardando agendamento, da menor para a maior.
+          </p>
+        </div>
+
+        {#if top10Pendentes.length > 0}
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+            {@render grafico(
+              "bar",
+              nomeEspecialidadesPendentes,
+              valoresEspecialidadesPendentes,
+              "Pedidos aguardando",
+              "Gráfico de barras dos pedidos aguardando agendamento por especialidade. Os valores estão na lista a seguir."
+            )}
+            {@render listaBarras(top10Pendentes, false)}
+          </div>
+        {:else if cargaInicial}
+          <LoadingSpinner mensagem="Carregando os pedidos aguardando..." />
+        {:else}
+          {@render vazio("Nenhum pedido aguardando agendamento.")}
+        {/if}
+      </article>
+
+      <article class={CARTAO}>
+        <div>
+          <h3 class="text-lg font-bold text-emerald-800">Tempo de espera por especialidade</h3>
+          <p class="text-sm text-gray-700 mt-1">
+            Dias entre a data da solicitação e a data do atendimento agendado. Considera apenas solicitações já
+            agendadas no período.
+          </p>
+        </div>
+
+        <!-- Filtros -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4 items-end">
+          <div>
+            <label class={ROTULO} for="espera-inicio">De</label>
+            <input id="espera-inicio" type="date" bind:value={esperaInicio} class={CAMPO} />
+          </div>
+          <div>
+            <label class={ROTULO} for="espera-fim">Até</label>
+            <input id="espera-fim" type="date" bind:value={esperaFim} class={CAMPO} />
+          </div>
+          <div>
+            <label class={ROTULO} for="espera-unidade">Unidade</label>
+            <select id="espera-unidade" bind:value={esperaUnidadeId} class={CAMPO}>
+              <option value="">Todas</option>
+              {#each unidadesEspera as u (u.id)}
+                <option value={u.id}>{u.nome}</option>
+              {/each}
+            </select>
+          </div>
+          <div>
+            <label class={ROTULO} for="espera-especialidade">Especialidade</label>
+            <select id="espera-especialidade" bind:value={esperaEspecialidadeId} class={CAMPO}>
+              <option value="">Todas</option>
+              {#each especialidadesEspera as e (e.id)}
+                <option value={e.id}>{e.nome}</option>
+              {/each}
+            </select>
+          </div>
+          <div>
+            <button type="button" onclick={buscarTempoEspera} disabled={esperaCarregando} class={BOTAO_PRIMARIO}>
+              {esperaCarregando ? "Carregando..." : "Aplicar filtros"}
+            </button>
+          </div>
+        </div>
+
+        {#if esperaCarregando}
+          <LoadingSpinner mensagem="Calculando o tempo de espera..." />
+        {:else}
+          <div class="space-y-2">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {@render indicador(
+                "Tempo médio de espera",
+                formatarDias(esperaGeral?.tempoMedioEsperaDias ?? null),
+                "Média entre o pedido e o atendimento.",
+                "bg-gray-50 border border-gray-200 border-l-emerald-600"
+              )}
+              {@render indicador(
+                "Menor espera",
+                formatarDias(esperaGeral?.tempoMinimoEsperaDias ?? null),
+                "Caso agendado mais rápido.",
+                "bg-gray-50 border border-gray-200 border-l-sky-500"
+              )}
+              {@render indicador(
+                "Maior espera",
+                formatarDias(esperaGeral?.tempoMaximoEsperaDias ?? null),
+                "Caso que mais demorou a ser agendado.",
+                "bg-gray-50 border border-gray-200 border-l-amber-400"
+              )}
+            </div>
+            <p class="text-sm text-gray-700">
+              Baseado em {esperaGeral?.totalAgendados ?? 0} solicitações já agendadas{esperaEspecialidadeId
+                ? " para a especialidade selecionada"
+                : ""}.
+            </p>
+          </div>
+
+          {#if esperaPorEspecialidade.length === 0}
+            {@render vazio("Nenhuma solicitação agendada encontrada para os filtros selecionados.")}
+          {:else}
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+              <div class="space-y-3">
+                <h4 class="text-xs font-semibold text-gray-700 uppercase tracking-widest">
+                  10 maiores esperas médias
+                </h4>
+                {@render grafico(
+                  "bar",
+                  esperaLabels,
+                  esperaValores,
+                  "Tempo médio de espera (dias)",
+                  "Gráfico de barras das 10 especialidades com maior tempo médio de espera, em dias. Os valores estão na tabela ao lado."
+                )}
+              </div>
+              <div class="space-y-3">
+                <h4 id="espera-tabela-titulo" class="text-xs font-semibold text-gray-700 uppercase tracking-widest">
+                  Todas as especialidades
+                </h4>
+                <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+                <div
+                  class="overflow-x-auto max-h-96 overflow-y-auto rounded-lg border border-gray-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
+                  role="region"
+                  aria-labelledby="espera-tabela-titulo"
+                  tabindex="0"
+                >
+                  <table class="w-full text-sm">
+                    <thead class="sticky top-0 bg-gray-50">
+                      <tr class="text-left text-gray-700 border-b border-gray-300">
+                        <th scope="col" class="py-2 px-3 font-semibold">Especialidade</th>
+                        <th scope="col" class="py-2 px-3 font-semibold text-right whitespace-nowrap">Agendados</th>
+                        <th scope="col" class="py-2 px-3 font-semibold text-right whitespace-nowrap">Espera média</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {#each esperaPorEspecialidade as e (e.especialidadeId)}
+                        <tr class="border-b border-gray-200 last:border-b-0 hover:bg-gray-50">
+                          <th scope="row" class="py-2 px-3 font-medium text-gray-900 text-left">
+                            {e.especialidadeNome}
+                          </th>
+                          <td class="py-2 px-3 text-right tabular-nums text-gray-900">{e.totalAgendados}</td>
+                          <td class="py-2 px-3 text-right tabular-nums whitespace-nowrap font-bold text-gray-900">
+                            {formatarDias(e.tempoMedioEsperaDias)}
+                          </td>
+                        </tr>
+                      {/each}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
             </div>
           {/if}
+        {/if}
+      </article>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════════════
+         PROFISSIONAIS SOLICITANTES
+    ════════════════════════════════════════════════════════════════ -->
+    <section id="profissionais" aria-labelledby="profissionais-titulo" class="space-y-4 scroll-mt-4">
+      {@render cabecalhoSecao(
+        "profissionais",
+        "Profissionais solicitantes",
+        "Quem mais solicita e quais especialidades predominam."
+      )}
+
+      <article class={CARTAO}>
+        <div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+          <h3 class="text-lg font-bold text-emerald-800">Ranking de solicitações</h3>
+          <a
+            href="/relatorio/profissional"
+            class="text-sm font-medium text-emerald-700 hover:underline rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
+          >
+            Ver relatório completo
+          </a>
         </div>
-      {:else}
-        <p class="mt-4 text-xs text-gray-400 text-center">Clique em um profissional para ver o detalhamento por especialidade.</p>
-      {/if}
+        <p class="text-sm text-gray-700">
+          Os 10 profissionais com mais solicitações no período. Para filtrar por unidade, exportar em Excel ou ver
+          cada solicitação, use o relatório completo.
+        </p>
+
+        <!-- Filtros -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4 items-end">
+          <div>
+            <label class={ROTULO} for="rank-inicio">De</label>
+            <input id="rank-inicio" type="date" bind:value={rankInicio} class={CAMPO} />
+          </div>
+          <div>
+            <label class={ROTULO} for="rank-fim">Até</label>
+            <input id="rank-fim" type="date" bind:value={rankFim} class={CAMPO} />
+          </div>
+          <div>
+            <button
+              type="button"
+              onclick={buscarRankingProfissionais}
+              disabled={rankingCarregando}
+              class={BOTAO_PRIMARIO}
+            >
+              {rankingCarregando ? "Carregando..." : "Aplicar filtros"}
+            </button>
+          </div>
+        </div>
+
+        {#if rankingProfissionais.length === 0 && !rankingCarregando}
+          {@render vazio("Nenhuma solicitação encontrada para o período selecionado.")}
+        {:else if rankingProfissionais.length === 0}
+          <LoadingSpinner mensagem="Carregando o ranking..." />
+        {:else}
+          <div class="space-y-6 transition-opacity" class:opacity-60={rankingCarregando} aria-busy={rankingCarregando}>
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+              <div class="space-y-3">
+                <div>
+                  <h4 class="text-xs font-semibold text-gray-700 uppercase tracking-widest">Ranking</h4>
+                  <p class="text-sm text-gray-700 mt-1">
+                    Selecione um profissional para ver as especialidades que ele mais solicita.
+                  </p>
+                </div>
+                <ol class="space-y-2">
+                  {#each rankingProfissionais as prof, i (prof.id)}
+                    {@const selecionado = profissionalSelecionado?.id === prof.id}
+                    <li>
+                      <button
+                        type="button"
+                        aria-pressed={selecionado}
+                        class="w-full text-left flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600
+                          {selecionado
+                          ? 'border-emerald-600 bg-emerald-50 ring-1 ring-emerald-600'
+                          : 'border-gray-300 bg-white hover:border-emerald-600 hover:bg-gray-50'}"
+                        onclick={() => selecionarProfissional(prof)}
+                      >
+                        <!-- Posição -->
+                        <span
+                          class="w-8 h-8 shrink-0 rounded-full flex items-center justify-center text-sm font-bold tabular-nums
+                            {i < 3 ? 'bg-emerald-700 text-white' : 'bg-gray-100 text-gray-800 border border-gray-300'}"
+                        >
+                          {i + 1}<span class="sr-only">º lugar</span>
+                        </span>
+                        <!-- Dados -->
+                        <span class="flex-1 min-w-0">
+                          <span class="block font-semibold text-gray-900 break-words">{prof.nome}</span>
+                          {#if prof.conselho && prof.numeroRegistro}
+                            <span class="block text-xs text-gray-700">{prof.conselho} {prof.numeroRegistro}</span>
+                          {/if}
+                        </span>
+                        <!-- Total -->
+                        <span class="shrink-0 text-right">
+                          <span class="block text-lg font-bold text-gray-900 tabular-nums">
+                            {formatarNumero(prof.totalSolicitacoes)}
+                          </span>
+                          <span class="block text-xs text-gray-700">solicitações</span>
+                        </span>
+                        <!-- Indicador de seleção (não depende só da cor) -->
+                        <svg
+                          class="w-5 h-5 shrink-0 {selecionado ? 'text-emerald-700' : 'text-gray-400'}"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="2"
+                          viewBox="0 0 24 24"
+                          aria-hidden="true"
+                        >
+                          {#if selecionado}
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+                          {:else}
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
+                          {/if}
+                        </svg>
+                      </button>
+                    </li>
+                  {/each}
+                </ol>
+              </div>
+
+              <div class="space-y-3">
+                <h4 class="text-xs font-semibold text-gray-700 uppercase tracking-widest">
+                  Solicitações por profissional
+                </h4>
+                {#if rankValues.length > 0}
+                  {@render grafico(
+                    "bar",
+                    rankLabels,
+                    rankValues,
+                    "Solicitações por profissional",
+                    "Gráfico de barras das solicitações por profissional. Os valores estão no ranking ao lado."
+                  )}
+                {/if}
+              </div>
+            </div>
+
+            <!-- Especialidades do profissional selecionado -->
+            {#if profissionalSelecionado}
+              <div class="pt-5 border-t border-gray-200 space-y-4" aria-live="polite">
+                <h4 class="text-base font-bold text-gray-900">
+                  Especialidades solicitadas por {profissionalSelecionado.nome}
+                </h4>
+
+                {#if especialidadesCarregando}
+                  <LoadingSpinner mensagem="Carregando as especialidades..." />
+                {:else if especialidadesProfissional.length === 0}
+                  {@render vazio("Nenhuma especialidade registrada para este profissional no período.")}
+                {:else}
+                  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+                    {@render listaBarras(
+                      especialidadesProfissional.map((esp) => ({ nome: esp.especialidadeNome, total: esp.total })),
+                      true
+                    )}
+                    {@render grafico(
+                      "doughnut",
+                      espLabels,
+                      espValues,
+                      `Especialidades de ${profissionalSelecionado.nome}`,
+                      `Gráfico de rosca das especialidades solicitadas por ${profissionalSelecionado.nome}. Os valores estão na lista ao lado.`
+                    )}
+                  </div>
+                {/if}
+              </div>
+            {/if}
+          </div>
+        {/if}
+      </article>
+    </section>
+
+    {#if veGerenciais}
+      <PainelGerencial />
     {/if}
-  </section>
+  </div>
 </Content>

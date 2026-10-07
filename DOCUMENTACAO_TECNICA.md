@@ -1667,6 +1667,68 @@ O `@PreAuthorize` é a barreira: o escopo de listagem do painel também daria vi
 
 ---
 
+### 7.10j Indicadores gerenciais (`/indicadores` e `/custos/indicadores`)
+
+Somente leitura, somente agregados (nenhum dado de paciente), **só ADMIN e GESTOR** — os demais
+perfis recebem 403. Exibidos na tela `/indicadores`, em seções que só são montadas para esses
+dois perfis.
+
+**Por que não estão em `/api/fechamento`:** aquele controller só nega `ADMIN_UNIDADE` e responde
+a qualquer outro perfil autenticado. Aqui a regra é positiva (`hasAnyRole('ADMIN','GESTOR')`) e
+vale para a classe inteira, com uma segunda conferência no service
+(`UnidadeAcessoService.isAdminOuGestor`).
+
+**Por que são dois controllers:** valor em reais só sai por `/api/custos/**`. Os indicadores
+financeiros ficam em `CustoIndicadoresController`; nenhuma resposta de
+`IndicadoresGerenciaisController` tem campo em reais.
+
+Parâmetros comuns: `unidadeId` (opcional), `de` e `ate` (`AAAA-MM-DD`, opcionais). Sem datas, os
+últimos 30 dias do município; no máximo 366 dias. Data malformada, início depois do fim ou
+intervalo maior → **400 com `message`** (as datas chegam como texto e são validadas em
+`PeriodoIndicador`). "Hoje" e "este mês" são sempre os de `America/Bahia`, não os da JVM.
+
+| Método | Endpoint | Período | O que devolve |
+|--------|----------|---------|---------------|
+| GET | `/indicadores/fila/envelhecimento` | não (fila de hoje) | Faixas 0–30, 31–60, 61–90 e 91+ dias. Total e por unidade em **pacientes** (faixa do pedido mais antigo, mesmo predicado da fila de espera); por especialidade e por prioridade em **pedidos** |
+| GET | `/indicadores/agendamentos/antecedencia` | sim, pela data marcada | Dias entre criar o agendamento e a data marcada: média, mediana e faixas. Sem `data_criacao` e retroativos contados à parte |
+| GET | `/indicadores/fila/balanco` | não (12 meses) | Pedidos novos (mês local do cadastro), agendados e concluídos (mês da data marcada) |
+| GET | `/indicadores/cotas/utilizacao` | sim | Por tipo (MENSAL/DATA) e por titular: cotas, esgotadas, ociosas e utilização **média** |
+| GET | `/indicadores/cotas/ocupacao-profissional` | sim | Vagas ofertadas × agendadas das cotas com profissional, por profissional e por faixa de horário |
+| GET | `/indicadores/whatsapp/alcance` | sim, por `criado_em` | Agendamentos com aviso (confirmação ou remarcação) por situação: alcançado, lido, aceito sem confirmação, pendente, falha e não enviado por motivo. Traz `configurado` e `envioLigado` |
+| GET | `/indicadores/whatsapp/telefone-invalido` | sim, por `criado_em` | Pacientes com telefone inválido ou ausente sobre os pacientes com telefone avaliado, total e por unidade |
+| GET | `/custos/indicadores/teto` | sim, em meses | Tetos ativos dos meses do período (liberado e utilizado) e série de 12 meses |
+| GET | `/custos/indicadores/faltas` | sim, pela data marcada | Valor da época dos itens cancelados/faltosos que mantiveram o agendamento: total, por especialidade e por unidade |
+| GET | `/custos/indicadores/cobertura` | sim (só os agendados) | Especialidades ativas com e sem preço; itens da fila e agendados com e sem valor (os números do painel de custos) |
+| GET | `/custos/indicadores/evolucao` | não (12 meses) | Custo ainda agendado, concluído e de faltas por mês, pacientes atendidos e custo médio por paciente |
+
+Limites de leitura que a tela avisa em cada cartão — não são defeitos a corrigir no indicador:
+
+- **Falta não existe como dado próprio.** O botão "Faltou" grava `CANCELADO`; o indicador é
+  "faltas e cancelamentos". Item que voltou para a fila perde o agendamento e não entra.
+- **Não há histórico de status.** O balanço e a evolução são o estado de hoje agrupado por data:
+  agendamento excluído ou remarcado é apagado e deixa de contar no mês original.
+- **Cota não se soma.** Cotas de escopos e períodos diferentes incidem juntas sobre o mesmo
+  agendamento; a utilização é a média da razão de cada cota, MENSAL e DATA separadas. Agendamento
+  de ADMIN ou GESTOR não consome cota.
+- **WhatsApp só existe onde está configurado**, e o telefone só é avaliado com o envio ligado:
+  sem isso a leitura é "não avaliado", nunca 0%. "Inválido" é o número fora do formato; número
+  bem formado que a Meta recusa aparece como falha de envio.
+- **Remarcação conta duas vezes no alcance.** Remarcar é excluir e criar outro agendamento; o
+  aviso do antigo fica no `alvo_id` antigo e o do novo entra de novo. Só o reenvio manual
+  reaproveita o mesmo agendamento.
+- **Cota mensal entra pelo mês inteiro**, mesmo quando o período pega parte dele; na ocupação por
+  profissional isso inclui vagas de dias ainda por vir.
+- **"Agendados" do balanço** são todos os pedidos com agendamento, inclusive os que terminaram em
+  falta ou cancelamento.
+- **Dados anteriores às migrations** (valor da época, V106; `data_criacao`, V55; `data_cadastro`,
+  V62) ficam fora ou subestimados.
+
+Os números financeiros usam os mesmos critérios do painel de custos; `CustoIndicadoresIT` compara
+o mês corrente da série com `CustoPainelService`. Nenhuma migration. Regra nova no painel
+(`CustoPainelRepository`) ou no predicado da fila (`FILA_FILTRO`) precisa ser refletida aqui.
+
+---
+
 ### 7.8 Módulo Federado
 
 | Recurso | Base Endpoint | Descrição |
