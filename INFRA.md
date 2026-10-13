@@ -41,7 +41,10 @@ if (instanceContext.getMunicipioLocal().getNome().equals("SAO_FELIPE")) {
 .
 ├── .env.example                        # modelo de variáveis para cada VPS
 ├── docker-compose.prod.yaml            # stack Docker (postgres, rabbitmq, backend, frontend, nginx)
-├── nginx/nginx.conf                    # template nginx (usa envsubst com $NGINX_DOMAIN)
+├── nginx/nginx.conf                    # template nginx do sistema (usa envsubst com $NGINX_DOMAIN)
+├── nginx/landing.{http,https}.conf     # templates da landing ($LANDING_DOMAIN), opcionais
+├── nginx/start.sh                      # gera a config e sobe o nginx
+├── sirg-landing/                       # landing pública (app SvelteKit separado)
 ├── .github/workflows/deploy.yml        # CI/CD GitHub Actions
 ├── regulacao-backend/
 │   └── src/main/resources/
@@ -338,7 +341,87 @@ echo "0 3 * * * certbot renew --quiet && docker compose -f /root/<repo>/docker-c
 
 ### Como o nginx usa o domínio
 
-O `nginx/nginx.conf` é um template com `${NGINX_DOMAIN}`. O docker-compose usa `envsubst` para processar o template na inicialização do container, substituindo pelo valor do `.env`.
+O `nginx/nginx.conf` é um template com `${NGINX_DOMAIN}`. Na inicialização do container, `nginx/start.sh` roda `envsubst` sobre ele, substituindo pelo valor do `.env`, e sobe o nginx.
+
+---
+
+## Landing pública (`sirg-landing/`)
+
+App SvelteKit separado do sistema, sem login e sem banco. Roda **só na VPS de São Felipe**,
+atrás do mesmo nginx do sistema, num domínio próprio (`LANDING_DOMAIN`). Quem decide é o `.env`
+da VPS — o repositório é o mesmo nas duas.
+
+### Como está ligado
+
+| Peça | O que faz |
+|---|---|
+| `sirg-landing/Dockerfile` | Build adapter-node, porta 3000 (só na rede interna do compose) |
+| serviço `landing` (compose) | `profiles: ["landing"]` — só sobe com `COMPOSE_PROFILES=landing` |
+| `nginx/landing.http.conf` | Porta 80 do `LANDING_DOMAIN`: desafio ACME + redirect para HTTPS |
+| `nginx/landing.https.conf` | Porta 443 → `landing:3000`, com limite de 10 req/s por IP |
+| `nginx/start.sh` | Só inclui a landing se `LANDING_DOMAIN` existe; sem certificado, entra só a porta 80; se `nginx -t` reprovar, descarta a landing e sobe o sistema normalmente |
+
+A landing **nunca derruba o sistema do município**: container caído vira `502` só no domínio da
+landing, e configuração ou certificado ausente apenas desliga a landing.
+
+`GET /api/transparencia/resumo` tem limite de 30 req/min por IP (burst 10, `429` acima) no nginx
+de todas as instâncias. A landing de São Felipe lê o backend local direto
+(`http://backend:8080`), sem passar por esse limite.
+
+### `.env` da VPS de São Felipe
+
+```env
+COMPOSE_PROFILES=landing
+LANDING_DOMAIN=sirg.com.br
+# Para onde o botão "Acessar" de Conceição leva e de onde a landing lê o resumo.
+# OBRIGATÓRIOS depois da virada: sem eles a landing aponta para si mesma.
+SIRG_CONCEICAO_API=https://<novo-host-de-conceicao>
+SIRG_CONCEICAO_ACESSO=https://<novo-host-de-conceicao>/login
+# Opcional. Só mude para true depois de revisar sirg-landing/src/lib/conteudo/historico.js
+LANDING_INDEXAVEL=false
+```
+
+### Ordem da virada de `sirg.com.br` (Conceição → landing)
+
+`sirg.com.br` hoje é o sistema de Conceição. Para ele virar a landing, o sistema de Conceição
+precisa antes de **outro endereço**. Nada abaixo é feito pelo deploy automático: DNS, certificado
+e `.env` são da VPS.
+
+1. **Novo host de Conceição** (ex.: `app.exemplo.com.br`): crie o registro A para a VPS 1
+   (`77.37.69.236`) e emita o certificado lá.
+2. **VPS 1 — `.env`:** troque `NGINX_DOMAIN` e `APP_ORIGIN` para o novo host. `APP_ORIGIN` vale
+   para o `ORIGIN` do SvelteKit e para o CORS do backend; esquecê-lo faz o login falhar. Reinicie:
+   `docker compose -f docker-compose.prod.yaml up -d`. Os usuários precisarão entrar de novo
+   (o token fica por origem): avise-os do novo endereço.
+3. **VPS 2 — `.env`:** as variáveis da seção acima, já com o novo host de Conceição.
+4. **Deploy** (push em `main` ou `workflow_dispatch` → `saofelipe`). Sobe a landing e o nginx
+   passa a aceitar `sirg.com.br` na porta 80. O passo "Verificando landing" do workflow confirma.
+5. **DNS:** aponte `sirg.com.br` para o IP da VPS 2. Reduza o TTL antes, com antecedência.
+6. **Certificado na VPS 2**, sem parar o nginx (a porta 80 já serve o desafio):
+
+   ```bash
+   mkdir -p /var/www/certbot
+   certbot certonly --webroot -w /var/www/certbot -d sirg.com.br \
+     --non-interactive --agree-tos --email <email>
+   docker compose -f docker-compose.prod.yaml restart nginx
+   ```
+
+   O `restart` é necessário: o `start.sh` só inclui o bloco HTTPS se o certificado já existe. Entre
+   o passo 5 e este (minutos), o navegador mostra aviso de certificado em `https://sirg.com.br`:
+   o nginx ainda não tem certificado desse nome e responde com o do sistema de São Felipe.
+   Não clique em "continuar" — é o sistema de outro município. Do passo 2 ao 5, quem acessar
+   `sirg.com.br` pelo endereço antigo cai no sistema errado ou na landing, então avise os
+   usuários de Conceição do novo endereço **antes** do passo 2. A renovação do cron
+   existente (`certbot renew` + `restart nginx`) cobre esse certificado também.
+7. Confira `https://sirg.com.br` (landing) e o botão "Acessar" de cada município.
+
+**Reverter:** apague `LANDING_DOMAIN` do `.env` da VPS 2 (ou aponte o DNS de volta à VPS 1,
+com `NGINX_DOMAIN`/`APP_ORIGIN` de Conceição restaurados) e rode `up -d`.
+
+### Quando a landing ganhar domínio próprio
+
+Troque `LANDING_DOMAIN` na VPS 2, emita o certificado do novo domínio (passo 6) e reinicie o
+nginx. O repositório não muda.
 
 ---
 

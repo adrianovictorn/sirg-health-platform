@@ -216,6 +216,17 @@
 
 - **Agendar varios itens da mesma ficha de uma vez falhava para a unidade com cota.** Ao marcar
   dois ou mais exames, procedimentos ou consultas no mesmo agendamento, a tela mostrava um erro
+- **Relatorios de producao e exportacao passaram a respeitar a unidade do usuario.**
+  `GET /api/exportar/**` e `GET /api/relatorio/producao/**` nao tinham filtro por unidade:
+  qualquer usuario autenticado recebia nome, CPF e CNS de todas as unidades. Agora a unidade
+  e resolvida no servidor por `UnidadeAcessoService.resolverUnidadeAlvo`: ADMIN e GESTOR
+  continuam vendo todas (e podem filtrar com o novo parametro opcional `unidadeId`); quem
+  tem unidade de lotacao recebe so a propria, sem as solicitacoes sem unidade, e 403 ao pedir
+  outra; ADMIN_UNIDADE sem lotacao recebe 403. Perfis sem lotacao mantem a visao global
+  (comportamento historico, usado pelo relatorio do hospital). O item "Relatorios" do menu
+  passou a aparecer para ADMIN_UNIDADE. Cobertura: `RelatorioEscopoUnidadeIT` e
+  `RelatorioEndpointsEscopoIT`.
+
   sem explicacao sempre que a ficha tinha outro item fora do lote. Era
   `LazyInitializationException`: o consumo da cota do 1o item limpa o contexto de persistencia e o
   2o item era procurado numa lista ja desanexada. ADMIN e GESTOR nao eram afetados, nem o

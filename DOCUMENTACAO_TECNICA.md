@@ -1747,8 +1747,9 @@ o mês corrente da série com `CustoPainelService`. Nenhuma migration. Regra nov
 
 | Endpoint | Descrição |
 |---|---|
-| `/relatorios` | Relatório de produção por grupo |
-| `/exportar/**` | Exportação Excel (Apache POI) |
+| `/relatorio/producao/listar`, `/relatorio/producao/excel` | Agendamentos criados no dia (JSON e Excel) |
+| `/exportar/planilha`, `/exportar/planilha-aguardando`, `/exportar/planilha-gel` | Planilhas Excel (Apache POI) de agendados por grupo e data, pendentes por grupo e GEL |
+| `/exportar/verificar-dados`, `/exportar/verificar-dados-aguardando` | Diz se há dados antes de baixar a planilha |
 | `/indicadores` | Indicadores por período |
 | `/fechamento-indicadores` | Fechamento diário de indicadores |
 
@@ -1825,6 +1826,20 @@ tela, basta editar a lista `roles` do item correspondente nesse arquivo — não
 tocar em nenhum `.svelte`.
 
 **Estrutura do `menuConfig.js`:**
+> **Escopo por unidade em `/exportar/**` e `/relatorio/producao/**`.** Todos aceitam o
+> parâmetro opcional `unidadeId` e resolvem a unidade no servidor com
+> `UnidadeAcessoService.resolverUnidadeAlvo` (§10.0): ADMIN e GESTOR veem todas as unidades,
+> ou só a pedida; quem tem unidade de lotação recebe só a própria (a unidade **solicitante**,
+> `solicitacao.unidade_id`), sem as solicitações sem unidade, e 403 ao pedir outra;
+> ADMIN_UNIDADE sem lotação recebe 403. A lista e a verificação de "há dados" usam o mesmo
+> filtro.
+>
+> **Resíduo conhecido:** os demais perfis **sem** unidade de lotação (USER, PACIENTE,
+> RECEPCAO, MEDICO, ENFERMEIRO, COORD_TRANSPORTE) continuam recebendo todas as unidades, e
+> essas rotas não têm regra de role. É o comportamento histórico de `contextoDe`, mantido
+> para não zerar `/relatorio/hospital` de contas sem lotação. Difere da fila de espera e do
+> dashboard, que usam `escopoDeListagem` e negam acesso a quem não tem lotação.
+
 
 ```js
 export const MENU_SECTIONS = [
@@ -1945,7 +1960,7 @@ Exibido no header de todas as páginas autenticadas. Mostra foto de perfil ou in
 | `/admin/unidades` | Unidades + vínculo ao grupo de cota | ADMIN |
 | `/admin/cotas` | Cotas (titular: unidade/grupo; escopo: especialidade/grupo/geral) | ADMIN |
 | `/admin/pactos` | Gestão de pactos federados | ADMIN |
-| `/relatorio` | Relatório de produção | ADMIN |
+| `/relatorio` | Relatório de produção e exportações | ADMIN, GESTOR, ADMIN_UNIDADE (só a própria unidade) |
 | `/transparencia` | Dados públicos | Público |
 | `/federation/convite/[token]` | Aceitar convite de pacto | Público |
 

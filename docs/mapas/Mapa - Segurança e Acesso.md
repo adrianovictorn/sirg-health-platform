@@ -28,7 +28,9 @@ Login é **CPF + senha** (o `username` do `UserDetails` é o CPF). Token JWT HMA
 | `ADMIN_UNIDADE` | **Sempre** a unidade de lotação; sem lotação ⇒ acesso negado |
 | Demais | Unidade de lotação quando houver; sem lotação, acesso global (histórico) |
 
-Métodos: `contextoDe(cpf)`, `isAcessoGlobal(cpf)`, `exigirAcessoA(cpf, unidadeId)`. A regra completa está em [[10 - Padrões e Arquitetura]] (seção 10.0) — antes ela vivia duplicada em `SolicitacaoService` e `AgendamentoService`.
+Os relatórios de produção e exportação (`/api/exportar/**`, `/api/relatorio/producao/**`) seguem essa mesma tabela desde o ajuste de escopo: GESTOR é global como o ADMIN, e quem tem lotação recebe só a própria unidade, sem as solicitações sem unidade.
+
+Métodos: `contextoDe(cpf)`, `isAcessoGlobal(cpf)`, `exigirAcessoA(cpf, unidadeId)`, `resolverUnidadeAlvo(cpf, unidadeSolicitada)`. A regra completa está em [[10 - Padrões e Arquitetura]] (seção 10.0) — antes ela vivia duplicada em `SolicitacaoService` e `AgendamentoService`.
 
 ## Proteções pontuais
 

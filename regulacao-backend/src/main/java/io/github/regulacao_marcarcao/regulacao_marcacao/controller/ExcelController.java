@@ -6,6 +6,7 @@ import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -30,12 +31,14 @@ public class ExcelController {
     public ResponseEntity<InputStreamResource> exportarPlanilha(
             @RequestParam(name = "grupo",required = true) String grupo,
             @RequestParam( name =  "data", required = true) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate data,
-            @RequestParam(name = "label", required = false) String label
+            @RequestParam(name = "label", required = false) String label,
+            @RequestParam(name = "unidadeId", required = false) Long unidadeId,
+            Authentication authentication
             ) throws IOException {
 
         String safeLabel = (label == null || label.isBlank()) ? grupo : label;
 
-        ByteArrayInputStream bais = excelService.gerarPlanilhaAgendamentos(grupo, data);
+        ByteArrayInputStream bais = excelService.gerarPlanilhaAgendamentos(grupo, data, unidadeId, cpfDe(authentication));
 
         HttpHeaders headers = new HttpHeaders();
         String filename = "planilha_" + safeLabel.replaceAll("\\s+", "_").toLowerCase() + "_" + data.toString() + ".xlsx";
@@ -51,9 +54,11 @@ public class ExcelController {
     @GetMapping("/planilha-aguardando")
     public ResponseEntity<InputStreamResource> exportarPlanilhaAguardando(
             @RequestParam(required = true, name = "grupo") String grupo,
-            @RequestParam(required = false, defaultValue = "Pendentes") String label) throws IOException {
+            @RequestParam(required = false, defaultValue = "Pendentes") String label,
+            @RequestParam(name = "unidadeId", required = false) Long unidadeId,
+            Authentication authentication) throws IOException {
 
-        ByteArrayInputStream bais = excelService.gerarPlanilhaAguardando(grupo);
+        ByteArrayInputStream bais = excelService.gerarPlanilhaAguardando(grupo, unidadeId, cpfDe(authentication));
 
         HttpHeaders headers = new HttpHeaders();
         String filename = "planilha_pendentes_" + label.replaceAll("\\s+", "_").toLowerCase() + ".xlsx";
@@ -67,8 +72,10 @@ public class ExcelController {
     }
 
     @GetMapping("/planilha-gel")
-    public ResponseEntity<InputStreamResource> exportarPlanilhaGel() throws IOException {
-        ByteArrayInputStream bais = excelService.gerarPlanilhaGel();
+    public ResponseEntity<InputStreamResource> exportarPlanilhaGel(
+            @RequestParam(name = "unidadeId", required = false) Long unidadeId,
+            Authentication authentication) throws IOException {
+        ByteArrayInputStream bais = excelService.gerarPlanilhaGel(unidadeId, cpfDe(authentication));
 
         HttpHeaders headers = new HttpHeaders();
         String filename = "planilha_gel_" + LocalDate.now().toString() + ".xlsx";
@@ -85,18 +92,26 @@ public class ExcelController {
     public ResponseEntity<Map<String, Boolean>> verificarDados(
             @RequestParam(required = true, name = "grupo") String grupo,
             @RequestParam(name = "data", required = true) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate data,
-            @RequestParam(required = false) String label) {
+            @RequestParam(required = false) String label,
+            @RequestParam(name = "unidadeId", required = false) Long unidadeId,
+            Authentication authentication) {
         
-        boolean dadosDisponiveis = excelService.haDadosParaRelatorio(grupo, data);
+        boolean dadosDisponiveis = excelService.haDadosParaRelatorio(grupo, data, unidadeId, cpfDe(authentication));
         return ResponseEntity.ok(Map.of("dadosDisponiveis", dadosDisponiveis));
     }
 
     @GetMapping("/verificar-dados-aguardando")
     public ResponseEntity<Map<String, Boolean>> verificarDadosAguardando(
             @RequestParam(required = true, name = "grupo") String grupo,
-            @RequestParam(required = false) String label) {
+            @RequestParam(required = false) String label,
+            @RequestParam(name = "unidadeId", required = false) Long unidadeId,
+            Authentication authentication) {
         
-        boolean dadosDisponiveis = excelService.haDadosParaRelatorioAguardando(grupo);
+        boolean dadosDisponiveis = excelService.haDadosParaRelatorioAguardando(grupo, unidadeId, cpfDe(authentication));
         return ResponseEntity.ok(Map.of("dadosDisponiveis", dadosDisponiveis));
+    }
+
+    private static String cpfDe(Authentication authentication) {
+        return authentication != null ? authentication.getName() : null;
     }
 }

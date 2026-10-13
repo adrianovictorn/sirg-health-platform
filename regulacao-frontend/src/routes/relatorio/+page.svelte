@@ -91,6 +91,14 @@
     URL.revokeObjectURL(objUrl);
   }
   
+  // Erro com mensagem do servidor (ex.: 403 de escopo por unidade): mostra a mensagem dele.
+  async function avisarErroDoServidor(res: Response) {
+    const corpo = await res.json().catch(() => null);
+    if (typeof corpo?.message !== 'string' || !corpo.message) return false;
+    alert(corpo.message);
+    return true;
+  }
+
   // ====== Carregamentos ======
   async function carregarGrupoRelatorio() {
     try {
@@ -137,7 +145,10 @@
         `&data=${dataSelecionada}&label=${encodeURIComponent(card.label)}`;
 
       const response = await getApi(checkUrl);
-      if (!response.ok) throw new Error("Falha ao verificar dados com o servidor.");
+      if (!response.ok) {
+        if (await avisarErroDoServidor(response)) return;
+        throw new Error("Falha ao verificar dados com o servidor.");
+      }
 
       const result = await response.json();
       if (!result?.dadosDisponiveis) {
@@ -173,7 +184,10 @@
         `&label=${encodeURIComponent(card.label)}`;
 
       const response = await getApi(checkUrl);
-      if (!response.ok) throw new Error("Falha ao verificar dados de pendências com o servidor.");
+      if (!response.ok) {
+        if (await avisarErroDoServidor(response)) return;
+        throw new Error("Falha ao verificar dados de pendências com o servidor.");
+      }
 
       const result = await response.json();
       if (!result?.dadosDisponiveis) {
@@ -201,7 +215,10 @@
  async function gerarPlanilhaAgendamentosDoDia() {
     try {
       const res = await getApi("relatorio/producao/excel");
-      if (!res.ok) throw new Error("Falha ao baixar produção do dia.");
+      if (!res.ok) {
+        if (await avisarErroDoServidor(res)) return;
+        throw new Error("Falha ao baixar produção do dia.");
+      }
 
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
@@ -225,7 +242,10 @@
     loadingGel = true;
     try {
       const res = await getApi('exportar/planilha-gel');
-      if (!res.ok) throw new Error('Falha ao gerar planilha GEL.');
+      if (!res.ok) {
+        if (await avisarErroDoServidor(res)) return;
+        throw new Error('Falha ao gerar planilha GEL.');
+      }
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');

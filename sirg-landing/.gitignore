@@ -1,0 +1,12 @@
+*.log
+/node_modules/
+/.svelte-kit/
+/build/
+.env
+.env.*
+!.env.example
+.DS_Store
+
+# Saída do Playwright CLI
+.playwright-cli/
+.playwright/
