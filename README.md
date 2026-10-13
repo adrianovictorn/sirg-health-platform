@@ -35,6 +35,7 @@ O SIRG tem como objetivo central:
 Regula-o/
 ├── regulacao-backend/          # API REST (Spring Boot 3.4 / Java 21)
 ├── regulacao-frontend/         # Aplicação Web (SvelteKit 2 / Svelte 5)
+├── sirg-landing/               # Landing pública / portfólio (app SvelteKit separado)
 ├── nginx/                      # Template de proxy reverso (produção)
 ├── docker-compose.prod.yaml    # Orquestração de produção
 ├── CHANGELOG.md

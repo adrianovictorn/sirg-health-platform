@@ -134,6 +134,20 @@ Regula-o/
 │           ├── notificationsApi.js
 │           └── registryApi.js
 │
+├── sirg-landing/                        # Landing pública (app SvelteKit SEPARADO — ver §8.8)
+│   └── src/
+│       ├── routes/
+│       │   ├── +page.server.js                      # Lê os indicadores no servidor (só do cache)
+│       │   ├── +page.svelte                         # A página (seções em lib/componentes)
+│       │   └── robots.txt/  sitemap.xml/            # SEO, controlados por PUBLIC_INDEXAVEL
+│       └── lib/
+│           ├── server/instancias.js                 # Instâncias do SIRG (env privada)
+│           ├── server/indicadores.js                # fetch com timeout, lista fechada de campos, cache
+│           ├── conteudo/historico.js                # Linha do tempo (rascunho a revisar)
+│           ├── conteudo/sistema.js                  # Módulos, stack, autoria
+│           ├── animacoes/narrativa.js               # GSAP + ScrollTrigger (só no navegador)
+│           └── componentes/                         # Seções da página
+│
 └── uploads/                             # Armazenamento de fotos de perfil (runtime)
     └── profile-pictures/
 ```
@@ -1727,6 +1741,65 @@ Os números financeiros usam os mesmos critérios do painel de custos; `CustoInd
 o mês corrente da série com `CustoPainelService`. Nenhuma migration. Regra nova no painel
 (`CustoPainelRepository`) ou no predicado da fila (`FILA_FILTRO`) precisa ser refletida aqui.
 
+### 7.10k Resumo público da vitrine (`/transparencia/resumo`)
+
+| Método | Endpoint | Auth | Descrição |
+|---|---|---|---|
+| GET | `/api/transparencia/resumo` | **Pública** | Totais do município, catálogo e versão, para a landing (`sirg-landing`) |
+
+`VitrinePublicaController` → `VitrinePublicaService` → `VitrinePublicaRepository`. Fica sob
+`/api/transparencia/**`, que já era `permitAll`: **nenhuma rota nova foi aberta** no
+`SecurityConfiguration`. Os endpoints antigos de `TransparenciaController` não mudaram.
+
+**Resposta (`VitrinePublicaViewDTO`) — lista fechada de campos:**
+
+```json
+{
+  "municipio": "SAO_FELIPE",
+  "totais": { "solicitacoes": 0, "agendamentos": 0, "pacientesAtendidos": 0, "viagensTransporte": 0 },
+  "catalogo": { "unidades": 0, "especialidades": 0, "nomesEspecialidades": ["..."] },
+  "sistema": { "versao": "1.7", "deployEm": "2026-09-25T18:30:00Z" },
+  "geradoEm": "2026-10-09T12:00:00Z"
+}
+```
+
+| Campo | De onde vem |
+|---|---|
+| `municipio` | `InstanceContext.getNomeIdentificador()` (não toca o banco) |
+| `totais.solicitacoes` | linhas de `solicitacao_especialidade` (pedidos, não fichas) |
+| `totais.agendamentos` | linhas de `agendamento_solicitacao` |
+| `totais.pacientesAtendidos` | fichas (`solicitacao`) com ao menos um agendamento |
+| `totais.viagensTransporte` | `agendamento_transporte` com status diferente de `CANCELADO` |
+| `catalogo.unidades` / `especialidades` | cadastros com `ativo = true` |
+| `catalogo.nomesEspecialidades` | especialidades ativas **e não sensíveis** (`sensivel = false`), em ordem alfabética |
+| `sistema.versao` | `app.versao` (`application.properties`), atualizada à mão junto com o CHANGELOG |
+| `sistema.deployEm` | instante do build do backend (`build-info` do Maven); `null` fora de um build Maven |
+
+**Proteções — a rota é anônima:**
+
+- **Cache de 1 hora em memória** (`VitrinePublicaService.VALIDADE`). O visitante nunca dispara
+  consulta: o resumo é recalculado sob demanda, no máximo uma vez por hora. Não usa `@Scheduled`
+  (a thread única do agendador é do WhatsApp). Se o recálculo falhar, serve o resumo anterior e só
+  tenta o banco de novo depois de 1 minuto. Sem resumo anterior, responde 409 com mensagem
+  genérica (nunca o erro do banco) e também espera 1 minuto.
+- **Supressão.** Total de atendimento abaixo de `app.vitrine.limiar-supressao` (padrão 10) sai
+  como `null`, não como número.
+- **Sem quebra.** São totais acumulados do município inteiro, sem recorte por especialidade,
+  unidade ou período — é isso que impede uma contagem pequena de apontar para uma pessoa. Sem
+  período também não há "hoje"/"este mês", então o fuso da JVM não entra na conta.
+- **Nunca devem sair por aqui:** fila e tempo de espera, valor em reais, nome de paciente, de
+  profissional ou de usuário. `SegurancaEndpointsIT.resumoPublicoDaVitrineSoDevolveAListaFechada`
+  falha (na suíte de integração, `-Dtest='*Test,*IT'`) se o conjunto de chaves do JSON mudar, se
+  uma especialidade sensível aparecer ou se um total da consulta vier nulo.
+
+> Os números **não batem** com a seção "Transparência" da home (`/`), de propósito: lá "Pacientes
+> Cadastrados" é a contagem de fichas e "Especialidades" inclui as inativas.
+
+> O nginx limita esta rota a 30 requisições por minuto por IP (burst 10, `429` acima). A landing
+> de São Felipe lê o backend local direto, sem passar por esse limite (ver `INFRA.md`).
+
+Nenhuma migration.
+
 ---
 
 ### 7.8 Módulo Federado
@@ -1752,6 +1825,20 @@ o mês corrente da série com `CustoPainelService`. Nenhuma migration. Regra nov
 | `/exportar/verificar-dados`, `/exportar/verificar-dados-aguardando` | Diz se há dados antes de baixar a planilha |
 | `/indicadores` | Indicadores por período |
 | `/fechamento-indicadores` | Fechamento diário de indicadores |
+
+> **Escopo por unidade em `/exportar/**` e `/relatorio/producao/**`.** Todos aceitam o
+> parâmetro opcional `unidadeId` e resolvem a unidade no servidor com
+> `UnidadeAcessoService.resolverUnidadeAlvo` (§10.0): ADMIN e GESTOR veem todas as unidades,
+> ou só a pedida; quem tem unidade de lotação recebe só a própria (a unidade **solicitante**,
+> `solicitacao.unidade_id`), sem as solicitações sem unidade, e 403 ao pedir outra;
+> ADMIN_UNIDADE sem lotação recebe 403. A lista e a verificação de "há dados" usam o mesmo
+> filtro.
+>
+> **Resíduo conhecido:** os demais perfis **sem** unidade de lotação (USER, PACIENTE,
+> RECEPCAO, MEDICO, ENFERMEIRO, COORD_TRANSPORTE) continuam recebendo todas as unidades, e
+> essas rotas não têm regra de role. É o comportamento histórico de `contextoDe`, mantido
+> para não zerar `/relatorio/hospital` de contas sem lotação. Difere da fila de espera e do
+> dashboard, que usam `escopoDeListagem` e negam acesso a quem não tem lotação.
 
 ---
 
@@ -1826,20 +1913,6 @@ tela, basta editar a lista `roles` do item correspondente nesse arquivo — não
 tocar em nenhum `.svelte`.
 
 **Estrutura do `menuConfig.js`:**
-> **Escopo por unidade em `/exportar/**` e `/relatorio/producao/**`.** Todos aceitam o
-> parâmetro opcional `unidadeId` e resolvem a unidade no servidor com
-> `UnidadeAcessoService.resolverUnidadeAlvo` (§10.0): ADMIN e GESTOR veem todas as unidades,
-> ou só a pedida; quem tem unidade de lotação recebe só a própria (a unidade **solicitante**,
-> `solicitacao.unidade_id`), sem as solicitações sem unidade, e 403 ao pedir outra;
-> ADMIN_UNIDADE sem lotação recebe 403. A lista e a verificação de "há dados" usam o mesmo
-> filtro.
->
-> **Resíduo conhecido:** os demais perfis **sem** unidade de lotação (USER, PACIENTE,
-> RECEPCAO, MEDICO, ENFERMEIRO, COORD_TRANSPORTE) continuam recebendo todas as unidades, e
-> essas rotas não têm regra de role. É o comportamento histórico de `contextoDe`, mantido
-> para não zerar `/relatorio/hospital` de contas sem lotação. Difere da fila de espera e do
-> dashboard, que usam `escopoDeListagem` e negam acesso a quem não tem lotação.
-
 
 ```js
 export const MENU_SECTIONS = [
@@ -1973,6 +2046,49 @@ O frontend suporta geração de documentos sem servidor:
 
 ---
 
+### 8.8 Landing pública (`sirg-landing/`)
+
+App SvelteKit **separado** do `regulacao-frontend`: `package.json`, build e processo próprios,
+nenhum import entre os dois. Não tem login, token, cookie nem `api.js` — é a vitrine institucional
+e o portfólio do sistema. A home `/` do `regulacao-frontend` e o fluxo de login não mudaram.
+
+**Como os números chegam à página**
+
+1. `src/lib/server/instancias.js` lista as instâncias do SIRG a partir de variáveis de ambiente
+   **privadas** (`SIRG_*_API`, `SIRG_*_ACESSO`, `SIRG_*_MUNICIPIO`).
+2. `src/lib/server/indicadores.js` chama `GET /api/transparencia/resumo` (§7.10k) de cada uma,
+   **no servidor da landing**. O navegador nunca fala com a API: CORS não foi tocado e nenhuma URL
+   de API vai para o bundle.
+3. `+page.server.js` devolve só `nome`, `uf`, `urlAcesso` e o resumo já filtrado.
+
+**Regras de `indicadores.js`** (cobertas por `indicadores.test.mjs`):
+
+- Timeout de 3 s. Qualquer falha — rede, status diferente de 200, JSON inválido, `municipio`
+  diferente do esperado — vira `{ disponivel: false }`, sem erro na página. Isso cobre também a
+  instância no ar em versão anterior ao endpoint.
+- **Lista fechada de campos:** o JSON da instância é copiado campo a campo, com checagem de tipo.
+  Um campo novo no backend não chega à página sem mudar este arquivo.
+- Cache em memória por instância: 10 min para sucesso, 1 min para falha (o cartão de uma
+  instância que voltou reaparece sozinho). Sucesso vencido há menos de 1 h é servido enquanto
+  atualiza em segundo plano; falha vencida nunca é servida (o visitante espera a leitura nova).
+  Visitas simultâneas compartilham uma leitura.
+
+**Animações (`src/lib/animacoes/narrativa.js`)** — GSAP + ScrollTrigger, importado só no
+navegador. O HTML e o CSS já mostram tudo no estado final; o GSAP só anima a partir de um estado
+inicial, dentro de `gsap.matchMedia` com `prefers-reduced-motion: no-preference`. Sem JavaScript
+ou com movimento reduzido nada fica escondido. Não defina `opacity: 0` em CSS para conteúdo — a
+única exceção é a entrada da abertura (`.entra` em `app.css`), que é animação CSS, roda sem
+JavaScript, só com movimento habilitado, e sempre termina visível.
+
+**SEO** — `Seo.svelte` (meta, Open Graph, JSON-LD), `robots.txt` e `sitemap.xml`. Enquanto
+`PUBLIC_INDEXAVEL` não for `true`, a página sai com `noindex` e o `robots.txt` com `Disallow: /`.
+Só ligue depois de revisar `src/lib/conteudo/historico.js`, que está em rascunho.
+
+**Publicação** — ainda não feita. Faltam o `Dockerfile`, o serviço no `docker-compose.prod.yaml`,
+o `server` do nginx e o limite de requisições do endpoint.
+
+---
+
 ## 9. Segurança
 
 ### 9.1 Autenticação JWT
@@ -2002,7 +2118,7 @@ O frontend suporta geração de documentos sem servidor:
 **Rotas públicas (sem autenticação):**
 - `/api/auth/**`
 - `/actuator/**`
-- `/api/transparencia/**`
+- `/api/transparencia/**` — inclui `GET /api/transparencia/resumo`, lido pela landing (§7.10k)
 - `/api/solicitacoes/public/**`
 - `/swagger-ui/**`, `/v3/api-docs/**`
 - `/api/registry/**`
@@ -2390,6 +2506,22 @@ npm run dev
 O frontend estará disponível em `http://localhost:5173`.
 
 O proxy Vite (`vite.config.js`) redireciona automaticamente `/api/**` para `http://localhost:8080/api/**`.
+
+### 12.4b Executando a Landing (`sirg-landing/`)
+
+```bash
+cd sirg-landing
+
+npm install
+cp .env.example .env     # ajuste as URLs das instâncias
+npm run dev              # http://localhost:5174
+npm test                 # leitura de indicadores (não precisa de backend)
+npm run lint
+```
+
+Para ler um backend local, use `SIRG_SAOFELIPE_API=http://localhost:8080` e
+`SIRG_SAOFELIPE_MUNICIPIO` igual ao `app.municipio.nome-identificador` desse backend. Instância
+que não responde aparece como "temporariamente indisponível" — é o comportamento esperado.
 
 ### 12.5 Usuário Inicial
 

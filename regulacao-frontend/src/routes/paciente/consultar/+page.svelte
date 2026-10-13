@@ -260,6 +260,6 @@
 </main>
 
 <footer class="bg-gray-900 text-gray-400 text-center py-6 mt-8 px-4">
-  <p class="mb-2">Desenvolvido por: Adriano Victor N. Ribeiro & Filipe da Silva Ribeiro</p>
+  <p class="mb-2">Desenvolvido por: Adriano Victor N. Ribeiro</p>
 
   </footer>

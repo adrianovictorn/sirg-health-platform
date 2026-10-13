@@ -118,7 +118,7 @@
 
     <div class="px-4 py-4 border-t border-slate-800 flex items-center gap-2">
       <div class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></div>
-      <span class="text-xs text-slate-500">Adriano Victor, Filipe Ribeiro © 2025</span>
+      <span class="text-xs text-slate-500">Adriano Victor © 2025</span>
     </div>
   </aside>
 

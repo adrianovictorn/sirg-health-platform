@@ -240,313 +240,784 @@
   }
 </script>
 
+
 <Content titleH1="Editar Cota" page="/admin/cotas">
-  <main class="p-4 md:p-6 lg:p-8 overflow-auto space-y-6">
+  <div class="cotas-ibm flex-1 min-w-0 p-4 md:p-6 space-y-6">
     {#if carregando}
-      <p class="text-gray-500 text-sm">Carregando...</p>
+      <p class="ibm-suave-texto" role="status">Carregando...</p>
     {:else if origemAgenda}
-      <div class="bg-violet-50 border border-violet-200 text-violet-800 rounded-lg p-6 space-y-3 shadow">
-        <p class="text-sm">
+      <section class="ibm-painel p-4 md:p-6 space-y-6">
+        <p class="ibm-info">
           Esta cota foi gerada por uma agenda e não pode ser editada diretamente aqui.
           Para alterar vagas, vigência ou horário, edite a agenda de origem.
         </p>
-        <div class="flex gap-3">
-          <button onclick={() => goto(`/liberacao-agenda/${agendaId}`)}
-            class="px-4 py-2 rounded-lg bg-violet-600 text-white text-sm hover:bg-violet-500 transition-colors">
-            Ir para a agenda
-          </button>
-          <button onclick={() => goto('/admin/cotas')}
-            class="px-4 py-2 rounded-lg bg-gray-100 text-gray-700 text-sm hover:bg-gray-200 transition-colors">
+        <div class="ibm-rodape">
+          <button onclick={() => goto('/admin/cotas')} class="ibm-btn ibm-btn--grande ibm-btn--secundario">
             Voltar
           </button>
-        </div>
-      </div>
-    {:else}
-
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-      <section class="bg-white rounded-lg shadow p-6">
-        <h2 class="text-lg font-bold text-emerald-800 mb-4 border-b pb-2">Titular da Cota</h2>
-        <div class="space-y-4">
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">Titular da cota *</label>
-          <div class="flex gap-4">
-            <label class="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
-              <input type="radio" bind:group={form.titular} value="UNIDADE" class="accent-emerald-600" />
-              Unidade
-            </label>
-            <label class="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
-              <input type="radio" bind:group={form.titular} value="GRUPO" class="accent-emerald-600" />
-              Grupo
-            </label>
-          </div>
-        </div>
-
-        {#if form.titular === 'UNIDADE'}
-          <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">Unidade *</label>
-            <select bind:value={form.unidadeId}
-              class="w-full border-gray-300 rounded-md shadow-sm focus:border-emerald-500 focus:ring-emerald-500">
-              <option value={null}>Selecionar unidade...</option>
-              {#each unidades as u (u.id)}
-                <option value={u.id}>{u.nome}</option>
-              {/each}
-            </select>
-          </div>
-        {:else}
-          <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">Grupo de Unidades *</label>
-            <select bind:value={form.grupoUnidadesId}
-              class="w-full border-gray-300 rounded-md shadow-sm focus:border-emerald-500 focus:ring-emerald-500">
-              <option value={null}>Selecionar grupo...</option>
-              {#each grupos as g (g.id)}
-                <option value={g.id}>{g.nome}</option>
-              {/each}
-            </select>
-          </div>
-        {/if}
-
-        <div class="flex items-center gap-2 pt-2 border-t border-gray-100">
-          <input type="checkbox" id="ativoEdit" bind:checked={form.ativo} class="accent-emerald-600" />
-          <label for="ativoEdit" class="text-sm text-gray-700">Cota ativa</label>
-        </div>
+          <button onclick={() => goto(`/liberacao-agenda/${agendaId}`)} class="ibm-btn ibm-btn--grande ibm-btn--primario">
+            Ir para a agenda
+          </button>
         </div>
       </section>
+    {:else}
+      <section class="ibm-painel p-4 md:p-6" aria-labelledby="cota-titulo-titular">
+        <h2 id="cota-titulo-titular" class="ibm-grupo-titulo">Titular e escopo</h2>
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-12">
+          <div class="space-y-6">
+            <fieldset class="ibm-conjunto">
+              <legend class="ibm-rotulo">Titular da cota *</legend>
+              <div class="ibm-opcoes">
+                <label class="ibm-opcao">
+                  <input type="radio" bind:group={form.titular} value="UNIDADE" />
+                  Unidade
+                </label>
+                <label class="ibm-opcao">
+                  <input type="radio" bind:group={form.titular} value="GRUPO" />
+                  Grupo
+                </label>
+              </div>
+            </fieldset>
 
-      <section class="bg-white rounded-lg shadow p-6">
-        <h2 class="text-lg font-bold text-emerald-800 mb-4 border-b pb-2">Escopo da Cota</h2>
-        <div class="space-y-4">
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">O que a cota limita *</label>
-          <div class="flex flex-wrap gap-4">
-            <label class="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
-              <input type="radio" bind:group={form.escopo} value="ESPECIALIDADE" class="accent-emerald-600" />
-              Uma especialidade
-            </label>
-            <label class="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
-              <input type="radio" bind:group={form.escopo} value="GRUPO_ESPECIALIDADES" class="accent-emerald-600" />
-              Um grupo de especialidades
-            </label>
-            <label class="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
-              <input type="radio" bind:group={form.escopo} value="GERAL" class="accent-emerald-600" />
-              Todas (cota geral)
-            </label>
-          </div>
-        </div>
-
-        {#if form.escopo === 'ESPECIALIDADE'}
-          <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">Especialidade</label>
-            <select bind:value={form.especialidadeId}
-              class="w-full border-gray-300 rounded-md shadow-sm focus:border-emerald-500 focus:ring-emerald-500">
-              <option value={null}>Selecionar especialidade...</option>
-              {#each especialidades as e (e.id)}
-                <option value={e.id}>{e.nome}</option>
-              {/each}
-            </select>
-          </div>
-        {:else if form.escopo === 'GRUPO_ESPECIALIDADES'}
-          <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">Grupo de Especialidades *</label>
-            <select bind:value={form.grupoEspecialidadesId}
-              class="w-full border-gray-300 rounded-md shadow-sm focus:border-emerald-500 focus:ring-emerald-500">
-              <option value={null}>Selecionar grupo...</option>
-              {#each grupos as g (g.id)}
-                <option value={g.id}>{g.nome}</option>
-              {/each}
-            </select>
-            {#if grupoSelecionado}
-              <details class="mt-2 text-xs">
-                <summary class="cursor-pointer text-emerald-700 hover:text-emerald-600 select-none">
-                  Ver especialidades deste grupo ({grupoSelecionado.especialidades?.length ?? 0})
-                </summary>
-                <ul class="mt-2 space-y-1 pl-3 border-l border-gray-200 text-gray-700">
-                  {#each grupoSelecionado.especialidades ?? [] as e (e.id)}
-                    <li>{e.nome}</li>
+            {#if form.titular === 'UNIDADE'}
+              <div>
+                <label for="cota-unidade" class="ibm-rotulo">Unidade *</label>
+                <select id="cota-unidade" bind:value={form.unidadeId} class="ibm-campo w-full">
+                  <option value={null}>Selecionar unidade...</option>
+                  {#each unidades as u (u.id)}
+                    <option value={u.id}>{u.nome}</option>
                   {/each}
-                </ul>
-              </details>
+                </select>
+              </div>
+            {:else}
+              <div>
+                <label for="cota-grupo-unidades" class="ibm-rotulo">Grupo de unidades *</label>
+                <select id="cota-grupo-unidades" bind:value={form.grupoUnidadesId} class="ibm-campo w-full">
+                  <option value={null}>Selecionar grupo...</option>
+                  {#each grupos as g (g.id)}
+                    <option value={g.id}>{g.nome}</option>
+                  {/each}
+                </select>
+              </div>
+            {/if}
+
+            <div class="ibm-divisor">
+              <label class="ibm-opcao">
+                <input type="checkbox" id="ativoEdit" bind:checked={form.ativo} />
+                Cota ativa
+              </label>
+            </div>
+          </div>
+
+          <div class="space-y-6 ibm-coluna-divisor">
+            <fieldset class="ibm-conjunto">
+              <legend class="ibm-rotulo">O que a cota limita *</legend>
+              <div class="ibm-opcoes">
+                <label class="ibm-opcao">
+                  <input type="radio" bind:group={form.escopo} value="ESPECIALIDADE" />
+                  Uma especialidade
+                </label>
+                <label class="ibm-opcao">
+                  <input type="radio" bind:group={form.escopo} value="GRUPO_ESPECIALIDADES" />
+                  Um grupo de especialidades
+                </label>
+                <label class="ibm-opcao">
+                  <input type="radio" bind:group={form.escopo} value="GERAL" />
+                  Todas (cota geral)
+                </label>
+              </div>
+            </fieldset>
+
+            {#if form.escopo === 'ESPECIALIDADE'}
+              <div>
+                <label for="cota-especialidade" class="ibm-rotulo">Especialidade</label>
+                <select id="cota-especialidade" bind:value={form.especialidadeId} class="ibm-campo w-full">
+                  <option value={null}>Selecionar especialidade...</option>
+                  {#each especialidades as e (e.id)}
+                    <option value={e.id}>{e.nome}</option>
+                  {/each}
+                </select>
+              </div>
+            {:else if form.escopo === 'GRUPO_ESPECIALIDADES'}
+              <div>
+                <label for="cota-grupo-especialidades" class="ibm-rotulo">Grupo de especialidades *</label>
+                <select
+                  id="cota-grupo-especialidades"
+                  bind:value={form.grupoEspecialidadesId}
+                  class="ibm-campo w-full"
+                >
+                  <option value={null}>Selecionar grupo...</option>
+                  {#each grupos as g (g.id)}
+                    <option value={g.id}>{g.nome}</option>
+                  {/each}
+                </select>
+                {#if grupoSelecionado}
+                  <div class="ibm-sublista">
+                    <p id="cota-grupo-especialidades-lista" class="ibm-rotulo">
+                      Especialidades deste grupo ({grupoSelecionado.especialidades?.length ?? 0})
+                    </p>
+                    <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+                    <div
+                      class="ibm-lista-rolagem"
+                      role="region"
+                      aria-labelledby="cota-grupo-especialidades-lista"
+                      tabindex="0"
+                    >
+                      <ul>
+                        {#each grupoSelecionado.especialidades ?? [] as e (e.id)}
+                          <li class="ibm-lista-item">{e.nome}</li>
+                        {/each}
+                      </ul>
+                    </div>
+                  </div>
+                {/if}
+              </div>
+            {:else}
+              <p class="ibm-ajuda">
+                A cota valerá para qualquer especialidade deste titular.
+              </p>
             {/if}
           </div>
-        {:else}
-          <p class="text-xs text-gray-500">
-            A cota valerá para qualquer especialidade deste titular.
-          </p>
-        {/if}
-        </div>
-      </section>
-    </div>
-
-      <section class="bg-white rounded-lg shadow p-6">
-        <h2 class="text-lg font-bold text-emerald-800 mb-4 border-b pb-2">Período e Quantidade</h2>
-        <div class="space-y-4">
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">Tipo de Controle *</label>
-          <div class="flex gap-4">
-            <label class="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
-              <input type="radio" bind:group={form.tipoPeriodo} value="MENSAL" class="accent-emerald-600" />
-              Mensal
-            </label>
-            <label class="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
-              <input type="radio" bind:group={form.tipoPeriodo} value="DATA" class="accent-emerald-600" />
-              Por Data Específica
-            </label>
-          </div>
-        </div>
-
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          {#if form.tipoPeriodo === 'MENSAL'}
-            <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1">Período (YYYY-MM) *</label>
-              <input type="month" bind:value={form.periodo}
-                class="w-full border-gray-300 rounded-md shadow-sm focus:border-emerald-500 focus:ring-emerald-500" />
-            </div>
-          {:else}
-            <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1">Data Específica *</label>
-              <input type="date" bind:value={form.dataEspecifica}
-                class="w-full border-gray-300 rounded-md shadow-sm focus:border-emerald-500 focus:ring-emerald-500" />
-            </div>
-          {/if}
-
-          <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">Quantidade Total *</label>
-            <input type="number" min="0" bind:value={form.quantidadeTotal}
-              class="w-full border-gray-300 rounded-md shadow-sm focus:border-emerald-500 focus:ring-emerald-500" />
-          </div>
-        </div>
         </div>
       </section>
 
-      <section class="bg-white rounded-lg shadow p-6">
-        <h2 class="text-lg font-bold text-emerald-800 mb-4 border-b pb-2">
-          Espelho de Atendimento <span class="text-sm font-normal text-gray-500">(opcional)</span>
+      <section class="ibm-painel p-4 md:p-6" aria-labelledby="cota-titulo-periodo">
+        <h2 id="cota-titulo-periodo" class="ibm-grupo-titulo">Período e quantidade</h2>
+        <div class="space-y-6">
+          <fieldset class="ibm-conjunto">
+            <legend class="ibm-rotulo">Tipo de controle *</legend>
+            <div class="ibm-opcoes">
+              <label class="ibm-opcao">
+                <input type="radio" bind:group={form.tipoPeriodo} value="MENSAL" />
+                Mensal
+              </label>
+              <label class="ibm-opcao">
+                <input type="radio" bind:group={form.tipoPeriodo} value="DATA" />
+                Por Data Específica
+              </label>
+            </div>
+          </fieldset>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {#if form.tipoPeriodo === 'MENSAL'}
+              <div>
+                <label for="cota-periodo" class="ibm-rotulo">Mês de referência *</label>
+                <input id="cota-periodo" type="month" bind:value={form.periodo} class="ibm-campo w-full" />
+              </div>
+            {:else}
+              <div>
+                <label for="cota-data" class="ibm-rotulo">Data específica *</label>
+                <input id="cota-data" type="date" bind:value={form.dataEspecifica} class="ibm-campo w-full" />
+              </div>
+            {/if}
+
+            <div>
+              <label for="cota-quantidade" class="ibm-rotulo">Quantidade total *</label>
+              <input
+                id="cota-quantidade"
+                type="number"
+                min="0"
+                inputmode="numeric"
+                bind:value={form.quantidadeTotal}
+                class="ibm-campo w-full"
+              />
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="ibm-painel p-4 md:p-6" aria-labelledby="cota-titulo-espelho">
+        <h2 id="cota-titulo-espelho" class="ibm-grupo-titulo">
+          Espelho de atendimento <span class="ibm-badge ibm-badge--neutro ibm-grupo-titulo-marca">opcional</span>
         </h2>
-        <p class="text-sm text-gray-500 mb-4">
+        <p class="ibm-texto-apoio">
           Profissional, horário e local ficam travados na tela de agendamento da unidade.
         </p>
-        <div class="space-y-4">
-
-          {#if form.tipoPeriodo === 'MENSAL'}
-            <div class="text-xs text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-lg px-3 py-2">
-              Cota mensal não tem uma data única — marque os dias da semana em que o
-              profissional atende. O sistema calcula automaticamente as próximas datas
-              previstas dentro do mês, para exibir como referência ao agendar — mas o
-              saldo continua sendo um só para o mês inteiro, somando todos os dias.
-            </div>
-
-            <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1">Dias da semana de atendimento</label>
-              <div class="flex flex-wrap gap-2">
-                {#each DIAS_SEMANA as dia (dia.sigla)}
-                  <button type="button" onclick={() => alternarDiaSemana(dia.sigla)}
-                    class="px-3 py-1.5 rounded-full text-xs font-medium border transition-colors {form.diasSemana.includes(dia.sigla)
-                      ? 'bg-emerald-600 text-white border-emerald-600'
-                      : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'}">
-                    {dia.label}
-                  </button>
-                {/each}
-              </div>
-              {#if proximasOcorrencias.length > 0}
-                <p class="text-xs text-gray-500 mt-2">
-                  Próximas datas previstas: {proximasOcorrencias.join(', ')}
-                </p>
-              {/if}
-            </div>
-          {/if}
-
+        <div class="space-y-6">
           {#if form.tipoPeriodo !== 'DATA' && form.tipoPeriodo !== 'MENSAL'}
-            <p class="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+            <p class="ibm-aviso">
               Troque o Tipo de Controle para "Por Data Específica" ou "Mensal" para usar profissional, horário ou local.
             </p>
           {:else}
-            <div class="space-y-4">
-              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label class="block text-sm font-medium text-gray-700 mb-1">Profissional</label>
-                  {#if profissionalSelecionado}
-                    <div class="flex items-center justify-between bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2 text-sm text-emerald-800">
-                      <span>{profissionalSelecionado.nome}</span>
-                      <button type="button" onclick={limparProfissional} class="text-emerald-700 hover:text-emerald-900 text-xs">Remover</button>
-                    </div>
-                  {:else}
-                    <input type="text" placeholder="Buscar profissional por nome..."
-                      bind:value={termoBuscaProfissional}
-                      oninput={buscarProfissional}
-                      class="w-full border-gray-300 rounded-md shadow-sm focus:border-emerald-500 focus:ring-emerald-500" />
-                    {#if buscandoProfissional}
-                      <p class="text-xs text-gray-400 mt-1">Buscando...</p>
-                    {:else if resultadosProfissional.length > 0}
-                      <ul class="mt-1 border border-gray-200 rounded-lg divide-y divide-gray-100 max-h-40 overflow-y-auto">
-                        {#each resultadosProfissional as p (p.id)}
-                          <li>
-                            <button type="button" onclick={() => selecionarProfissional(p)}
-                              class="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">
-                              {p.nome}
-                            </button>
-                          </li>
-                        {/each}
-                      </ul>
+            <div class="space-y-6">
+              <div>
+                <h3 class="ibm-subtitulo">Quem atende e onde</h3>
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <div>
+                    {#if profissionalSelecionado}
+                      <p class="ibm-rotulo">Profissional</p>
+                      <div class="ibm-selecionado">
+                        <span>{profissionalSelecionado.nome}</span>
+                        <button type="button" onclick={limparProfissional} class="ibm-btn ibm-btn--fantasma">Remover</button>
+                      </div>
+                    {:else}
+                      <label for="cota-profissional" class="ibm-rotulo">Profissional</label>
+                      <input
+                        id="cota-profissional"
+                        type="text"
+                        placeholder="Buscar profissional por nome..."
+                        bind:value={termoBuscaProfissional}
+                        oninput={buscarProfissional}
+                        class="ibm-campo w-full"
+                      />
+                      {#if buscandoProfissional}
+                        <p class="ibm-ajuda" role="status">Buscando...</p>
+                      {:else if resultadosProfissional.length > 0}
+                        <ul class="ibm-resultados">
+                          {#each resultadosProfissional as p (p.id)}
+                            <li>
+                              <button type="button" onclick={() => selecionarProfissional(p)} class="ibm-resultado">
+                                {p.nome}
+                              </button>
+                            </li>
+                          {/each}
+                        </ul>
+                      {/if}
                     {/if}
-                  {/if}
-                </div>
+                  </div>
 
-                <div>
-                  <label class="block text-sm font-medium text-gray-700 mb-1">Local de atendimento</label>
-                  <select bind:value={form.localAgendamentoId}
-                    class="w-full border-gray-300 rounded-md shadow-sm focus:border-emerald-500 focus:ring-emerald-500">
-                    <option value={null}>Sem local definido (a unidade informa ao agendar)</option>
-                    {#each locaisAgendamento as loc (loc.id)}
-                      <option value={loc.id}>{loc.nomeLocal ?? loc.nome}</option>
-                    {/each}
-                  </select>
+                  <div>
+                    <label for="cota-local" class="ibm-rotulo">Local de atendimento</label>
+                    <select id="cota-local" bind:value={form.localAgendamentoId} class="ibm-campo w-full">
+                      <option value={null}>Sem local definido (a unidade informa ao agendar)</option>
+                      {#each locaisAgendamento as loc (loc.id)}
+                        <option value={loc.id}>{loc.nomeLocal ?? loc.nome}</option>
+                      {/each}
+                    </select>
+                  </div>
                 </div>
               </div>
 
-              <div class="border-t border-gray-100 pt-4">
-                <label class="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
-                  <input type="checkbox" bind:checked={form.horarioDinamico} class="accent-emerald-600" />
-                  Deseja que os horários sejam criados automaticamente para os pacientes?
-                </label>
-                {#if form.horarioDinamico}
-                  <p class="text-xs text-gray-500 mt-1 mb-2">
-                    O sistema divide o período abaixo igualmente entre as {form.quantidadeTotal || 'N'} vagas da
-                    cota — cada paciente recebe um horário calculado automaticamente ao agendar.
-                  </p>
-                {/if}
-                <div class="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-1">Hora inicial {form.horarioDinamico ? '*' : ''}</label>
-                    <input type="time" bind:value={form.horaInicial}
-                      class="w-full border-gray-300 rounded-md shadow-sm focus:border-emerald-500 focus:ring-emerald-500" />
+              <div class="ibm-divisor space-y-6">
+                <h3 class="ibm-subtitulo">Quando atende</h3>
+
+                {#if form.tipoPeriodo === 'MENSAL'}
+                  <div class="ibm-info">
+                    Cota mensal não tem uma data única — marque os dias da semana em que o
+                    profissional atende. O sistema calcula automaticamente as próximas datas
+                    previstas dentro do mês, para exibir como referência ao agendar — mas o
+                    saldo continua sendo um só para o mês inteiro, somando todos os dias.
                   </div>
+
+                  <fieldset class="ibm-conjunto">
+                    <legend class="ibm-rotulo">Dias da semana de atendimento</legend>
+                    <div class="ibm-dias">
+                      {#each DIAS_SEMANA as dia (dia.sigla)}
+                        {@const marcado = form.diasSemana.includes(dia.sigla)}
+                        <button
+                          type="button"
+                          onclick={() => alternarDiaSemana(dia.sigla)}
+                          aria-pressed={marcado}
+                          class="ibm-dia"
+                        >
+                          {#if marcado}
+                            <svg
+                              class="ibm-dia-marca"
+                              fill="none"
+                              viewBox="0 0 24 24"
+                              stroke="currentColor"
+                              stroke-width="3"
+                              aria-hidden="true"
+                            >
+                              <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+                            </svg>
+                          {/if}
+                          {dia.label}
+                        </button>
+                      {/each}
+                    </div>
+                    {#if proximasOcorrencias.length > 0}
+                      <p class="ibm-ajuda">
+                        Próximas datas previstas: {proximasOcorrencias.join(', ')}
+                      </p>
+                    {/if}
+                  </fieldset>
+                {/if}
+
+                <div class="space-y-4">
                   <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-1">Hora final {form.horarioDinamico ? '*' : ''}</label>
-                    <input type="time" bind:value={form.horaFinal}
-                      class="w-full border-gray-300 rounded-md shadow-sm focus:border-emerald-500 focus:ring-emerald-500" />
+                    <label class="ibm-opcao">
+                      <input type="checkbox" bind:checked={form.horarioDinamico} aria-describedby="cota-horario-ajuda" />
+                      Deseja que os horários sejam criados automaticamente para os pacientes?
+                    </label>
+                    {#if form.horarioDinamico}
+                      <p id="cota-horario-ajuda" class="ibm-ajuda">
+                        O sistema divide o período abaixo igualmente entre as {form.quantidadeTotal || 'N'} vagas da
+                        cota — cada paciente recebe um horário calculado automaticamente ao agendar.
+                      </p>
+                    {/if}
+                    {#if !form.horarioDinamico}
+                      <p id="cota-horario-ajuda" class="ibm-ajuda">
+                        Sem horário automático: o operador informa a hora manualmente na tela de
+                        agendamento; se não informar, este período fica só como referência.
+                      </p>
+                    {/if}
+                  </div>
+                  <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label for="cota-hora-inicial" class="ibm-rotulo">Hora inicial {form.horarioDinamico ? '*' : ''}</label>
+                      <input id="cota-hora-inicial" type="time" bind:value={form.horaInicial} class="ibm-campo w-full" />
+                    </div>
+                    <div>
+                      <label for="cota-hora-final" class="ibm-rotulo">Hora final {form.horarioDinamico ? '*' : ''}</label>
+                      <input id="cota-hora-final" type="time" bind:value={form.horaFinal} class="ibm-campo w-full" />
+                    </div>
                   </div>
                 </div>
-                {#if !form.horarioDinamico}
-                  <p class="text-xs text-gray-500 mt-2">
-                    Sem horário automático: o operador informa a hora manualmente na tela de
-                    agendamento; se não informar, este período fica só como referência.
-                  </p>
-                {/if}
               </div>
             </div>
           {/if}
         </div>
       </section>
 
-      <div class="flex flex-col-reverse sm:flex-row sm:justify-end gap-3">
-        <button onclick={() => goto('/admin/cotas')}
-          class="px-4 py-2 rounded-lg bg-gray-100 text-gray-700 text-sm hover:bg-gray-200 transition-colors">
+      <div class="ibm-rodape">
+        <button onclick={() => goto('/admin/cotas')} class="ibm-btn ibm-btn--grande ibm-btn--secundario">
           Cancelar
         </button>
-        <button onclick={salvar} disabled={salvando}
-          class="px-6 py-2 rounded-md bg-emerald-700 text-white text-sm font-medium hover:bg-emerald-800 transition-colors disabled:opacity-50 shadow">
+        <button onclick={salvar} disabled={salvando} class="ibm-btn ibm-btn--grande ibm-btn--primario">
           {salvando ? 'Salvando...' : 'Salvar Cota'}
         </button>
       </div>
     {/if}
-  </main>
+  </div>
 </Content>
+
+<style>
+  /*
+   * Mistura SIRG + Carbon (IBM), escopada a esta tela. Cópia do subconjunto usado
+   * de /admin/cotas/nova (mesmos tokens, classes e valores). Mesmos nomes de token e de
+   * classe de /admin/cotas (lista); os valores marcados "SIRG" abaixo divergem
+   * da lista de propósito. A mistura é controlada pelos tokens da seção
+   * "Mistura SIRG/IBM": para voltar ao IBM puro, troque cada um pelo valor
+   * indicado em "IBM". Campos, rótulos e tipografia continuam IBM; moldura
+   * (painel, título, botões, fundo) segue o resto do SIRG (DESIGN.md, seções 2 a 6).
+   * O acento é o emerald do SIRG. A fonte é uma pilha com fallback: nada é baixado.
+   */
+  .cotas-ibm {
+    --ibm-acento: #047857;
+    --ibm-acento-hover: #065f46;
+    --ibm-acento-ativo: #064e3b;
+    --ibm-acento-suave: #d1fae5;
+    --ibm-acento-suave-texto: #065f46;
+    --ibm-fonte: 'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif;
+
+    --ibm-tinta: #161616;
+    --ibm-tinta-suave: #525252;
+    --ibm-fundo: #f3f4f6; /* SIRG: gray-100 (IBM: #f4f4f4) */
+    --ibm-camada: #ffffff;
+    --ibm-campo: #f4f4f4;
+    --ibm-linha: #e0e0e0;
+    --ibm-borda-campo: #8c8c8c;
+    --ibm-hover: #ececec;
+    --ibm-aviso-fundo: #fcf4d6;
+    --ibm-aviso-borda: #f1c21b;
+
+    /* --- Mistura SIRG/IBM: ajuste aqui --- */
+    /* Painel: cartão do SIRG (rounded-lg + shadow). IBM: 0 / none / 1px solid var(--ibm-linha) */
+    --ibm-raio-painel: 8px;
+    --ibm-sombra-painel: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+    --ibm-borda-painel: 0;
+    /* Botões, listas e avisos: rounded-md do SIRG. IBM: 0 */
+    --ibm-raio-controle: 6px;
+    /* Campos (cinza com linha inferior): estilo IBM, mantido. SIRG seria 6px */
+    --ibm-raio-campo: 0;
+    /* Título de painel: SIRG (emerald-800, negrito, border-b). IBM: peso 400, barra lateral */
+    --ibm-titulo-cor: #065f46;
+    --ibm-titulo-peso: 700;
+    --ibm-titulo-tamanho: 18px;
+    --ibm-titulo-divisor: 1px solid #e5e7eb;
+    /* Botão secundário: Cancelar claro como no SIRG. IBM: fundo #393939, texto branco */
+    --ibm-secundario-fundo: #ffffff;
+    --ibm-secundario-texto: #374151;
+    --ibm-secundario-hover: #f9fafb;
+
+    background: var(--ibm-fundo);
+    color: var(--ibm-tinta);
+    font-family: var(--ibm-fonte);
+    font-size: 14px;
+    line-height: 1.29;
+    letter-spacing: 0.16px;
+  }
+
+  /* Painel: cartão branco (raio, sombra e borda vêm dos tokens --ibm-*-painel) */
+  .ibm-painel {
+    background: var(--ibm-camada);
+    border: var(--ibm-borda-painel);
+    border-radius: var(--ibm-raio-painel);
+    box-shadow: var(--ibm-sombra-painel);
+  }
+
+  /* Título de painel: padrão SIRG (text-lg font-bold emerald-800 + border-b) */
+  .ibm-grupo-titulo {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 12px;
+    margin-bottom: 24px;
+    padding-bottom: 8px;
+    border-bottom: var(--ibm-titulo-divisor);
+    font-size: var(--ibm-titulo-tamanho);
+    font-weight: var(--ibm-titulo-peso);
+    line-height: 1.4;
+    color: var(--ibm-titulo-cor);
+  }
+  .ibm-grupo-titulo-marca {
+    font-size: 12px;
+    font-weight: 400;
+  }
+
+  /* Subtítulo de grupo dentro de um painel (ex.: "Quem atende e onde") */
+  .ibm-subtitulo {
+    margin-bottom: 16px;
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 1.43;
+    color: var(--ibm-tinta);
+  }
+
+  /* Duas colunas no mesmo painel: filete vertical só quando lado a lado */
+  @media (min-width: 1024px) {
+    .ibm-coluna-divisor {
+      padding-left: 23px;
+      margin-left: -24px;
+      border-left: 1px solid var(--ibm-linha);
+    }
+  }
+
+  /* Rótulo, ajuda e agrupamento */
+  .ibm-rotulo {
+    display: block;
+    margin-bottom: 8px;
+    padding: 0;
+    font-size: 12px;
+    line-height: 1.33;
+    letter-spacing: 0.32px;
+    color: var(--ibm-tinta-suave);
+  }
+  .ibm-ajuda {
+    margin-top: 8px;
+    font-size: 12px;
+    line-height: 1.33;
+    letter-spacing: 0.32px;
+    color: var(--ibm-tinta-suave);
+  }
+  .ibm-texto-apoio {
+    margin: -8px 0 24px;
+    font-size: 14px;
+    line-height: 1.43;
+    color: var(--ibm-tinta-suave);
+  }
+  .ibm-conjunto {
+    min-width: 0;
+    padding: 0;
+    border: 0;
+  }
+  .ibm-divisor {
+    padding-top: 24px;
+    border-top: 1px solid var(--ibm-linha);
+  }
+  .ibm-suave-texto {
+    color: var(--ibm-tinta-suave);
+    font-size: 14px;
+  }
+  /* Campos: fundo cinza, borda inferior de 3:1, foco em contorno de 2 px */
+  .ibm-campo {
+    min-height: 40px;
+    padding: 0 16px;
+    border: 1px solid transparent;
+    border-bottom: 1px solid var(--ibm-borda-campo);
+    border-radius: var(--ibm-raio-campo);
+    background-color: var(--ibm-campo);
+    box-shadow: none;
+    color: var(--ibm-tinta);
+    font-family: inherit;
+    font-size: 14px;
+    letter-spacing: 0.16px;
+  }
+  select.ibm-campo {
+    padding-right: 40px;
+  }
+  .ibm-campo::placeholder {
+    color: var(--ibm-tinta-suave);
+    opacity: 1;
+  }
+  .ibm-campo:focus,
+  .ibm-campo:focus-visible {
+    outline: 2px solid var(--ibm-acento);
+    outline-offset: -2px;
+    border-color: transparent;
+    border-bottom-color: var(--ibm-borda-campo);
+    box-shadow: none;
+  }
+
+  /* Radio e checkbox: alvo de 40 px, marcação emerald (extrapolação do Carbon) */
+  .ibm-opcoes {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0 24px;
+  }
+  .ibm-opcao {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 40px;
+    cursor: pointer;
+    font-size: 14px;
+    color: var(--ibm-tinta);
+  }
+  .ibm-opcao input {
+    flex: none;
+    width: 20px;
+    height: 20px;
+    margin: 0;
+    border: 1px solid var(--ibm-tinta);
+    background-color: var(--ibm-camada);
+    color: var(--ibm-acento);
+    box-shadow: none;
+    cursor: pointer;
+  }
+  .ibm-opcao input:checked {
+    border-color: var(--ibm-acento);
+    background-color: currentColor;
+  }
+  .ibm-opcao input:focus,
+  .ibm-opcao input:focus-visible {
+    outline: 2px solid var(--ibm-acento);
+    outline-offset: 2px;
+    box-shadow: none;
+  }
+  /* Listas dentro de formulário (unidades, especialidades do grupo) */
+  .ibm-lista-rolagem {
+    max-height: 192px;
+    overflow-y: auto;
+    border: 1px solid var(--ibm-linha);
+    border-radius: var(--ibm-raio-controle);
+    background: var(--ibm-camada);
+  }
+  .ibm-lista-rolagem:focus-visible {
+    outline: 2px solid var(--ibm-acento);
+    outline-offset: -2px;
+  }
+  .ibm-lista-item {
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--ibm-linha);
+    font-size: 14px;
+  }
+  .ibm-lista-item:last-child {
+    border-bottom: 0;
+  }
+  .ibm-sublista {
+    margin-top: 16px;
+  }
+  .ibm-sublista .ibm-rotulo {
+    margin-bottom: 8px;
+  }
+
+  /* Dias da semana: botões de alternância; selecionado = fundo emerald + marca */
+  .ibm-dias {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .ibm-dia {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-width: 96px;
+    min-height: 40px;
+    padding: 0 16px;
+    border: 1px solid var(--ibm-borda-campo);
+    border-radius: var(--ibm-raio-controle);
+    background: var(--ibm-camada);
+    color: var(--ibm-tinta);
+    font-family: inherit;
+    font-size: 14px;
+    letter-spacing: 0.16px;
+    cursor: pointer;
+  }
+  .ibm-dia:hover {
+    background: var(--ibm-hover);
+  }
+  .ibm-dia[aria-pressed='true'] {
+    border-color: var(--ibm-acento);
+    background: var(--ibm-acento);
+    color: #ffffff;
+  }
+  .ibm-dia[aria-pressed='true']:hover {
+    border-color: var(--ibm-acento-hover);
+    background: var(--ibm-acento-hover);
+  }
+  .ibm-dia:focus-visible {
+    outline: 2px solid var(--ibm-acento);
+    outline-offset: 2px;
+  }
+  .ibm-dia-marca {
+    width: 14px;
+    height: 14px;
+    flex: none;
+  }
+
+  /* Profissional: selecionado e resultados da busca */
+  .ibm-selecionado {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    min-height: 40px;
+    padding: 0 8px 0 16px;
+    border-radius: var(--ibm-raio-controle);
+    background: var(--ibm-acento-suave);
+    color: var(--ibm-acento-suave-texto);
+  }
+  .ibm-resultados {
+    margin-top: 4px;
+    max-height: 160px;
+    overflow-y: auto;
+    border: 1px solid var(--ibm-linha);
+    border-radius: var(--ibm-raio-controle);
+    background: var(--ibm-camada);
+  }
+  .ibm-resultado {
+    display: block;
+    width: 100%;
+    min-height: 40px;
+    padding: 0 16px;
+    text-align: left;
+    font-family: inherit;
+    font-size: 14px;
+    color: var(--ibm-tinta);
+    cursor: pointer;
+  }
+  .ibm-resultado:hover {
+    background: var(--ibm-hover);
+  }
+  .ibm-resultado:focus-visible {
+    outline: 2px solid var(--ibm-acento);
+    outline-offset: -2px;
+  }
+
+  /* Mensagens em linha */
+  .ibm-info {
+    padding: 12px 16px;
+    border-left: 4px solid var(--ibm-acento);
+    border-radius: 0 var(--ibm-raio-controle) var(--ibm-raio-controle) 0;
+    background: var(--ibm-fundo);
+    color: var(--ibm-tinta);
+    font-size: 14px;
+    line-height: 1.43;
+  }
+  .ibm-aviso {
+    padding: 12px 16px;
+    border-left: 4px solid var(--ibm-aviso-borda);
+    border-radius: 0 var(--ibm-raio-controle) var(--ibm-raio-controle) 0;
+    background: var(--ibm-aviso-fundo);
+    color: var(--ibm-tinta);
+    font-size: 14px;
+  }
+
+  /* Badges (pílula, como o Carbon faz para status) */
+  .ibm-badge {
+    display: inline-flex;
+    align-items: center;
+    min-height: 20px;
+    padding: 0 8px;
+    border: 1px solid transparent;
+    border-radius: 9999px;
+    font-size: 12px;
+    font-weight: 400;
+    line-height: 1.33;
+    letter-spacing: 0.32px;
+    white-space: nowrap;
+  }
+  .ibm-badge--neutro {
+    background: var(--ibm-linha);
+    color: var(--ibm-tinta);
+  }
+  /* Botões: raio zero, texto de ação */
+  .ibm-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 40px;
+    padding: 0 16px;
+    border: 1px solid transparent;
+    border-radius: var(--ibm-raio-controle);
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 500;
+    letter-spacing: 0.16px;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  .ibm-btn:focus-visible {
+    outline: 2px solid var(--ibm-acento);
+    outline-offset: 2px;
+  }
+  .ibm-btn:disabled {
+    background: var(--ibm-linha);
+    color: var(--ibm-tinta-suave);
+    cursor: not-allowed;
+  }
+  .ibm-btn--grande {
+    min-height: 48px;
+    padding: 0 24px;
+  }
+  .ibm-btn--primario {
+    background: var(--ibm-acento);
+    color: #ffffff;
+  }
+  .ibm-btn--primario:hover:not(:disabled) {
+    background: var(--ibm-acento-hover);
+  }
+  .ibm-btn--primario:active:not(:disabled) {
+    background: var(--ibm-acento-ativo);
+  }
+  .ibm-btn--secundario {
+    border-color: var(--ibm-borda-campo);
+    background: var(--ibm-secundario-fundo);
+    color: var(--ibm-secundario-texto);
+  }
+  .ibm-btn--secundario:hover {
+    background: var(--ibm-secundario-hover);
+  }
+  .ibm-btn--secundario:active {
+    background: var(--ibm-hover);
+  }
+  .ibm-btn--fantasma {
+    min-height: 32px;
+    padding: 0 8px;
+    background: transparent;
+    color: var(--ibm-acento);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+  .ibm-btn--fantasma:hover {
+    background: var(--ibm-hover);
+    color: var(--ibm-acento-hover);
+  }
+
+  /* Rodapé do formulário: ação primária dominante, à direita */
+  .ibm-rodape {
+    display: flex;
+    flex-direction: column-reverse;
+    gap: 8px;
+  }
+  @media (min-width: 640px) {
+    .ibm-rodape {
+      flex-direction: row;
+      justify-content: flex-end;
+    }
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .ibm-btn,
+    .ibm-dia,
+    .ibm-campo,
+    .ibm-resultado {
+      transition:
+        background-color 110ms ease-out,
+        border-color 110ms ease-out;
+    }
+  }
+</style>
