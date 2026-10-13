@@ -1,0 +1,152 @@
+@import 'tailwindcss';
+
+@import '@fontsource-variable/bricolage-grotesque';
+@import '@fontsource/ibm-plex-sans/400.css';
+@import '@fontsource/ibm-plex-sans/500.css';
+@import '@fontsource/ibm-plex-sans/600.css';
+@import '@fontsource/ibm-plex-mono/400.css';
+@import '@fontsource/ibm-plex-mono/500.css';
+
+@theme {
+	--font-display: 'Bricolage Grotesque Variable', 'Segoe UI', system-ui, sans-serif;
+	--font-sans: 'IBM Plex Sans', 'Segoe UI', system-ui, sans-serif;
+	--font-mono: 'IBM Plex Mono', ui-monospace, 'Cascadia Mono', monospace;
+
+	/* Tinta e papel: o fundo escuro da abertura e o claro das seções de leitura. */
+	--color-tinta: #061b1d;
+	--color-tinta-2: #0b2a2d;
+	--color-tinta-3: #17454a;
+	--color-papel: #f2f5ee;
+	--color-papel-2: #e3e9db;
+	--color-grafite: #16292b;
+	--color-musgo: #4a6062;
+	--color-nevoa: #a9c2c1;
+
+	/* Céu e folha: as duas cores da marca do SIRG. Mata é a folha legível sobre papel. */
+	--color-ceu: #38b0f5;
+	--color-folha: #8fd633;
+	--color-mata: #2a7412;
+	--color-alerta: #f2a93b;
+	--color-ocre: #8a5300;
+}
+
+/*
+ * Viewport largo e baixo (notebook 1366x768, por exemplo): a cena presa do Fluxo
+ * compacta a legenda para caber inteira. A largura acompanha o breakpoint lg.
+ */
+@custom-variant baixo {
+	@media (min-width: 64rem) and (max-height: 53.75rem) {
+		@slot;
+	}
+}
+
+@layer base {
+	:root {
+		/* Altura do cabeçalho fixo: marca + faixa de seções no celular, uma linha em tela larga. */
+		--cabecalho: 6.25rem;
+	}
+
+	@media (min-width: 64rem) {
+		:root {
+			--cabecalho: 4rem;
+		}
+	}
+
+	html {
+		scroll-behavior: smooth;
+		scroll-padding-top: calc(var(--cabecalho) + 1rem);
+	}
+
+	body {
+		background: var(--color-papel);
+		color: var(--color-grafite);
+		font-family: var(--font-sans);
+		-webkit-font-smoothing: antialiased;
+		text-rendering: optimizeLegibility;
+	}
+
+	/*
+	 * Foco em dois anéis: o céu aparece sobre a tinta, a tinta aparece sobre o papel.
+	 * Só o céu não chega a 3:1 em fundo claro.
+	 */
+	:focus-visible {
+		outline: 3px solid var(--color-ceu);
+		outline-offset: 3px;
+		box-shadow: 0 0 0 3px var(--color-tinta);
+		border-radius: 4px;
+	}
+
+	::selection {
+		background: var(--color-folha);
+		color: var(--color-tinta);
+	}
+}
+
+@utility conteiner {
+	margin-inline: auto;
+	width: 100%;
+	max-width: 90rem;
+	padding-inline: clamp(1.25rem, 4vw, 3.5rem);
+}
+
+/* Rótulo pequeno em mono que abre cada seção. */
+@utility rotulo {
+	font-family: var(--font-mono);
+	font-size: 0.75rem;
+	font-weight: 500;
+	letter-spacing: 0.14em;
+	text-transform: uppercase;
+}
+
+/* Número de indicador: mono com algarismos de largura fixa, para a contagem não "dançar". */
+@utility algarismo {
+	font-family: var(--font-mono);
+	font-variant-numeric: tabular-nums;
+	font-weight: 500;
+	letter-spacing: -0.02em;
+}
+
+/*
+ * Abertura do hero: quem anima é o Motion (src/lib/animacoes/hero.js); as animações de
+ * rolagem (GSAP) ficam em src/lib/animacoes/narrativa.js.
+ *
+ * Este trecho só segura o estado inicial entre a primeira pintura e a hidratação, para o
+ * conteúdo não aparecer e sumir quando o script assume. Ele termina sozinho: sem
+ * JavaScript nada é escondido (scripting: none) e, se o script demorar ou falhar, o
+ * conteúdo aparece ao fim de --hero-espera. Com movimento reduzido nada é escondido.
+ */
+@media (scripting: enabled) and (prefers-reduced-motion: no-preference) {
+	[data-hero] {
+		animation: hero-espera var(--hero-espera, 1.5s) ease-out both;
+	}
+
+	/* O Motion marca a seção ao assumir e passa a responder pelo estado dos elementos. */
+	[data-hero-pronto] [data-hero] {
+		animation: none;
+	}
+}
+
+@media (prefers-reduced-motion: no-preference) {
+	.pulsa {
+		animation: pulsa 2.4s ease-in-out infinite;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	html {
+		scroll-behavior: auto;
+	}
+}
+
+@keyframes hero-espera {
+	from,
+	80% {
+		opacity: 0;
+	}
+}
+
+@keyframes pulsa {
+	50% {
+		opacity: 0.35;
+	}
+}
