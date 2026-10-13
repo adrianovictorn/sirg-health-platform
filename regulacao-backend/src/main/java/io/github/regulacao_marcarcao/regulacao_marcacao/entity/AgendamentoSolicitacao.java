@@ -48,6 +48,13 @@ public class AgendamentoSolicitacao {
     @Column(name = "data_agendada", nullable = false)
     private LocalDate dataAgendada;
     
+    /**
+     * Data em que o paciente foi marcado antes da primeira migracao de data da
+     * cota (V108). Nula = o agendamento nunca foi migrado. Nao vai a nenhum DTO.
+     */
+    @Column(name = "data_agendada_original")
+    private LocalDate dataAgendadaOriginal;
+
     @Column(name = "observacoes", length = 500)
     private String observacoes;
 

@@ -209,7 +209,7 @@
 				<form on:submit|preventDefault={submeterForm} class="space-y-6">
 					<div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
 						<div class="flex flex-col">
-							<label class="text-sm font-medium text-gray-700 mb-1">Data do Recebimento</label>
+							<label class="text-sm font-medium text-gray-700 mb-1">Data de recebimento do pedido</label>
 							<input type="date" bind:value={dataMalote} class="border border-gray-300 rounded-lg p-2 focus:ring-emerald-500 focus:border-emerald-500" required />
 						</div>
 						<div class="flex flex-col">
@@ -370,7 +370,6 @@
 												<select id="prio-{i}" bind:value={esp.prioridade} class="border border-gray-300 rounded-lg p-2 w-full text-sm">
 													<option value="NORMAL">Normal</option>
 													<option value="URGENTE">Urgente</option>
-													<option value="EMERGENCIA">Emergência</option>
 												</select>
 											</div>
 											<!-- Remover -->

@@ -1,2 +1,10 @@
 .env
 *.env.local
+
+# Saída do Playwright CLI (capturas podem conter dados de paciente do banco local)
+.playwright-cli/
+.playwright/*
+!.playwright/cli.config.json
+
+# Cópia local da documentação do Motion (sem licença de redistribuição; ver PROVENIENCIA.md)
+.claude/referencias/motion-docs/

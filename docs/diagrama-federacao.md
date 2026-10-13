@@ -168,6 +168,26 @@ Município A (origem)            RabbitMQ               Município B (membro do 
      ├─ cria Notificacao para A      │                             │
 ```
 
+## Fluxo de remarcação de agendamento externo (migração de data de cota)
+
+Quando um administrador migra os agendamentos de uma cota para outra data, as solicitações de
+pacientes de **outro município** geram o evento `agendamento-remarcado`. Só é publicado depois do
+commit da migração, e só quando a solicitação tem município de origem diferente do local — não há
+fallback `BROADCAST` (diferente do `agendamento-externo`).
+
+```
+Município executor (migra a cota)        RabbitMQ                    Município de origem do paciente
+     │                                      │                                   │
+     ├─ migração confirmada (commit)        │                                   │
+     ├─ FederacaoRemarcacaoListener ────────►│ agendamento-remarcado.{ORIGEM} ──►│
+     │   (CPF mascarado, nome, datas)       │                                   ├─ FilaRegionalService.onMessage
+     │                                      │                                   └─ cria Notificacao
+     │                                      │                                       AGENDAMENTO_REMARCADO
+```
+
+O binding `agendamento-remarcado.{MUNICIPIO}.#` é declarado por `RabbitMQConfig` na subida da
+instância. A mensagem é `AgendamentoRemarcadoMensagemDTO`.
+
 ## Regras de negócio desta camada
 
 | Regra | Onde é implementada |

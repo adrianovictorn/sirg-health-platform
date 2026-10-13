@@ -7,6 +7,7 @@ import org.springframework.transaction.event.TransactionalEventListener;
 import io.github.regulacao_marcarcao.regulacao_marcacao.config.WhatsAppEnvioProperties;
 import io.github.regulacao_marcarcao.regulacao_marcacao.service.whatsapp.evento.AgendamentoCanceladoEvent;
 import io.github.regulacao_marcarcao.regulacao_marcacao.service.whatsapp.evento.AgendamentoCriadoEvent;
+import io.github.regulacao_marcarcao.regulacao_marcacao.service.whatsapp.evento.AgendamentoRemarcadoEvent;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
@@ -39,6 +40,20 @@ public class WhatsAppAgendamentoListener {
                     evento.agendamentoId(), evento.solicitacaoId(), evento.data(), evento.itens());
         } catch (Throwable e) {
             log.error("WhatsApp: falha ao enfileirar confirmacao do agendamento id={} ({}).",
+                    evento.agendamentoId(), e.getClass().getSimpleName());
+        }
+    }
+
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void aoRemarcar(AgendamentoRemarcadoEvent evento) {
+        if (!props.configurado()) {
+            return;
+        }
+        try {
+            mensagemService.enfileirarRemarcacao(
+                    evento.agendamentoId(), evento.solicitacaoId(), evento.dataNova(), evento.itens());
+        } catch (Throwable e) {
+            log.error("WhatsApp: falha ao enfileirar remarcacao do agendamento id={} ({}).",
                     evento.agendamentoId(), e.getClass().getSimpleName());
         }
     }

@@ -2,8 +2,11 @@ package io.github.regulacao_marcarcao.regulacao_marcacao.service;
 
 import java.time.DayOfWeek;
 import java.time.LocalDate;
+import java.time.YearMonth;
 import java.time.format.DateTimeFormatter;
 import java.util.Comparator;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -24,12 +27,14 @@ import io.github.regulacao_marcarcao.regulacao_marcacao.entity.Profissional;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.Unidade;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.enums.OrigemCotaEnum;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.enums.TipoPeriodoCota;
+import io.github.regulacao_marcarcao.regulacao_marcacao.repository.CotaConsumidoresRepository;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.CotaUnidadeRepository;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.EspecialidadeRepository;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.GrupoRelatorioRepository;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.LocalAgendamentoRepository;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.ProfissionalRepository;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.UnidadeRepository;
+import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.ConsumidorCotaProjection;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 
@@ -78,6 +83,7 @@ public class CotaUnidadeService {
     private final EspecialidadeRepository especialidadeRepository;
     private final ProfissionalRepository profissionalRepository;
     private final LocalAgendamentoRepository localAgendamentoRepository;
+    private final CotaConsumidoresRepository consumidoresRepository;
 
     // ------------------------------------------------------------------
     // CRUD
@@ -399,6 +405,17 @@ public class CotaUnidadeService {
                             + cota.getQuantidadeUtilizada() + "). Cancele agendamentos antes de reduzir a cota.");
         }
 
+        // Mudar o periodo de uma cota que tem agendamentos deixaria os pacientes na
+        // data antiga. Para cota por data o caminho e a migracao (CotaMigracaoDataService);
+        // mensal e troca de tipo nao migram. Sem mudanca de periodo nem consulta.
+        if (periodoMudou(cota, tipo, dto)) {
+            int agendamentos = idsAgendamentosQueConsomem(cota).size();
+            if (agendamentos > 0) {
+                throw new IllegalStateException("Esta cota tem " + agendamentos
+                        + " agendamento(s). Para mudar a data e preciso migrar os agendamentos.");
+            }
+        }
+
         if (temUnidade) {
             cota.setUnidade(unidadeRepository.findById(dto.unidadeId())
                     .orElseThrow(() -> new EntityNotFoundException("Unidade nao encontrada.")));
@@ -437,6 +454,63 @@ public class CotaUnidadeService {
         cota.setQuantidadeTotal(dto.quantidadeTotal());
         cota.setAtivo(dto.ativo());
         return CotaUnidadeViewDTO.from(cotaRepository.save(cota));
+    }
+
+    private boolean periodoMudou(CotaUnidade cota, TipoPeriodoCota tipo, CotaUnidadeUpdateDTO dto) {
+        if (cota.getTipoPeriodo() != tipo) {
+            return true;
+        }
+        return tipo == TipoPeriodoCota.MENSAL
+                ? !java.util.Objects.equals(cota.getPeriodo(), dto.periodo())
+                : !java.util.Objects.equals(cota.getDataEspecifica(), dto.dataEspecifica());
+    }
+
+    // ------------------------------------------------------------------
+    // Consumidores da cota (leitura)
+    // ------------------------------------------------------------------
+
+    /**
+     * Itens agendados que consomem a cota. Com profissional: exatos, pela FK do
+     * item (V93/V100). Sem profissional o item nao registra a cota, entao e por
+     * incidencia — titular, escopo e periodo ATUAIS da cota — o que inclui
+     * agendamentos feitos por ADMIN/GESTOR, que nao consomem cota. Cota MENSAL com
+     * dias da semana so incide nesses dias.
+     */
+    @Transactional(readOnly = true)
+    public List<ConsumidorCotaProjection> consumidoresDe(CotaUnidade cota) {
+        LocalDate de;
+        LocalDate ate;
+        if (cota.getTipoPeriodo() == TipoPeriodoCota.MENSAL) {
+            YearMonth mes = YearMonth.parse(cota.getPeriodo());
+            de = mes.atDay(1);
+            ate = mes.atEndOfMonth();
+        } else {
+            de = cota.getDataEspecifica();
+            ate = cota.getDataEspecifica();
+        }
+
+        // Com profissional: pela FK, mas so o que cai no periodo ATUAL da cota (a FK pode
+        // ser velha: item reagendado por ADMIN/GESTOR em outra data continua citando a cota).
+        List<ConsumidorCotaProjection> encontrados = cota.getProfissionalExecutante() != null
+                ? consumidoresRepository.consumidoresPorCotaFixada(cota.getId(), de, ate)
+                : consumidoresRepository.consumidoresPorIncidencia(
+                        cota.getUnidade() != null ? cota.getUnidade().getId() : null,
+                        cota.getGrupoUnidades() != null ? cota.getGrupoUnidades().getId() : null,
+                        cota.getEspecialidade() != null ? cota.getEspecialidade().getId() : null,
+                        cota.getGrupoEspecialidades() != null ? cota.getGrupoEspecialidades().getId() : null,
+                        de, ate);
+
+        if (cota.getDiasSemana() == null || cota.getDiasSemana().isBlank()) {
+            return encontrados;
+        }
+        Set<DayOfWeek> dias = validarDiasSemana(List.of(cota.getDiasSemana().split(",")));
+        return encontrados.stream().filter(c -> dias.contains(c.getDataAgendada().getDayOfWeek())).toList();
+    }
+
+    /** Ids distintos dos agendamentos que consomem a cota (ver {@link #consumidoresDe}). */
+    @Transactional(readOnly = true)
+    public List<Long> idsAgendamentosQueConsomem(CotaUnidade cota) {
+        return consumidoresDe(cota).stream().map(ConsumidorCotaProjection::getAgendamentoId).distinct().toList();
     }
 
     // ------------------------------------------------------------------
@@ -571,6 +645,97 @@ public class CotaUnidadeService {
         for (CotaUnidade cota : cotasParaConsumo(cotasAplicaveis(unidadeId, especialidadeId, dataOriginal), cotaFixadaId)) {
             cotaRepository.devolverVaga(cota.getId());
         }
+    }
+
+    /** Um item cujo agendamento muda de data na migracao de cota. */
+    public record TransferenciaItem(Long unidadeId, Long especialidadeId,
+            LocalDate dataOrigem, LocalDate dataDestino, Long cotaFixadaId) {
+    }
+
+    /**
+     * Acompanha os itens de agendamentos que mudam de data (migracao de cota):
+     * devolve as vagas das cotas da data antiga e consome as da data nova, SEM
+     * mexer nas cotas que valem nos dois lados nem na cota que esta viajando junto
+     * com os agendamentos (o contador dela vai com ela).
+     *
+     * <p>Regra por item (mesmo isolamento por profissional de
+     * {@link #incrementarUtilizacao(Long, Long, LocalDate, Long)}):
+     * <ul>
+     *   <li>com cota fixada que viaja: nada;</li>
+     *   <li>com cota fixada que NAO viaja: ela precisa continuar valendo na data
+     *       nova, senao 409 e nenhum contador muda;</li>
+     *   <li>sem cota fixada: devolve as cotas gerais so da data antiga e consome as
+     *       gerais so da data nova.</li>
+     * </ul>
+     *
+     * <p>Toda a LEITURA acontece antes de qualquer bulk update ({@code devolverVaga} e
+     * {@code consumirVaga} limpam o contexto de persistencia); so entao vem a escrita,
+     * com todas as devolucoes antes dos consumos. Cota esgotada na data nova aborta
+     * a transacao inteira.
+     */
+    @Transactional
+    public void transferirUtilizacao(List<TransferenciaItem> itens, Set<Long> cotasQueViajam) {
+        Map<String, List<CotaUnidade>> memo = new HashMap<>();
+        Map<Long, Integer> aDevolver = new LinkedHashMap<>();
+        Map<Long, Integer> aConsumir = new LinkedHashMap<>();
+
+        for (TransferenciaItem item : itens) {
+            if (item.unidadeId() == null || item.dataOrigem() == null || item.dataDestino() == null) {
+                continue;
+            }
+
+            if (item.cotaFixadaId() != null) {
+                if (cotasQueViajam.contains(item.cotaFixadaId())) {
+                    continue;
+                }
+                boolean vale = aplicaveisMemo(memo, item.unidadeId(), item.especialidadeId(), item.dataDestino())
+                        .stream().anyMatch(c -> c.getId().equals(item.cotaFixadaId()));
+                if (!vale) {
+                    throw new IllegalStateException("Ha agendamento com exame vinculado a outra cota com profissional (id="
+                            + item.cotaFixadaId() + ") que nao vale em " + item.dataDestino()
+                            + ". Migre tambem essa cota ou trate o agendamento antes.");
+                }
+                continue;
+            }
+
+            Set<Long> origem = idsSemProfissional(
+                    aplicaveisMemo(memo, item.unidadeId(), item.especialidadeId(), item.dataOrigem()), cotasQueViajam);
+            Set<Long> destino = idsSemProfissional(
+                    aplicaveisMemo(memo, item.unidadeId(), item.especialidadeId(), item.dataDestino()), cotasQueViajam);
+            origem.stream().filter(id -> !destino.contains(id)).forEach(id -> aDevolver.merge(id, 1, Integer::sum));
+            destino.stream().filter(id -> !origem.contains(id)).forEach(id -> aConsumir.merge(id, 1, Integer::sum));
+        }
+
+        aDevolver.forEach((id, vezes) -> {
+            for (int i = 0; i < vezes; i++) {
+                cotaRepository.devolverVaga(id);
+            }
+        });
+        for (Map.Entry<Long, Integer> entrada : aConsumir.entrySet()) {
+            for (int i = 0; i < entrada.getValue(); i++) {
+                if (cotaRepository.consumirVaga(entrada.getKey()) == 0) {
+                    // Recarrega: consumirVaga limpou o contexto (ver incrementarUtilizacao).
+                    CotaUnidade atual = cotaRepository.findById(entrada.getKey()).orElseThrow();
+                    throw new IllegalStateException(mensagemEsgotada(atual));
+                }
+            }
+        }
+    }
+
+    private List<CotaUnidade> aplicaveisMemo(Map<String, List<CotaUnidade>> memo,
+            Long unidadeId, Long especialidadeId, LocalDate data) {
+        return memo.computeIfAbsent(unidadeId + "|" + especialidadeId + "|" + data,
+                chave -> cotasAplicaveis(unidadeId, especialidadeId, data));
+    }
+
+    private Set<Long> idsSemProfissional(List<CotaUnidade> aplicaveis, Set<Long> excluir) {
+        Set<Long> ids = new LinkedHashSet<>();
+        for (CotaUnidade c : aplicaveis) {
+            if (c.getProfissionalExecutante() == null && !excluir.contains(c.getId())) {
+                ids.add(c.getId());
+            }
+        }
+        return ids;
     }
 
     /**

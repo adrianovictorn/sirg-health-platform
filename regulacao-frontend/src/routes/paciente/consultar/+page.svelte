@@ -166,7 +166,7 @@
                         <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">ID</th>
                         <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Paciente</th>
                         <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">USF</th>
-                        <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Malote</th>
+                        <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Recebimento do pedido</th>
                         <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Especialidades/Status</th>
                     </tr>
                 </thead>
@@ -219,7 +219,7 @@
                             <span>{solicitacao.usfOrigem}</span>
                         </div>
                         <div class="flex justify-between items-center">
-                            <span class="font-semibold text-gray-800">Data Malote:</span>
+                            <span class="font-semibold text-gray-800">Recebimento do pedido:</span>
                             <span>{solicitacao.dataMalote}</span>
                         </div>
                     </div>
@@ -260,6 +260,6 @@
 </main>
 
 <footer class="bg-gray-900 text-gray-400 text-center py-6 mt-8 px-4">
-  <p class="mb-2">Desenvolvido por: Adriano Victor N. Ribeiro & Filipe da Silva Ribeiro</p>
+  <p class="mb-2">Desenvolvido por: Adriano Victor N. Ribeiro</p>
 
   </footer>

@@ -104,6 +104,16 @@ public interface SolicitacaoEspecialidadeRepository extends JpaRepository<Solici
             """)
     List<TetoEstornoProjection> somarDebitoPorTeto(@Param("agendamentoId") Long agendamentoId);
 
+    /**
+     * Reaponta TODA FK para a cota de origem (migracao com unificacao). Sem filtro
+     * de agendamento de proposito: itens ja desvinculados continuam citando a cota
+     * (o desvincular nao limpa a FK), e a cota de origem sera excluida.
+     */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query(value = "UPDATE solicitacao_especialidade SET cota_unidade_id = :destino WHERE cota_unidade_id = :origem",
+            nativeQuery = true)
+    int repontarCota(@Param("origem") Long origem, @Param("destino") Long destino);
+
     @Query("SELECT se FROM SolicitacaoEspecialidade se " +
         "JOIN FETCH se.solicitacao s " +
         "WHERE se.agendamentoSolicitacao.dataAgendada = :data " +

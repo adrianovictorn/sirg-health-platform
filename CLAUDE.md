@@ -138,6 +138,16 @@ aprovação explícita do usuário. Não pule etapas nem implemente antes da apr
 (acabamento de tela nova em `/feature`, ajuste de layout dentro de um pedido misto em
 `/ajuste`).
 
+O `ux-ui-designer` lê `regulacao-frontend/DESIGN.md` (padrão visual vigente das telas
+internas) e aciona sob demanda as skills externas de `.claude/skills/`, copiadas de
+terceiros em commits fixados e nunca atualizadas automaticamente (origem, licença e
+modificações em `.claude/skills/PROVENIENCIA.md`). A verificação visual usa o
+`playwright-cli` apenas contra `localhost`, numa sessão em que o login é feito pelo
+usuário; preenchimento de campos, execução de script e os comandos que leem token, cookies
+ou tráfego estão na lista `deny` de `.claude/settings.json` (bloqueio por padrão de
+comando, não uma caixa de areia). Regras e precedência: `.claude/agents/ux-ui-designer.md`; o
+porquê: `docs/decisoes/0004-skills-externas-de-design-fixadas-no-repositorio.md`.
+
 `/ajuste` e `/feature` orquestram os mesmos três subagentes principais, na ordem:
 
 1. **prompt-reviewer** (`Read`) — reescreve o pedido de forma objetiva, lista critérios de
@@ -155,3 +165,4 @@ aprovação explícita do usuário. Não pule etapas nem implemente antes da apr
    arquivos.
 
 Definições completas dos subagentes: `.claude/agents/`. Comandos: `.claude/commands/`.
+Skills: `.claude/skills/`.

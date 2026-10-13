@@ -134,6 +134,20 @@ Regula-o/
 │           ├── notificationsApi.js
 │           └── registryApi.js
 │
+├── sirg-landing/                        # Landing pública (app SvelteKit SEPARADO — ver §8.8)
+│   └── src/
+│       ├── routes/
+│       │   ├── +page.server.js                      # Lê os indicadores no servidor (só do cache)
+│       │   ├── +page.svelte                         # A página (seções em lib/componentes)
+│       │   └── robots.txt/  sitemap.xml/            # SEO, controlados por PUBLIC_INDEXAVEL
+│       └── lib/
+│           ├── server/instancias.js                 # Instâncias do SIRG (env privada)
+│           ├── server/indicadores.js                # fetch com timeout, lista fechada de campos, cache
+│           ├── conteudo/historico.js                # Linha do tempo (rascunho a revisar)
+│           ├── conteudo/sistema.js                  # Módulos, stack, autoria
+│           ├── animacoes/narrativa.js               # GSAP + ScrollTrigger (só no navegador)
+│           └── componentes/                         # Seções da página
+│
 └── uploads/                             # Armazenamento de fotos de perfil (runtime)
     └── profile-pictures/
 ```
@@ -741,6 +755,75 @@ Idempotente. A planilha inicial do cliente está em
 
 ---
 
+### 3.15e Migração de data de cota (V108)
+
+Ao mudar a **data** de uma cota por data que já tem agendamentos, o sistema pergunta se deve
+migrá-los. Fica em `CotaMigracaoDataService`; a edição comum (`PUT /cotas/{id}`) recusa essa
+mudança com 409.
+
+**Campos novos (V108):**
+
+| Onde | Campo | Notas |
+|---|---|---|
+| `agendamento_solicitacao` | `data_agendada_original` (`DATE`, anulável) | A data de antes da **primeira** migração (`COALESCE`, não é sobrescrita nas seguintes). Nulo = nunca migrado. Não aparece em nenhum DTO existente |
+| `cota_migracao_data` (entidade `CotaMigracaoData`) | `cota_origem_id`, `cota_resultante_id`, `data_de`, `data_para`, `unificada`, `agendamentos`, `itens`, `realizado_por_id`, `realizado_em` (`TIMESTAMPTZ`) | Uma linha por operação. Os ids de cota **não têm FK**: na unificação a cota de origem é excluída e a auditoria precisa sobreviver |
+
+**DTOs:** `CotaMigracaoDataCreateDTO(dataEspecifica)`; `CotaMigracaoDataPreviaDTO` (só
+contagens: agendamentos, itens e itens por status, `quantidadeUtilizada`, `divergente`,
+`existeCotaNoDestino` e totais do destino, `solicitacoesFederadas` — nenhum dado nominal nem
+valor em reais); `CotaMigracaoDataViewDTO(cotaResultanteId, unificada, agendamentosMigrados,
+itensMigrados)`.
+
+**Quem migra.** Só cota do tipo `DATA` e origem manual. Cota com profissional: os itens que
+apontam para ela pela FK `solicitacao_especialidade.cota_unidade_id`. Cota **sem** profissional
+não deixa FK no item (consome sem registrar qual), então os itens são reconstruídos por
+**incidência**: mesma unidade (ou grupo de unidades), mesma especialidade (ou grupo, ou qualquer
+uma se a cota é geral) e `data_agendada` = data da cota, com `cota_unidade_id IS NULL`. Isso
+inclui agendamentos feitos por ADMIN/GESTOR, que não consomem cota — por isso a prévia avisa
+quando o total de itens incidentes difere de `quantidadeUtilizada` (`divergente`). Migram os
+agendamentos em **qualquer status** (mudança de status não estorna cota) e **inteiros**, com
+todos os exames.
+
+**Fluxo (`CotaMigracaoDataService.migrar`, `@Transactional`, tudo ou nada):**
+
+```
+POST /api/cotas/{id}/migrar-data  { dataEspecifica }
+  1. findByIdParaMigracao (PESSIMISTIC_WRITE)
+  2. recusa: origem AGENDA (409), tipo MENSAL (409), data nula/igual (400)
+  3. copia os escalares da cota (os bulk updates abaixo desanexam as entidades)
+  4. agendamentos que a cota consome (FK ou incidência); nenhum → 400
+  5. cota de destino com a mesma chave (tipo DATA, titular, escopo, profissional, data nova)?
+       existe e é AGENDA ou está inativa → 409; existe e está ativa → UNIFICAÇÃO
+  6. capacidade global (Especialidade.vagas) na data nova, como em AgendamentoService → 409
+  7. mover a cota: saveAndFlush (confere @Version) — ou, na unificação, absorver() soma
+     total e utilizado no destino, repontarCota() reaponta TODAS as FKs e a origem é excluída
+  8. CotaUnidadeService.transferirUtilizacao(itens, viajantes): devolve as vagas das cotas da
+     data antiga e consome as da nova; a cota migrada (e o destino, se unificou) "viaja" — o
+     contador dela não é tocado. Cota presente nos dois lados (a mensal do mesmo mês) não é
+     tocada. Cota esgotada na data nova → 409 e rollback de tudo
+  9. remarcarEmLote: data_agendada = nova; data_agendada_original = COALESCE(original, anterior)
+ 10. apaga o snapshot fechamento_indicadores_dia das datas de origem e destino
+     (recalculado na próxima consulta)
+ 11. grava CotaMigracaoData
+ 12. publica os eventos (consumidos AFTER_COMMIT)
+```
+
+**Regras de recusa na transferência de contadores.** Item de carona com FK para **outra** cota com
+profissional que não vale na data nova: 409 ("Há agendamento com exame vinculado a outra cota com
+profissional (id=X) que não vale em {data}. Migre também essa cota ou trate o agendamento
+antes."). Agendamentos de ADMIN/GESTOR (que nunca consumiram) contam como consumidores, como no
+estorno de `deleteAgendamento`: ao mudar de mês podem devolver/consumir mensais e causar recusa
+por saldo no destino; o aviso `divergente` só compara com a cota migrada.
+
+**Eventos.** `AgendamentoRemarcadoEvent` (WhatsApp), um por agendamento com ao menos um item
+`AGENDADO`; `AgendamentoExternoRemarcadoEvent` (federação), um por solicitação com município de
+origem diferente do local.
+
+**Fora de escopo:** cota de agenda (continua somente leitura), cota mensal (não muda de mês com
+agendamentos: 409), troca de tipo de período com agendamentos (409), transporte sanitário (não
+é ajustado) e teto financeiro (**não é redebitado**: ao mudar de mês, teto e painel de custos
+divergem nesses itens). Decisões e alternativas: ADR 0008.
+
 ### 3.16 Profissional
 
 **Tabela:** `profissional`  
@@ -1067,6 +1150,15 @@ Usuário → DELETE /api/agendamentos/{id}
 > **Remanejar = excluir + recriar**, portanto estorna e reconsome — inclusive quando a
 > nova data cai em outro período.
 
+### 5.3c Fluxo de Migração de Data de Cota
+
+Ver §3.15e. Resumo: a tela de edição da cota (`/admin/cotas/{id}/editar`), quando só a data de
+uma cota por data mudou, chama `GET /cotas/{id}/migracao-data/previa`; com agendamentos, abre o
+diálogo "Migrar os agendamentos para a nova data?". **Sim** → `POST /cotas/{id}/migrar-data`;
+**Não** → nada é salvo. Sem agendamentos o `PUT` segue normal. Depois do commit, o WhatsApp
+recebe uma `REMARCACAO` por agendamento com item agendado e a federação avisa o município de
+origem dos pacientes de fora.
+
 ### 5.4 Fluxo de Upload de Foto de Perfil
 
 ```
@@ -1227,6 +1319,7 @@ Próxima requisição do usuário desativado:
 | V105 | Custo: `especialidade.valor_unitario`, `codigo_sus` (10 dígitos, **não único**), `valor_origem`, `valor_atualizado_em`, `valor_atualizado_por_id`. **Nenhum preço embutido** — ver §3.15d |
 | V106 | `solicitacao_especialidade.valor_unitario_agendado` — valor da época, **sem backfill** |
 | V107 | Tabela `teto_financeiro` (unidade + grupo de especialidades + mês, UNIQUE) e `solicitacao_especialidade.teto_financeiro_id` |
+| V108 | `agendamento_solicitacao.data_agendada_original` e tabela `cota_migracao_data` (auditoria da migração de data de cota, ids de cota sem FK) — ver §3.15e |
 
 > **Limite do backfill (V73/V76/V77):** só é possível vincular a unidade quando
 > `usf_origem` está preenchido **e** casa com alguma unidade cadastrada. O que sobra é
@@ -1373,7 +1466,7 @@ separados por vírgula. Valor inválido → 400.
 | Método | Endpoint | Descrição |
 |---|---|---|
 | POST | `/agendamentos` | Cria agendamento |
-| GET | `/agendamentos/pendentes/**` | Agendamentos pendentes (público) |
+| GET | `/agendamentos/pendentes/**` | Agendamentos pendentes (requer autenticação) |
 | GET | `/agendamentos` | Lista agendamentos |
 | PUT | `/agendamentos/{id}` | Atualiza |
 | DELETE | `/agendamentos/{id}` | Remove |
@@ -1432,7 +1525,9 @@ separados por vírgula. Valor inválido → 400.
 | GET | `/cotas/unidade/{id}/periodo/{periodo}` | Autenticado¹ | Cotas da unidade no período |
 | GET | `/cotas/saldo?unidadeId=&especialidadeId=&periodo=` | Autenticado¹ | Saldo disponível (menor entre as cotas incidentes) |
 | POST | `/cotas` | ADMIN | Cria cota (titular = `unidadeId` **ou** `grupoUnidadesId`; escopo = `especialidadeId` **ou** `grupoEspecialidadesId` **ou** nenhum) |
-| PUT | `/cotas/{id}` | ADMIN | Atualiza quantidade/status da cota |
+| PUT | `/cotas/{id}` | ADMIN | Atualiza quantidade/status da cota. **409** se o período mudou (tipo, mês ou data) e a cota tem agendamentos: "Esta cota tem N agendamento(s). Para mudar a data é preciso migrar os agendamentos." |
+| GET | `/cotas/{id}/migracao-data/previa?dataEspecifica=YYYY-MM-DD` | ADMIN | O que a migração faria, sem alterar nada (`CotaMigracaoDataPreviaDTO`). `agendamentos = 0` quando a cota não tem agendamentos |
+| POST | `/cotas/{id}/migrar-data` | ADMIN | Corpo `{ dataEspecifica }`. Muda a data da cota e migra os agendamentos, tudo ou nada (`CotaMigracaoDataViewDTO`). 409: cota de agenda, mensal, destino de agenda/inativo, capacidade ou cota esgotada na data nova, lock otimista ou pessimista (`O registro foi alterado por outro usuário...`) |
 
 ¹ Os endpoints que recebem `unidadeId` passam por `UnidadeAcessoService.exigirAcessoA`:
 trocar o id na chamada direta não dá acesso a outra unidade.
@@ -1561,6 +1656,7 @@ Sem `de`/`ate`, o período são os últimos 7 dias. As datas são do fuso `Ameri
 | Operação | Mensagem |
 |---|---|
 | `AgendamentoService.criarAgendamentoParaMultiplosExames` | `CONFIRMACAO` — ou `REMARCACAO`, se havia cancelamento pendente de algum dos mesmos itens |
+| `CotaMigracaoDataService.migrar` (§3.15e) | `REMARCACAO` com a data nova (`WhatsAppMensagemService.enfileirarRemarcacao`), um por agendamento com ao menos um item `AGENDADO`. Usa o template de confirmação, como a remarcação existente. As regras de `preparar` (data passada, opt-out, outro município) valem como sempre |
 | `AgendamentoService.deleteAgendamento` | `CANCELAMENTO`, que espera 10 min na fila |
 | Lote diário das 8h, ou "Rodar lembretes agora" | `LEMBRETE` para atendimentos de daqui a 3 dias |
 | Reenvio pelo painel | `CONFIRMACAO` ou `LEMBRETE`, origem `MANUAL` |
@@ -1595,7 +1691,7 @@ barrar vira `NAO_ENVIADO` com o motivo:
 | `SEM_TELEFONE` / `TELEFONE_INVALIDO` | Ver normalização abaixo |
 | `FORA_DA_LISTA_DE_TESTE` | Há lista de números de teste e o número não está nela |
 | `LIMITE_DIARIO` | Mensagens aceitas hoje atingiram `limite-diario`. Não é reenviada sozinha depois |
-| `SUBSTITUIDO_POR_REMARCACAO` | Cancelamento descartado porque o item foi reagendado |
+| `SUBSTITUIDO_POR_REMARCACAO` | Cancelamento descartado porque o item foi reagendado — ou confirmação, lembrete ou remarcação pendentes descartados porque a migração de data de cota (§3.15e) mudou a data do agendamento |
 
 **Telefone** (`TelefoneWhatsAppNormalizador`): remove máscara, zero inicial e `55`; insere o nono
 dígito em celular antigo de 10 dígitos; exige DDD válido. Fixo e número **sem DDD** não enviam —
@@ -1727,6 +1823,65 @@ Os números financeiros usam os mesmos critérios do painel de custos; `CustoInd
 o mês corrente da série com `CustoPainelService`. Nenhuma migration. Regra nova no painel
 (`CustoPainelRepository`) ou no predicado da fila (`FILA_FILTRO`) precisa ser refletida aqui.
 
+### 7.10k Resumo público da vitrine (`/transparencia/resumo`)
+
+| Método | Endpoint | Auth | Descrição |
+|---|---|---|---|
+| GET | `/api/transparencia/resumo` | **Pública** | Totais do município, catálogo e versão, para a landing (`sirg-landing`) |
+
+`VitrinePublicaController` → `VitrinePublicaService` → `VitrinePublicaRepository`. Fica sob
+`/api/transparencia/**`, que já era `permitAll`: **nenhuma rota nova foi aberta** no
+`SecurityConfiguration`. Os endpoints antigos de `TransparenciaController` não mudaram.
+
+**Resposta (`VitrinePublicaViewDTO`) — lista fechada de campos:**
+
+```json
+{
+  "municipio": "SAO_FELIPE",
+  "totais": { "solicitacoes": 0, "agendamentos": 0, "pacientesAtendidos": 0, "viagensTransporte": 0 },
+  "catalogo": { "unidades": 0, "especialidades": 0, "nomesEspecialidades": ["..."] },
+  "sistema": { "versao": "1.7", "deployEm": "2026-09-25T18:30:00Z" },
+  "geradoEm": "2026-10-09T12:00:00Z"
+}
+```
+
+| Campo | De onde vem |
+|---|---|
+| `municipio` | `InstanceContext.getNomeIdentificador()` (não toca o banco) |
+| `totais.solicitacoes` | linhas de `solicitacao_especialidade` (pedidos, não fichas) |
+| `totais.agendamentos` | linhas de `agendamento_solicitacao` |
+| `totais.pacientesAtendidos` | fichas (`solicitacao`) com ao menos um agendamento |
+| `totais.viagensTransporte` | `agendamento_transporte` com status diferente de `CANCELADO` |
+| `catalogo.unidades` / `especialidades` | cadastros com `ativo = true` |
+| `catalogo.nomesEspecialidades` | especialidades ativas **e não sensíveis** (`sensivel = false`), em ordem alfabética |
+| `sistema.versao` | `app.versao` (`application.properties`), atualizada à mão junto com o CHANGELOG |
+| `sistema.deployEm` | instante do build do backend (`build-info` do Maven); `null` fora de um build Maven |
+
+**Proteções — a rota é anônima:**
+
+- **Cache de 1 hora em memória** (`VitrinePublicaService.VALIDADE`). O visitante nunca dispara
+  consulta: o resumo é recalculado sob demanda, no máximo uma vez por hora. Não usa `@Scheduled`
+  (a thread única do agendador é do WhatsApp). Se o recálculo falhar, serve o resumo anterior e só
+  tenta o banco de novo depois de 1 minuto. Sem resumo anterior, responde 409 com mensagem
+  genérica (nunca o erro do banco) e também espera 1 minuto.
+- **Supressão.** Total de atendimento abaixo de `app.vitrine.limiar-supressao` (padrão 10) sai
+  como `null`, não como número.
+- **Sem quebra.** São totais acumulados do município inteiro, sem recorte por especialidade,
+  unidade ou período — é isso que impede uma contagem pequena de apontar para uma pessoa. Sem
+  período também não há "hoje"/"este mês", então o fuso da JVM não entra na conta.
+- **Nunca devem sair por aqui:** fila e tempo de espera, valor em reais, nome de paciente, de
+  profissional ou de usuário. `SegurancaEndpointsIT.resumoPublicoDaVitrineSoDevolveAListaFechada`
+  falha (na suíte de integração, `-Dtest='*Test,*IT'`) se o conjunto de chaves do JSON mudar, se
+  uma especialidade sensível aparecer ou se um total da consulta vier nulo.
+
+> Os números **não batem** com a seção "Transparência" da home (`/`), de propósito: lá "Pacientes
+> Cadastrados" é a contagem de fichas e "Especialidades" inclui as inativas.
+
+> O nginx limita esta rota a 30 requisições por minuto por IP (burst 10, `429` acima). A landing
+> de São Felipe lê o backend local direto, sem passar por esse limite (ver `INFRA.md`).
+
+Nenhuma migration.
+
 ---
 
 ### 7.8 Módulo Federado
@@ -1752,6 +1907,20 @@ o mês corrente da série com `CustoPainelService`. Nenhuma migration. Regra nov
 | `/exportar/verificar-dados`, `/exportar/verificar-dados-aguardando` | Diz se há dados antes de baixar a planilha |
 | `/indicadores` | Indicadores por período |
 | `/fechamento-indicadores` | Fechamento diário de indicadores |
+
+> **Escopo por unidade em `/exportar/**` e `/relatorio/producao/**`.** Todos aceitam o
+> parâmetro opcional `unidadeId` e resolvem a unidade no servidor com
+> `UnidadeAcessoService.resolverUnidadeAlvo` (§10.0): ADMIN e GESTOR veem todas as unidades,
+> ou só a pedida; quem tem unidade de lotação recebe só a própria (a unidade **solicitante**,
+> `solicitacao.unidade_id`), sem as solicitações sem unidade, e 403 ao pedir outra;
+> ADMIN_UNIDADE sem lotação recebe 403. A lista e a verificação de "há dados" usam o mesmo
+> filtro.
+>
+> **Resíduo conhecido:** os demais perfis **sem** unidade de lotação (USER, PACIENTE,
+> RECEPCAO, MEDICO, ENFERMEIRO, COORD_TRANSPORTE) continuam recebendo todas as unidades, e
+> essas rotas não têm regra de role. É o comportamento histórico de `contextoDe`, mantido
+> para não zerar `/relatorio/hospital` de contas sem lotação. Difere da fila de espera e do
+> dashboard, que usam `escopoDeListagem` e negam acesso a quem não tem lotação.
 
 ---
 
@@ -1826,20 +1995,6 @@ tela, basta editar a lista `roles` do item correspondente nesse arquivo — não
 tocar em nenhum `.svelte`.
 
 **Estrutura do `menuConfig.js`:**
-> **Escopo por unidade em `/exportar/**` e `/relatorio/producao/**`.** Todos aceitam o
-> parâmetro opcional `unidadeId` e resolvem a unidade no servidor com
-> `UnidadeAcessoService.resolverUnidadeAlvo` (§10.0): ADMIN e GESTOR veem todas as unidades,
-> ou só a pedida; quem tem unidade de lotação recebe só a própria (a unidade **solicitante**,
-> `solicitacao.unidade_id`), sem as solicitações sem unidade, e 403 ao pedir outra;
-> ADMIN_UNIDADE sem lotação recebe 403. A lista e a verificação de "há dados" usam o mesmo
-> filtro.
->
-> **Resíduo conhecido:** os demais perfis **sem** unidade de lotação (USER, PACIENTE,
-> RECEPCAO, MEDICO, ENFERMEIRO, COORD_TRANSPORTE) continuam recebendo todas as unidades, e
-> essas rotas não têm regra de role. É o comportamento histórico de `contextoDe`, mantido
-> para não zerar `/relatorio/hospital` de contas sem lotação. Difere da fila de espera e do
-> dashboard, que usam `escopoDeListagem` e negam acesso a quem não tem lotação.
-
 
 ```js
 export const MENU_SECTIONS = [
@@ -1973,6 +2128,49 @@ O frontend suporta geração de documentos sem servidor:
 
 ---
 
+### 8.8 Landing pública (`sirg-landing/`)
+
+App SvelteKit **separado** do `regulacao-frontend`: `package.json`, build e processo próprios,
+nenhum import entre os dois. Não tem login, token, cookie nem `api.js` — é a vitrine institucional
+e o portfólio do sistema. A home `/` do `regulacao-frontend` e o fluxo de login não mudaram.
+
+**Como os números chegam à página**
+
+1. `src/lib/server/instancias.js` lista as instâncias do SIRG a partir de variáveis de ambiente
+   **privadas** (`SIRG_*_API`, `SIRG_*_ACESSO`, `SIRG_*_MUNICIPIO`).
+2. `src/lib/server/indicadores.js` chama `GET /api/transparencia/resumo` (§7.10k) de cada uma,
+   **no servidor da landing**. O navegador nunca fala com a API: CORS não foi tocado e nenhuma URL
+   de API vai para o bundle.
+3. `+page.server.js` devolve só `nome`, `uf`, `urlAcesso` e o resumo já filtrado.
+
+**Regras de `indicadores.js`** (cobertas por `indicadores.test.mjs`):
+
+- Timeout de 3 s. Qualquer falha — rede, status diferente de 200, JSON inválido, `municipio`
+  diferente do esperado — vira `{ disponivel: false }`, sem erro na página. Isso cobre também a
+  instância no ar em versão anterior ao endpoint.
+- **Lista fechada de campos:** o JSON da instância é copiado campo a campo, com checagem de tipo.
+  Um campo novo no backend não chega à página sem mudar este arquivo.
+- Cache em memória por instância: 10 min para sucesso, 1 min para falha (o cartão de uma
+  instância que voltou reaparece sozinho). Sucesso vencido há menos de 1 h é servido enquanto
+  atualiza em segundo plano; falha vencida nunca é servida (o visitante espera a leitura nova).
+  Visitas simultâneas compartilham uma leitura.
+
+**Animações (`src/lib/animacoes/narrativa.js`)** — GSAP + ScrollTrigger, importado só no
+navegador. O HTML e o CSS já mostram tudo no estado final; o GSAP só anima a partir de um estado
+inicial, dentro de `gsap.matchMedia` com `prefers-reduced-motion: no-preference`. Sem JavaScript
+ou com movimento reduzido nada fica escondido. Não defina `opacity: 0` em CSS para conteúdo — a
+única exceção é a entrada da abertura (`.entra` em `app.css`), que é animação CSS, roda sem
+JavaScript, só com movimento habilitado, e sempre termina visível.
+
+**SEO** — `Seo.svelte` (meta, Open Graph, JSON-LD), `robots.txt` e `sitemap.xml`. Enquanto
+`PUBLIC_INDEXAVEL` não for `true`, a página sai com `noindex` e o `robots.txt` com `Disallow: /`.
+Só ligue depois de revisar `src/lib/conteudo/historico.js`, que está em rascunho.
+
+**Publicação** — ainda não feita. Faltam o `Dockerfile`, o serviço no `docker-compose.prod.yaml`,
+o `server` do nginx e o limite de requisições do endpoint.
+
+---
+
 ## 9. Segurança
 
 ### 9.1 Autenticação JWT
@@ -2002,7 +2200,7 @@ O frontend suporta geração de documentos sem servidor:
 **Rotas públicas (sem autenticação):**
 - `/api/auth/**`
 - `/actuator/**`
-- `/api/transparencia/**`
+- `/api/transparencia/**` — inclui `GET /api/transparencia/resumo`, lido pela landing (§7.10k)
 - `/api/solicitacoes/public/**`
 - `/swagger-ui/**`, `/v3/api-docs/**`
 - `/api/registry/**`
@@ -2193,6 +2391,7 @@ A comunicação entre municípios usa **RabbitMQ** como broker. Cada instância 
 - Publicação de solicitação → `PactoEventoEnviadaViewDTO` (com FHIR payload)
 - Claim de solicitação → `PactoEventoClaimAceiteMensagemDTO`
 - Agendamento externo → `AgendamentoExternoMensagemDTO`
+- Agendamento remarcado (migração de data de cota) → `AgendamentoRemarcadoMensagemDTO`, routing key `agendamento-remarcado.{MUNICÍPIO}` (binding `agendamento-remarcado.{MUNICÍPIO}.#`), enviada **depois do commit** (`FederacaoRemarcacaoListener`) só quando a solicitação tem município de origem diferente do local — sem o fallback `BROADCAST` do agendamento externo. O município de origem cria a notificação `AGENDAMENTO_REMARCADO`
 
 ### 10.6 Interoperabilidade FHIR
 
@@ -2390,6 +2589,22 @@ npm run dev
 O frontend estará disponível em `http://localhost:5173`.
 
 O proxy Vite (`vite.config.js`) redireciona automaticamente `/api/**` para `http://localhost:8080/api/**`.
+
+### 12.4b Executando a Landing (`sirg-landing/`)
+
+```bash
+cd sirg-landing
+
+npm install
+cp .env.example .env     # ajuste as URLs das instâncias
+npm run dev              # http://localhost:5174
+npm test                 # leitura de indicadores (não precisa de backend)
+npm run lint
+```
+
+Para ler um backend local, use `SIRG_SAOFELIPE_API=http://localhost:8080` e
+`SIRG_SAOFELIPE_MUNICIPIO` igual ao `app.municipio.nome-identificador` desse backend. Instância
+que não responde aparece como "temporariamente indisponível" — é o comportamento esperado.
 
 ### 12.5 Usuário Inicial
 

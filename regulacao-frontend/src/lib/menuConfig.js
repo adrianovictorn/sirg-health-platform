@@ -8,6 +8,12 @@
 // `href` é o destino padrão do link. Quando o mesmo item aponta para páginas diferentes
 // dependendo da role (ex.: "Dashboard"), use `hrefByRole` para os casos especiais — o
 // restante das roles cai no `href` padrão.
+//
+// Subgrupos (terceiro nível): um grupo longo que mistura dois assuntos pode declarar
+// `subgroups: [{ key, label }]` e marcar cada link com `sub: <key>`. A lista `items`
+// continua PLANA — a filtragem por role (`buildMenuForRole`) não muda —, e quem monta
+// o nível extra para exibição é `organizarItensDoGrupo`. Subgrupo não declara roles:
+// aparece se o usuário enxerga itens dele, como já acontece com grupo e seção.
 
 const ICONS = {
   dashboard: [
@@ -38,8 +44,26 @@ const ICONS = {
   admin: [
     "M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z",
   ],
-  filas: ["M4 6h16M4 10h16M4 14h16M4 18h16"],
-  transporte: ["M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"],
+  // Os quatro abaixo substituem ícones repetidos ou pouco representativos (o
+  // gráfico de barras servia a três itens, a engrenagem a dois grupos, e
+  // "transporte" era um par de setas). Mesma família dos demais: Heroicons v1 outline.
+  cotas: [
+    "M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z",
+    "M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z",
+  ],
+  profissional: [
+    "M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z",
+  ],
+  unidades: [
+    "M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4",
+  ],
+  filas: [
+    "M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z",
+  ],
+  transporte: [
+    "M9 17a2 2 0 11-4 0 2 2 0 014 0zM19 17a2 2 0 11-4 0 2 2 0 014 0z",
+    "M13 16V6a1 1 0 00-1-1H4a1 1 0 00-1 1v10a1 1 0 001 1h1m8-1a1 1 0 01-1 1H9m4-1V8a1 1 0 011-1h2.586a1 1 0 01.707.293l3.414 3.414a1 1 0 01.293.707V16a1 1 0 01-1 1h-1m-6-1a1 1 0 001 1h1M5 17a2 2 0 104 0m-4 0a2 2 0 114 0m6 0a2 2 0 104 0m-4 0a2 2 0 114 0",
+  ],
 };
 
 /**
@@ -80,7 +104,7 @@ export function hrefDashboardPorRole(role) {
 const CLINICOS = ["ADMIN", "RECEPCAO", "ENFERMEIRO", "MEDICO"];
 
 // ADMIN_UNIDADE: administrador restrito à própria unidade de lotação (postos de saúde).
-// Vê o operacional da sua unidade, mas NÃO vê Painel Admin, Indicadores,
+// Vê o operacional da sua unidade, mas NÃO vê Administração, Indicadores,
 // Solicitações por Profissional nem qualquer tela de alcance global.
 // O backend aplica a mesma restrição (UnidadeAcessoService), então ocultar aqui é
 // conveniência de navegação, não a barreira de segurança.
@@ -109,32 +133,22 @@ export const MENU_SECTIONS = [
         ],
       },
       {
-        type: "link",
-        label: "Indicadores",
-        icon: ICONS.chart,
-        href: "/indicadores",
-        roles: ["ADMIN", "GESTOR"],
-      },
-      {
-        type: "link",
-        label: "Cotas da Unidade",
-        icon: ICONS.chart,
-        href: "/unidade/cotas",
-        roles: ["ADMIN_UNIDADE"],
-      },
-      {
-        type: "link",
-        label: "Agendamento",
-        icon: ICONS.calendar,
-        href: "/agendar",
-        roles: CLINICOS_E_UNIDADE,
-      },
-      {
-        type: "link",
-        label: "Agenda do Dia",
-        icon: ICONS.agendaDia,
-        href: "/dashboard/procedimentos/data",
-        roles: CLINICOS_E_UNIDADE,
+        type: "group",
+        key: "solicitacao",
+        label: "Nova Solicitação",
+        icon: ICONS.solicitacao,
+        items: [
+          {
+            label: "Consulta",
+            href: "/cadastrar",
+            roles: CLINICOS_E_UNIDADE,
+          },
+          {
+            label: "Exame / Procedimento",
+            href: "/exames",
+            roles: CLINICOS_E_UNIDADE,
+          },
+        ],
       },
       {
         type: "group",
@@ -158,52 +172,29 @@ export const MENU_SECTIONS = [
       },
       {
         type: "link",
-        label: "Relatórios",
-        icon: ICONS.relatorio,
-        href: "/relatorio",
-        roles: ["ADMIN", "ADMIN_UNIDADE", "GESTOR"],
+        label: "Agendamento",
+        icon: ICONS.calendar,
+        href: "/agendar",
+        roles: CLINICOS_E_UNIDADE,
       },
       {
         type: "link",
-        label: "Relatório",
-        icon: ICONS.relatorio,
-        href: "/relatorio/hospital",
-        roles: ["USER", "PACIENTE"],
+        label: "Agenda do Dia",
+        icon: ICONS.agendaDia,
+        href: "/dashboard/procedimentos/data",
+        roles: CLINICOS_E_UNIDADE,
       },
       {
         type: "link",
-        label: "Solicitações por Profissional",
-        icon: ICONS.chart,
-        href: "/relatorio/profissional",
-        roles: ["ADMIN", "GESTOR"],
+        label: "Cotas da Unidade",
+        icon: ICONS.cotas,
+        href: "/unidade/cotas",
+        roles: ["ADMIN_UNIDADE"],
       },
     ],
   },
   {
-    label: "Solicitação",
-    items: [
-      {
-        type: "group",
-        key: "solicitacao",
-        label: "Solicitação",
-        icon: ICONS.solicitacao,
-        items: [
-          {
-            label: "Cadastro de Consulta",
-            href: "/cadastrar",
-            roles: CLINICOS_E_UNIDADE,
-          },
-          {
-            label: "Exame / Procedimento",
-            href: "/exames",
-            roles: CLINICOS_E_UNIDADE,
-          },
-        ],
-      },
-    ],
-  },
-  {
-    label: "Agendas",
+    label: "Hospital",
     items: [
       {
         type: "group",
@@ -265,61 +256,35 @@ export const MENU_SECTIONS = [
   //   ]
   // },
   {
-    label: "Gerenciamento de Unidades",
+    label: "Relatórios e Indicadores",
     items: [
       {
-        type: "group",
-        key: "gerenciamento-unidades",
-        label: "Gerenciamento de Unidades",
-        icon: ICONS.gestao,
-        items: [
-          {
-            label: "Cotas por Unidade",
-            href: "/admin/cotas",
-            roles: ["ADMIN"],
-          },
-          { label: "Unidades", href: "/admin/unidades", roles: ["ADMIN"] },
-          {
-            label: "Local de Agendamento",
-            href: "/cadastrar/cidade/local-agendamento",
-            roles: ["ADMIN"],
-          },
-          {
-            label: "Cadastrar Cidade",
-            href: "/cadastrar/cidade",
-            roles: ["ADMIN"],
-          },
-          {
-            label: "Profissionais",
-            href: "/admin/profissionais",
-            roles: ["ADMIN"],
-          },
-          // Custos: so ADMIN e GESTOR veem valores (o backend barra os demais em
-          // /api/custos/**). GESTOR acompanha; so ADMIN altera preco, importa
-          // planilha e libera teto — por isso "Importar Preços" e so dele.
-          // Para o GESTOR este grupo aparece so com os tres links de custo: ele
-          // nao tem acesso a nenhuma tela de gerenciamento de unidades acima.
-          {
-            label: "Painel de Custos",
-            href: "/custos",
-            roles: ["ADMIN", "GESTOR"],
-          },
-          {
-            label: "Tetos Financeiros",
-            href: "/custos/tetos",
-            roles: ["ADMIN", "GESTOR"],
-          },
-          {
-            label: "Preços das Especialidades",
-            href: "/custos/especialidades",
-            roles: ["ADMIN", "GESTOR"],
-          },
-          {
-            label: "Importar Preços",
-            href: "/admin/custos/importar",
-            roles: ["ADMIN"],
-          },
-        ],
+        type: "link",
+        label: "Indicadores",
+        icon: ICONS.chart,
+        href: "/indicadores",
+        roles: ["ADMIN", "GESTOR"],
+      },
+      {
+        type: "link",
+        label: "Relatórios",
+        icon: ICONS.relatorio,
+        href: "/relatorio",
+        roles: ["ADMIN", "ADMIN_UNIDADE", "GESTOR"],
+      },
+      {
+        type: "link",
+        label: "Relatórios",
+        icon: ICONS.relatorio,
+        href: "/relatorio/hospital",
+        roles: ["USER", "PACIENTE"],
+      },
+      {
+        type: "link",
+        label: "Solicitações por Profissional",
+        icon: ICONS.profissional,
+        href: "/relatorio/profissional",
+        roles: ["ADMIN", "GESTOR"],
       },
     ],
   },
@@ -328,8 +293,81 @@ export const MENU_SECTIONS = [
     items: [
       {
         type: "group",
+        key: "gerenciamento-unidades",
+        label: "Unidades e Custos",
+        icon: ICONS.unidades,
+        subgroups: [
+          { key: "unidades", label: "Unidades" },
+          { key: "custos", label: "Custos" },
+        ],
+        items: [
+          {
+            label: "Cotas por Unidade",
+            href: "/admin/cotas",
+            roles: ["ADMIN"],
+            sub: "unidades",
+          },
+          {
+            // Mesmo nome do título da tela; "Unidades" repetiria o rótulo do subgrupo.
+            label: "Gestão de Unidades",
+            href: "/admin/unidades",
+            roles: ["ADMIN"],
+            sub: "unidades",
+          },
+          {
+            label: "Locais de Agendamento",
+            href: "/cadastrar/cidade/local-agendamento",
+            roles: ["ADMIN"],
+            sub: "unidades",
+          },
+          {
+            label: "Cadastrar Cidade",
+            href: "/cadastrar/cidade",
+            roles: ["ADMIN"],
+            sub: "unidades",
+          },
+          {
+            label: "Profissionais",
+            href: "/admin/profissionais",
+            roles: ["ADMIN"],
+            sub: "unidades",
+          },
+          // Custos: so ADMIN e GESTOR veem valores (o backend barra os demais em
+          // /api/custos/**). GESTOR acompanha; so ADMIN altera preco, importa
+          // planilha e libera teto — por isso "Importar Preços" e so dele.
+          // Para o GESTOR este grupo aparece so com os tres links de custo: ele
+          // nao tem acesso a nenhuma tela de gerenciamento de unidades acima. Como
+          // sobra um subgrupo so, os tres links aparecem direto no grupo.
+          {
+            label: "Painel de Custos",
+            href: "/custos",
+            roles: ["ADMIN", "GESTOR"],
+            sub: "custos",
+          },
+          {
+            label: "Tetos Financeiros",
+            href: "/custos/tetos",
+            roles: ["ADMIN", "GESTOR"],
+            sub: "custos",
+          },
+          {
+            label: "Preços das Especialidades",
+            href: "/custos/especialidades",
+            roles: ["ADMIN", "GESTOR"],
+            sub: "custos",
+          },
+          {
+            label: "Importar Preços",
+            href: "/admin/custos/importar",
+            roles: ["ADMIN"],
+            sub: "custos",
+          },
+        ],
+      },
+      {
+        type: "group",
         key: "gestao",
-        label: "Painel Gerencial",
+        label: "Cadastros",
         icon: ICONS.gestao,
         items: [
           {
@@ -343,12 +381,12 @@ export const MENU_SECTIONS = [
             roles: CLINICOS_E_UNIDADE,
           },
           {
-            label: "Especialidade",
+            label: "Especialidades",
             href: "/cadastrar/especialidade",
             roles: ["ADMIN"],
           },
           {
-            label: "Grupo Relatório",
+            label: "Grupos de Relatório",
             href: "/cadastrar/grupo-relatorio",
             roles: ["ADMIN"],
           },
@@ -382,7 +420,7 @@ export const MENU_SECTIONS = [
       {
         type: "group",
         key: "admin",
-        label: "Painel Admin",
+        label: "Administração",
         icon: ICONS.admin,
         items: [
           {
@@ -410,17 +448,13 @@ export const MENU_SECTIONS = [
         ],
       },
       {
-        type: "group",
-        key: "filas",
+        // Era um grupo com um único item ("Solicitações Compartilhadas"): um
+        // clique a mais para chegar à mesma tela. Link direto, mesmo href e roles.
+        type: "link",
         label: "Filas Compartilhadas",
         icon: ICONS.filas,
-        items: [
-          {
-            label: "Solicitações Compartilhadas",
-            href: "/filas/compartilhadas",
-            roles: ["ADMIN"],
-          },
-        ],
+        href: "/filas/compartilhadas",
+        roles: ["ADMIN"],
       },
     ],
   },
@@ -479,6 +513,69 @@ export function buildMenuForRole(role, dinamicos = {}) {
     if (items.length === 0) return null;
     return { ...section, items };
   }).filter(Boolean);
+}
+
+/**
+ * Diz se a role enxerga a rota `href` no menu. Serve para uma tela decidir se
+ * mostra um atalho para outra sem repetir a regra de roles: a fonte continua
+ * sendo `MENU_SECTIONS`. Não é controle de acesso — quem autoriza é o backend.
+ */
+export function roleVeRota(role, href) {
+  return buildMenuForRole(role).some((section) =>
+    section.items.some((item) =>
+      item.type === "group"
+        ? item.items.some((link) => link.href === href)
+        : item.href === href,
+    ),
+  );
+}
+
+/**
+ * Organiza os itens JÁ FILTRADOS de um grupo para exibição, montando o terceiro
+ * nível a partir de `group.subgroups` e do `sub` de cada link. Só apresentação:
+ * não decide acesso (isso é de `buildMenuForRole`) e devolve cada link recebido
+ * exatamente uma vez, na ordem original.
+ *
+ * Devolve uma lista em que cada entrada é um link solto ou
+ * `{ type: "subgroup", key, label, items }`. `key` é única no menu inteiro
+ * (`<grupo>/<subgrupo>`), para servir de estado aberto/fechado.
+ *
+ * Não cria nível à toa: subgrupo com um link só vira link solto, e se o grupo
+ * inteiro couber num único subgrupo os links ficam direto no grupo (caso do
+ * GESTOR em "Unidades e Custos", que só enxerga os custos).
+ */
+export function organizarItensDoGrupo(group) {
+  const rotulos = new Map((group.subgroups ?? []).map((s) => [s.key, s.label]));
+  if (rotulos.size === 0) return group.items;
+
+  const entradas = [];
+  const porChave = new Map();
+  for (const link of group.items) {
+    if (!rotulos.has(link.sub)) {
+      entradas.push(link);
+      continue;
+    }
+    let subgrupo = porChave.get(link.sub);
+    if (!subgrupo) {
+      subgrupo = {
+        type: "subgroup",
+        key: `${group.key}/${link.sub}`,
+        label: rotulos.get(link.sub),
+        items: [],
+      };
+      porChave.set(link.sub, subgrupo);
+      entradas.push(subgrupo);
+    }
+    subgrupo.items.push(link);
+  }
+
+  const semSubgrupoDeUm = entradas.flatMap((e) =>
+    e.type === "subgroup" && e.items.length === 1 ? e.items : [e],
+  );
+  if (semSubgrupoDeUm.length === 1 && semSubgrupoDeUm[0].type === "subgroup") {
+    return semSubgrupoDeUm[0].items;
+  }
+  return semSubgrupoDeUm;
 }
 
 /** Monta o href da agenda de um grupo. O backend casa por `grupo_relatorio.codigo`. */

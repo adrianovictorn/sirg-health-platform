@@ -2,9 +2,11 @@ package io.github.regulacao_marcarcao.regulacao_marcacao.repository;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.List;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -29,5 +31,15 @@ public interface AgendamentoSolicitacaoRepository extends JpaRepository<Agendame
                 + "WHERE se.agendamentoSolicitacao = a AND se.status = :status)")
         List<AgendamentoSolicitacao> findComItemNoStatusPorData(@Param("data") LocalDate data,
                                                                 @Param("status") StatusDaMarcacao status);
+
+        /**
+         * Remarca os agendamentos para a data nova (migracao de cota). A data de
+         * antes so e guardada na primeira migracao (COALESCE), para nao perder a
+         * origem em migracoes sucessivas.
+         */
+        @Modifying(clearAutomatically = true, flushAutomatically = true)
+        @Query("UPDATE AgendamentoSolicitacao a SET a.dataAgendadaOriginal = COALESCE(a.dataAgendadaOriginal, a.dataAgendada), "
+                + "a.dataAgendada = :nova WHERE a.id IN :ids")
+        int remarcarEmLote(@Param("ids") Collection<Long> ids, @Param("nova") LocalDate nova);
 
 }

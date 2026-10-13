@@ -115,7 +115,7 @@ public class ExcelService {
         centerStyle.cloneStyleFrom(dataStyle);
         centerStyle.setAlignment(HorizontalAlignment.CENTER);
 
-        String[] headers = {"NOME", "CPF", "CNS", "NASCIMENTO", "USF/Unidade Origem", "ESPECIALIDADE/EXAME", "DATA MALOTE", "PRIORIDADE"};
+        String[] headers = {"NOME", "CPF", "CNS", "NASCIMENTO", "USF/Unidade Origem", "ESPECIALIDADE/EXAME", "RECEBIMENTO DO PEDIDO", "PRIORIDADE"};
         int numberOfColumns = headers.length;
 
         // --- CABEÇALHO COM BRASÃO CENTRALIZADO ---
@@ -199,7 +199,7 @@ public class ExcelService {
         sheet.setColumnWidth(3, 15 * 256);
         sheet.setColumnWidth(4, 15 * 256);
         sheet.setColumnWidth(5, 45 * 256);
-        sheet.setColumnWidth(6, 15 * 256);
+        sheet.setColumnWidth(6, 24 * 256);
         sheet.setColumnWidth(7, 15 * 256);
 
         Footer footer = sheet.getFooter();
@@ -454,7 +454,7 @@ public class ExcelService {
         urgentStyle.cloneStyleFrom(centerStyle);
         urgentStyle.setFont(urgentFont);
 
-        String[] headers = {"NOME", "CPF", "CNS", "NASCIMENTO", "USF", "ESPECIALIDADE/EXAME", "DATA MALOTE", "PRIORIDADE"};
+        String[] headers = {"NOME", "CPF", "CNS", "NASCIMENTO", "USF", "ESPECIALIDADE/EXAME", "RECEBIMENTO DO PEDIDO", "PRIORIDADE"};
         int numberOfColumns = headers.length;
 
         // --- BRASÃO ---
@@ -532,7 +532,7 @@ public class ExcelService {
         sheet.setColumnWidth(3, 15 * 256);
         sheet.setColumnWidth(4, 15 * 256);
         sheet.setColumnWidth(5, 45 * 256);
-        sheet.setColumnWidth(6, 15 * 256);
+        sheet.setColumnWidth(6, 24 * 256);
         sheet.setColumnWidth(7, 15 * 256);
 
         Footer footer = sheet.getFooter();

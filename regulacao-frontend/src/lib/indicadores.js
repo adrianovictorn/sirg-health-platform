@@ -16,7 +16,7 @@ export function percentual(parte, total) {
 
 /** Texto do percentual, com "—" quando não há o que medir. */
 export function textoPercentual(valor) {
-  return valor === null || valor === undefined ? '—' : `${valor}%`;
+  return valor === null || valor === undefined ? "—" : `${valor}%`;
 }
 
 /**
@@ -36,52 +36,70 @@ export function situacaoDoTeto(teto) {
   const total = Number(teto?.valorTotal);
   const utilizado = Number(teto?.valorUtilizado);
   // Teto zerado com débito: nada foi liberado e ainda assim houve gasto.
-  if (!Number.isFinite(total) || total <= 0) return utilizado > 0 ? 'ACIMA' : 'NORMAL';
-  if (utilizado > total) return 'ACIMA';
-  if (utilizado === total) return 'ESGOTADO';
-  return utilizado / total >= 0.8 ? 'ATENCAO' : 'NORMAL';
+  if (!Number.isFinite(total) || total <= 0)
+    return utilizado > 0 ? "ACIMA" : "NORMAL";
+  if (utilizado > total) return "ACIMA";
+  if (utilizado === total) return "ESGOTADO";
+  return utilizado / total >= 0.8 ? "ATENCAO" : "NORMAL";
 }
 
-const MESES = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
+const MESES = [
+  "jan",
+  "fev",
+  "mar",
+  "abr",
+  "mai",
+  "jun",
+  "jul",
+  "ago",
+  "set",
+  "out",
+  "nov",
+  "dez",
+];
 
 /** "2026-10" → "out/26". Devolve o próprio texto se não estiver no formato. */
 export function rotuloMes(mes) {
-  const partes = /^(\d{4})-(\d{2})$/.exec(mes ?? '');
-  if (!partes) return mes ?? '';
+  const partes = /^(\d{4})-(\d{2})$/.exec(mes ?? "");
+  if (!partes) return mes ?? "";
   const nome = MESES[Number(partes[2]) - 1];
   return nome ? `${nome}/${partes[1].slice(2)}` : mes;
 }
 
 const MOTIVOS = {
-  SEM_TELEFONE: 'Paciente sem telefone no cadastro',
-  TELEFONE_INVALIDO: 'Telefone inválido ou sem DDD',
-  OPT_OUT: 'Paciente pediu para não receber mensagens',
-  ENVIO_DESLIGADO: 'Envio desligado pelo administrador',
-  NAO_CONFIGURADO: 'WhatsApp não configurado',
-  LIMITE_DIARIO: 'Limite diário de mensagens atingido',
-  FORA_DA_LISTA_DE_TESTE: 'Fora da lista de números de teste',
-  AGENDAMENTO_REMOVIDO: 'Agendamento removido antes do envio',
-  SUBSTITUIDO_POR_REMARCACAO: 'Substituída por mensagem de remarcação',
-  PACIENTE_DE_OUTRO_MUNICIPIO: 'Paciente de outro município',
-  DATA_PASSADA: 'Data do atendimento já passou',
-  SEM_MOTIVO: 'Motivo não registrado'
+  SEM_TELEFONE: "Paciente sem telefone no cadastro",
+  TELEFONE_INVALIDO: "Telefone inválido ou sem DDD",
+  OPT_OUT: "Paciente pediu para não receber mensagens",
+  ENVIO_DESLIGADO: "Envio desligado pelo administrador",
+  NAO_CONFIGURADO: "WhatsApp não configurado",
+  LIMITE_DIARIO: "Limite diário de mensagens atingido",
+  FORA_DA_LISTA_DE_TESTE: "Fora da lista de números de teste",
+  AGENDAMENTO_REMOVIDO: "Agendamento removido antes do envio",
+  SUBSTITUIDO_POR_REMARCACAO: "Substituída por mensagem de remarcação",
+  PACIENTE_DE_OUTRO_MUNICIPIO: "Paciente de outro município",
+  DATA_PASSADA: "Data do atendimento já passou",
+  SEM_MOTIVO: "Motivo não registrado",
 };
 
 /** Motivo de não envio em texto. Código desconhecido aparece como veio, para não esconder nada. */
 export function rotuloMotivo(codigo) {
-  return MOTIVOS[codigo] ?? codigo ?? '';
+  return MOTIVOS[codigo] ?? codigo ?? "";
 }
 
-const PRIORIDADES = { EMERGENCIA: 'Emergência', URGENTE: 'Urgente', NORMAL: 'Normal' };
+const PRIORIDADES = {
+  EMERGENCIA: "Emergência",
+  URGENTE: "Urgente",
+  NORMAL: "Normal",
+};
 
 export function rotuloPrioridade(codigo) {
-  if (!codigo) return 'Sem prioridade';
+  if (!codigo) return "Sem prioridade";
   return PRIORIDADES[codigo] ?? codigo;
 }
 
 /** Dias com uma casa ("5,5 dias"), ou "—" quando não há medida. */
 export function textoDias(valor) {
-  if (valor === null || valor === undefined) return '—';
+  if (valor === null || valor === undefined) return "—";
   const arredondado = Math.round(Number(valor) * 10) / 10;
-  return `${arredondado.toLocaleString('pt-BR')} ${arredondado === 1 ? 'dia' : 'dias'}`;
+  return `${arredondado.toLocaleString("pt-BR")} ${arredondado === 1 ? "dia" : "dias"}`;
 }

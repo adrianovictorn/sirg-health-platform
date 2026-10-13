@@ -4,6 +4,57 @@
 
 ### Novidades
 
+- **Migração dos agendamentos ao mudar a data de uma cota (`/admin/cotas`).** Ao editar a data de
+  uma cota "por data" que já tem agendamentos, a tela pergunta se deve migrá-los. **Sim:** os
+  agendamentos passam para a nova data (remarcação real — `data_agendada` muda) e a cota vai junto,
+  tudo ou nada. **Não:** nada é salvo. O diálogo mostra a quantidade por status e avisa de união
+  de cotas, de divergência de contagem, de WhatsApp e de transporte não ajustado.
+
+  **O que muda e o que não muda.** Só cota de tipo Data e origem manual migra; cota de agenda
+  segue somente leitura e cota mensal ou troca de tipo com agendamentos agora recebem 409 em
+  `PUT /api/cotas/{id}` (antes a data mudava e os pacientes ficavam na data antiga). Se já existe
+  cota igual na data nova, as duas são unificadas (somam-se total e utilizado). Cota mensal ou de
+  grupo esgotada na data nova, ou capacidade da especialidade excedida, abortam a migração inteira
+  com 409. O teto financeiro **não é redebitado** e o transporte sanitário **não é ajustado**.
+
+  **Efeitos.** O paciente com atendimento futuro recebe uma mensagem de `REMARCACAO` pelo WhatsApp
+  (as mensagens pendentes da data antiga são descartadas); o município de origem de paciente de
+  fora recebe o evento novo `agendamento-remarcado.{MUNICIPIO}`; o snapshot de indicadores das
+  duas datas é recalculado. Cada operação fica em `cota_migracao_data`, e a data original do
+  agendamento em `agendamento_solicitacao.data_agendada_original`.
+
+  **Novos:** `GET /api/cotas/{id}/migracao-data/previa` e `POST /api/cotas/{id}/migrar-data`
+  (ADMIN); migration **V108**; binding novo no RabbitMQ (**deploy nas duas VPS**); optimistic
+  lock da cota passa a responder 409 com mensagem em vez de 500.
+
+- **Landing publica do SIRG (app novo `sirg-landing/`) e resumo publico do municipio
+  (`GET /api/transparencia/resumo`).** Pagina de apresentacao do sistema — vitrine para outros
+  municipios e portfolio — em um app SvelteKit **separado** do `regulacao-frontend`, sem login e
+  sem codigo compartilhado. Mostra o historico, os modulos, a arquitetura e, por municipio, numeros
+  lidos das instancias em producao, com botao de acesso a cada uma. A home `/` e o login do sistema
+  nao mudaram. **Publicacao:** `sirg-landing/Dockerfile`, servico `landing` no compose (profile
+  `landing`, so na VPS de Sao Felipe) e blocos opcionais no nginx (`LANDING_DOMAIN`), com limite de
+  30 req/min por IP em `/api/transparencia/resumo`. Sem `LANDING_DOMAIN` nada muda; a landing
+  nunca impede o nginx de subir. O deploy confere nginx e landing ao final. Ordem de virada de
+  DNS e certificado em `INFRA.md`.
+
+  **O endpoint.** Devolve so totais acumulados do municipio (pedidos, agendamentos, fichas com
+  agendamento, viagens de transporte), o numero de unidades e de especialidades ativas, os nomes
+  das especialidades ativas **nao sensiveis**, a versao e a data do build. Fica sob
+  `/api/transparencia/**`, que ja era publico: nenhuma rota nova foi aberta no
+  `SecurityConfiguration`. Resposta em cache de 1 hora na memoria (visitante anonimo nao dispara
+  consulta), total abaixo de `app.vitrine.limiar-supressao` (10) sai como `null`. Fila, tempo de
+  espera, valor em reais e qualquer nome de pessoa nunca saem por ele.
+
+  **A leitura.** Quem chama o endpoint e o servidor da landing, nao o navegador: CORS nao foi
+  tocado. Instancia que nao responde em 3 s aparece como "temporariamente indisponivel", sem
+  numeros e com o acesso desabilitado, e volta sozinha. A landing copia do JSON so uma lista
+  fechada de campos.
+
+  **Novos no backend:** `app.versao` (atualizar ao fechar versao) e a goal `build-info` no
+  `pom.xml`. **Indexacao desligada por padrao** (`PUBLIC_INDEXAVEL=false`): o historico em
+  `sirg-landing/src/lib/conteudo/historico.js` e um rascunho a revisar. Nenhuma migration.
+
 - **Indicadores de gestao (`/indicadores`).** A tela de indicadores foi reorganizada em secoes
   (Hoje, Agendamentos por grupo, Fila e espera, Profissionais solicitantes) e ganhou um bloco novo,
   **visivel so para ADMIN e GESTOR**, com filtro de periodo e de unidade. So numeros agregados,
@@ -188,6 +239,17 @@
 
 ### Seguranca
 
+- **Relatorios de producao e exportacao passaram a respeitar a unidade do usuario.**
+  `GET /api/exportar/**` e `GET /api/relatorio/producao/**` nao tinham filtro por unidade:
+  qualquer usuario autenticado recebia nome, CPF e CNS de todas as unidades. Agora a unidade
+  e resolvida no servidor por `UnidadeAcessoService.resolverUnidadeAlvo`: ADMIN e GESTOR
+  continuam vendo todas (e podem filtrar com o novo parametro opcional `unidadeId`); quem
+  tem unidade de lotacao recebe so a propria, sem as solicitacoes sem unidade, e 403 ao pedir
+  outra; ADMIN_UNIDADE sem lotacao recebe 403. Perfis sem lotacao mantem a visao global
+  (comportamento historico, usado pelo relatorio do hospital). O item "Relatorios" do menu
+  passou a aparecer para ADMIN_UNIDADE. Cobertura: `RelatorioEscopoUnidadeIT` e
+  `RelatorioEndpointsEscopoIT`.
+
 - **Listas nominais de pacientes deixaram de ser publicas.** `GET /api/solicitacoes/buscar/**`
   e `GET /api/agendamentos/pendentes/**` estavam como `permitAll` e devolviam nome, CPF e CNS
   sem login. Os matchers sairam do `SecurityConfiguration` e os endpoints ganharam
@@ -216,17 +278,6 @@
 
 - **Agendar varios itens da mesma ficha de uma vez falhava para a unidade com cota.** Ao marcar
   dois ou mais exames, procedimentos ou consultas no mesmo agendamento, a tela mostrava um erro
-- **Relatorios de producao e exportacao passaram a respeitar a unidade do usuario.**
-  `GET /api/exportar/**` e `GET /api/relatorio/producao/**` nao tinham filtro por unidade:
-  qualquer usuario autenticado recebia nome, CPF e CNS de todas as unidades. Agora a unidade
-  e resolvida no servidor por `UnidadeAcessoService.resolverUnidadeAlvo`: ADMIN e GESTOR
-  continuam vendo todas (e podem filtrar com o novo parametro opcional `unidadeId`); quem
-  tem unidade de lotacao recebe so a propria, sem as solicitacoes sem unidade, e 403 ao pedir
-  outra; ADMIN_UNIDADE sem lotacao recebe 403. Perfis sem lotacao mantem a visao global
-  (comportamento historico, usado pelo relatorio do hospital). O item "Relatorios" do menu
-  passou a aparecer para ADMIN_UNIDADE. Cobertura: `RelatorioEscopoUnidadeIT` e
-  `RelatorioEndpointsEscopoIT`.
-
   sem explicacao sempre que a ficha tinha outro item fora do lote. Era
   `LazyInitializationException`: o consumo da cota do 1o item limpa o contexto de persistencia e o
   2o item era procurado numa lista ja desanexada. ADMIN e GESTOR nao eram afetados, nem o

@@ -531,7 +531,7 @@
       loadingType = 'PDF_GERAL';
 
       const doc = new jsPDF();
-      const tableColumn = ["ID", "Paciente", "CPF", "USF", "Data Malote", "Especialidades Pendentes"];
+      const tableColumn = ["ID", "Paciente", "CPF", "USF", "Recebimento do pedido", "Especialidades Pendentes"];
       const tableRows: any[][] = [];
 
       allSolicitacoes.forEach(sol => {

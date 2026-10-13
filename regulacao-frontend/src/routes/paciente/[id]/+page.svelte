@@ -4,6 +4,7 @@
     import { goto } from '$app/navigation';
     import { getApi, postApi, putApi, deleteApi } from '$lib/api';
     import { listarEspecialidadesCatalogo } from '$lib/especialidadesApi.js';
+    import { sugestoesTeclado } from '$lib/sugestoesTeclado.js';
     import RoleBasedMenu from "$lib/RoleBasedMenu.svelte";
     import { listarPactos, publicarSolicitacao } from '$lib/pactosApi.js';
     import { gerarComprovantePDF } from '$lib/comprovantePdf';
@@ -60,6 +61,9 @@
     let solicitacao = $state<any>(null);
     let agendamentos = $state<any[]>([]);
     let especialidades = $state<any[]>([]); // Estado unificado para especialidades
+    // Emergência não é mais marcável; a opção só aparece nos itens que já a tinham ao
+    // carregar a tela, para o registro antigo continuar exibido corretamente.
+    let idsComEmergencia = $state<Set<number>>(new Set());
     let isLoading = $state(true);
     let error = $state<string | null>(null);
 
@@ -187,6 +191,7 @@
 
         solicitacao = await resSolicitacao.json();
         especialidades = solicitacao.especialidades || [];
+        idsComEmergencia = new Set(especialidades.filter((e: any) => e.prioridade === 'EMERGENCIA').map((e: any) => e.id));
         
         // Popula a lista de todos os CIDs para usar no dropdown
         if (resTodosOsCids.ok) {
@@ -457,11 +462,11 @@
     let camposIncompletos: string[] = $derived(
         solicitacao
             ? [
-                vazio(solicitacao.nomePai) ? 'Nome do Pai' : null,
-                vazio(solicitacao.nomeMae) ? 'Nome da Mãe' : null,
+                vazio(solicitacao.nomePai) ? 'Nome do pai' : null,
+                vazio(solicitacao.nomeMae) ? 'Nome da mãe' : null,
                 vazio(solicitacao.endereco) ? 'Endereço' : null,
-                vazio(solicitacao.cns) ? 'CNS' : null,
-                solicitacao.unidadeId == null ? 'Unidade de origem' : null
+                vazio(solicitacao.cns) ? 'Cartão do SUS (CNS)' : null,
+                solicitacao.unidadeId == null ? 'Unidade de saúde de origem' : null
               ].filter((c): c is string => c !== null)
             : []
     );
@@ -490,7 +495,7 @@
 <div class="flex h-screen bg-gray-100">
     <RoleBasedMenu activePage={somenteLeitura ? '/paciente/fila' : '/paciente'} />
 
-    <div class="grid grid-cols-1 md:flex md:flex-1 md:flex-col">
+    <div class="grid grid-cols-1 flex-1 min-w-0 md:flex md:flex-col">
         <header class="bg-emerald-700 text-white p-4 flex justify-between items-center shadow-md">
             {#if isLoading}
                 <h1 class="text-xl font-semibold">Carregando Dados do Paciente...</h1>
@@ -547,7 +552,7 @@
                     <fieldset disabled={somenteLeitura} class="border-0 p-0 m-0 min-w-0">
                     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 <div class="lg:col-span-2">
-                    <label class="block text-sm font-medium text-gray-700 mb-1">Nome</label>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Nome completo</label>
                     <input type="text" bind:value={nomePaciente} class="w-full border-gray-300 rounded-md shadow-sm focus:border-emerald-500 focus:ring-emerald-500" />
                 </div>
                 <div>
@@ -558,7 +563,7 @@
                     {/if}
                 </div>
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-1">Cartão do SUS</label>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Cartão do SUS (CNS)</label>
                     <input type="text" bind:value={cns} class="w-full border-gray-300 rounded-md shadow-sm focus:border-emerald-500 focus:ring-emerald-500" />
                 </div>
                 <div>
@@ -571,20 +576,20 @@
                     <p id="paciente-whatsapp-dica" class="ml-6 text-xs text-gray-600">Marque se o paciente pediu para não receber avisos. Vale ao salvar.</p>
                 </div>
 
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-1">Data de Nascimento</label>
+                <div class="self-end">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Data de nascimento</label>
                     <input type="date" bind:value={datanascimento} class="w-full border-gray-300 rounded-md shadow-sm focus:border-emerald-500 focus:ring-emerald-500" />
                 </div>
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-1">Data Recebimento</label>
+                <div class="self-end">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Data de recebimento do pedido</label>
                     <input type="date" bind:value={dataMalote} class="w-full border-gray-300 rounded-md shadow-sm focus:border-emerald-500 focus:ring-emerald-500" />
                 </div>
-                <div class="lg:col-span-2">
-                    <label class="block text-sm font-medium text-gray-700 mb-1">Nome do Pai</label>
+                <div class="self-end lg:col-span-2">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Nome do pai</label>
                     <input type="text" bind:value={nomePai} maxlength="150" class="w-full border-gray-300 rounded-md shadow-sm focus:border-emerald-500 focus:ring-emerald-500" />
                 </div>
                 <div class="lg:col-span-2">
-                    <label class="block text-sm font-medium text-gray-700 mb-1">Nome da Mãe</label>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Nome da mãe</label>
                     <input type="text" bind:value={nomeMae} maxlength="150" class="w-full border-gray-300 rounded-md shadow-sm focus:border-emerald-500 focus:ring-emerald-500" />
                 </div>
                 <div class="lg:col-span-4">
@@ -592,7 +597,7 @@
                     <input type="text" bind:value={endereco} maxlength="300" placeholder="Rua, número, bairro" class="w-full border-gray-300 rounded-md shadow-sm focus:border-emerald-500 focus:ring-emerald-500" />
                 </div>
                 <div class="lg:col-span-2">
-                    <label class="block text-sm font-medium text-gray-700 mb-1">Unidade de Saúde</label>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Unidade de saúde de origem</label>
                     <select bind:value={unidadeId} class="w-full border-gray-300 rounded-md shadow-sm focus:border-emerald-500 focus:ring-emerald-500">
                         <option value={null}>— Sem unidade —</option>
                         {#each unidades as u (u.id)}
@@ -627,15 +632,17 @@
                                 bind:value={termoBuscaCid}
                                 id="cid-combobox"
                                 onfocus={() => comboboxCidAberto = true}
+                                oninput={() => comboboxCidAberto = true}
                                 onblur={() => setTimeout(() => { comboboxCidAberto = false; }, 150)}
+                                use:sugestoesTeclado={{ aberta: comboboxCidAberto, fechar: () => (comboboxCidAberto = false) }}
                                 class="w-full border-gray-300 rounded-md shadow-sm focus:border-emerald-500 focus:ring-emerald-500"
                             />
 
                                     {#if comboboxCidAberto && cidsFiltrados.length > 0}
-                                        <ul class="absolute z-10 w-full bg-white border border-gray-300 rounded-md mt-1 max-h-60 overflow-y-auto shadow-lg">
+                                        <ul role="listbox" aria-label="Sugestões" class="absolute z-10 w-full bg-white border border-gray-300 rounded-md mt-1 max-h-60 overflow-y-auto shadow-lg">
                                             {#each cidsFiltrados as cid (cid.id)}
-                                                <li class="p-0">
-                                                    <button type="button" class="w-full text-left p-2 hover:bg-emerald-100 cursor-pointer text-sm" onclick={() => selecionarCid(cid)}>
+                                                <li role="none" class="p-0">
+                                                    <button type="button" role="option" aria-selected="false" class="w-full text-left p-2 hover:bg-emerald-100 cursor-pointer text-sm aria-selected:bg-emerald-100 aria-selected:ring-2 aria-selected:ring-inset aria-selected:ring-emerald-700" onclick={() => selecionarCid(cid)}>
                                                         <strong>{cid.codigo}</strong> - {cid.descricao}
                                                     </button>
                                                 </li>
@@ -855,7 +862,9 @@
                                                     class="text-sm border-gray-300 rounded-md shadow-sm focus:ring-emerald-500 px-4 focus:border-emerald-500 transition duration-150 ease-in-out py-1">
                                                 <option value="NORMAL">Normal</option>
                                                 <option value="URGENTE">Urgente</option>
-                                                <option value="EMERGENCIA">Emergência</option>
+                                                {#if idsComEmergencia.has(e.id)}
+                                                    <option value="EMERGENCIA">Emergência</option>
+                                                {/if}
                                             </select>
                                             {#if !somenteLeitura}
                                             <button onclick={() => abrirEncaminhar(e)}
@@ -974,26 +983,27 @@
                                 <input 
                                   type="text"
                                   class="w-full border border-gray-300 rounded-md p-2 focus:ring-emerald-500 focus:border-emerald-500"
-                                  placeholder="Digite para buscar..."
+                                  placeholder="Digite para buscar"
                                   bind:value={termoBuscaNovaEsp}
                                   id="nova-especialidade-input"
                                   onfocus={() => comboboxEspAberto = true}
                                   oninput={() => comboboxEspAberto = true}
                                   onblur={() => setTimeout(() => comboboxEspAberto = false, 150)}
+                                  use:sugestoesTeclado={{ aberta: comboboxEspAberto, fechar: () => (comboboxEspAberto = false) }}
                                 />
                                 {#if comboboxEspAberto}
                                   {@const sugestoes = filtrarEspecialidadesPac(termoBuscaNovaEsp)}
                                   {@const consultas = sugestoes.filter((e:any) => e.categoria === 'ESPECIALIDADE_MEDICA')}
                                   {@const exames = sugestoes.filter((e:any) => e.categoria === 'EXAME_OU_PROCEDIMENTO')}
-                                  <ul class="absolute z-50 w-full bg-white border border-gray-300 rounded-md mt-1 max-h-80 overflow-y-auto shadow-lg">
+                                  <ul role="listbox" aria-label="Sugestões" class="absolute z-50 w-full bg-white border border-gray-300 rounded-md mt-1 max-h-80 overflow-y-auto shadow-lg">
                                     {#if sugestoes.length === 0}
-                                      <li class="p-2 text-sm text-gray-500 select-none">Nenhuma especialidade encontrada</li>
+                                      <li role="none" class="p-2 text-sm text-gray-500 select-none">Nenhuma especialidade encontrada</li>
                                     {:else}
                                       {#if consultas.length > 0}
-                                        <li class="px-2 py-1 text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Consultas</li>
+                                        <li role="none" class="px-2 py-1 text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Consultas</li>
                                         {#each consultas as e (e.id)}
-                                          <li class="px-2 py-1">
-                                            <button type="button" class="w-full text-left px-2 py-2 hover:bg-emerald-50 cursor-pointer text-sm" onclick={() => { novaEspecialidadeObj.especialidadeId = e.id; termoBuscaNovaEsp = e.nome; comboboxEspAberto = false; }}>
+                                          <li role="none" class="px-2 py-1">
+                                            <button type="button" role="option" aria-selected="false" class="w-full text-left px-2 py-2 hover:bg-emerald-50 cursor-pointer text-sm aria-selected:bg-emerald-100 aria-selected:ring-2 aria-selected:ring-inset aria-selected:ring-emerald-700" onclick={() => { novaEspecialidadeObj.especialidadeId = e.id; termoBuscaNovaEsp = e.nome; comboboxEspAberto = false; }}>
                                               <div class="flex items-center justify-between">
                                                 <span class="font-medium text-gray-900">{e.nome}</span>
                                                 <span class="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">{prettyCategoria(e.categoria)}</span>
@@ -1004,10 +1014,10 @@
                                         {/each}
                                       {/if}
                                       {#if exames.length > 0}
-                                        <li class="px-2 py-1 text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Exames e Procedimentos</li>
+                                        <li role="none" class="px-2 py-1 text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Exames e Procedimentos</li>
                                         {#each exames as e (e.id)}
-                                          <li class="px-2 py-1">
-                                            <button type="button" class="w-full text-left px-2 py-2 hover:bg-emerald-50 cursor-pointer text-sm" onclick={() => { novaEspecialidadeObj.especialidadeId = e.id; termoBuscaNovaEsp = e.nome; comboboxEspAberto = false; }}>
+                                          <li role="none" class="px-2 py-1">
+                                            <button type="button" role="option" aria-selected="false" class="w-full text-left px-2 py-2 hover:bg-emerald-50 cursor-pointer text-sm aria-selected:bg-emerald-100 aria-selected:ring-2 aria-selected:ring-inset aria-selected:ring-emerald-700" onclick={() => { novaEspecialidadeObj.especialidadeId = e.id; termoBuscaNovaEsp = e.nome; comboboxEspAberto = false; }}>
                                               <div class="flex items-center justify-between">
                                                 <span class="font-medium text-gray-900">{e.nome}</span>
                                                 <span class="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">{prettyCategoria(e.categoria)}</span>
@@ -1023,27 +1033,28 @@
                               </div>
                         </div>
                         <div>
-                            <label for="profissional-input" class="block text-sm font-medium text-gray-700 mb-1">Profissional Solicitante <span class="text-gray-400 font-normal">(opcional)</span></label>
+                            <label for="profissional-input" class="block text-sm font-medium text-gray-700 mb-1">Profissional solicitante <span class="text-gray-500 font-normal">(opcional)</span></label>
                             <div class="relative">
                                 <input
                                     type="text"
                                     id="profissional-input"
                                     class="w-full border border-gray-300 rounded-md p-2 focus:ring-emerald-500 focus:border-emerald-500"
-                                    placeholder="Digite para buscar..."
+                                    placeholder="Digite para buscar"
                                     bind:value={termoBuscaProfissional}
                                     onfocus={() => comboboxProfAberto = true}
                                     oninput={() => comboboxProfAberto = true}
                                     onblur={() => setTimeout(() => comboboxProfAberto = false, 150)}
+                                    use:sugestoesTeclado={{ aberta: comboboxProfAberto, fechar: () => (comboboxProfAberto = false) }}
                                 />
                                 {#if comboboxProfAberto}
                                     {@const sugestoesPof = filtrarProfissionais(termoBuscaProfissional)}
-                                    <ul class="absolute z-50 w-full bg-white border border-gray-300 rounded-md mt-1 max-h-60 overflow-y-auto shadow-lg">
+                                    <ul role="listbox" aria-label="Sugestões" class="absolute z-50 w-full bg-white border border-gray-300 rounded-md mt-1 max-h-60 overflow-y-auto shadow-lg">
                                         {#if sugestoesPof.length === 0}
-                                            <li class="p-2 text-sm text-gray-500 select-none">Nenhum profissional encontrado</li>
+                                            <li role="none" class="p-2 text-sm text-gray-500 select-none">Nenhum profissional encontrado</li>
                                         {:else}
                                             {#each sugestoesPof as p (p.id)}
-                                                <li class="px-2 py-1">
-                                                    <button type="button" class="w-full text-left px-2 py-2 hover:bg-emerald-50 cursor-pointer text-sm" onclick={() => { novaEspecialidadeObj.profissionalId = p.id; termoBuscaProfissional = p.nome; comboboxProfAberto = false; }}>
+                                                <li role="none" class="px-2 py-1">
+                                                    <button type="button" role="option" aria-selected="false" class="w-full text-left px-2 py-2 hover:bg-emerald-50 cursor-pointer text-sm aria-selected:bg-emerald-100 aria-selected:ring-2 aria-selected:ring-inset aria-selected:ring-emerald-700" onclick={() => { novaEspecialidadeObj.profissionalId = p.id; termoBuscaProfissional = p.nome; comboboxProfAberto = false; }}>
                                                         <div class="font-medium text-gray-900">{p.nome}</div>
                                                         {#if p.conselho && p.numeroRegistro}
                                                             <div class="text-[11px] text-gray-500">{p.conselho} {p.numeroRegistro}</div>
@@ -1067,15 +1078,14 @@
                            
                                 <option value="NORMAL">Normal</option>
                                 <option value="URGENTE">Urgente</option>
-                                <option value="EMERGENCIA">Emergência</option>
                             </select>
                         </div>
                         <div>
-                            <label for="retorno-select" class="block text-sm font-medium text-gray-700 mb-1">Em caso de retorno... </label>
+                            <label for="retorno-select" class="block text-sm font-medium text-gray-700 mb-1">Tipo de pedido</label>
                             <select id="retorno-select" bind:value={novaEspecialidadeObj.status} class="w-full border-gray-300 rounded-md shadow-sm">
-                                <option value="AGUARDANDO">Sem retorno (padrão)</option>
+                                <option value="AGUARDANDO">Novo pedido</option>
                                 <option value="RETORNO">Retorno</option>
-                                <option value="RETORNO_POLICLINICA">Retorno Policlínica</option>
+                                <option value="RETORNO_POLICLINICA">Retorno na policlínica</option>
                                 <option value="GEL">Gel</option>
                             </select>
                         </div>

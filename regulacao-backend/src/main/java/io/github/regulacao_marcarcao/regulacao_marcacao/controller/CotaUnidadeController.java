@@ -17,10 +17,14 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import io.github.regulacao_marcarcao.regulacao_marcacao.dto.cota.CotaMigracaoDataCreateDTO;
+import io.github.regulacao_marcarcao.regulacao_marcacao.dto.cota.CotaMigracaoDataPreviaDTO;
+import io.github.regulacao_marcarcao.regulacao_marcacao.dto.cota.CotaMigracaoDataViewDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.cota.CotaUnidadeCreateDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.cota.CotaUnidadeSaldoDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.cota.CotaUnidadeUpdateDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.cota.CotaUnidadeViewDTO;
+import io.github.regulacao_marcarcao.regulacao_marcacao.service.CotaMigracaoDataService;
 import io.github.regulacao_marcarcao.regulacao_marcacao.service.CotaUnidadeService;
 import io.github.regulacao_marcarcao.regulacao_marcacao.service.UnidadeAcessoService;
 import lombok.RequiredArgsConstructor;
@@ -40,6 +44,7 @@ import lombok.RequiredArgsConstructor;
 public class CotaUnidadeController {
 
     private final CotaUnidadeService cotaService;
+    private final CotaMigracaoDataService migracaoService;
     private final UnidadeAcessoService unidadeAcessoService;
 
     @PostMapping
@@ -122,6 +127,25 @@ public class CotaUnidadeController {
             @PathVariable Long id,
             @RequestBody CotaUnidadeUpdateDTO dto) {
         return ResponseEntity.ok(cotaService.atualizar(id, dto));
+    }
+
+    /** O que a migracao de agendamentos faria ao mudar a data da cota — sem alterar nada. */
+    @GetMapping("/{id}/migracao-data/previa")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<CotaMigracaoDataPreviaDTO> previaMigracaoData(
+            @PathVariable Long id,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dataEspecifica) {
+        return ResponseEntity.ok(migracaoService.previa(id, dataEspecifica));
+    }
+
+    /** Muda a data da cota e migra os agendamentos dela, tudo ou nada. */
+    @PostMapping("/{id}/migrar-data")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<CotaMigracaoDataViewDTO> migrarData(
+            @PathVariable Long id,
+            @RequestBody CotaMigracaoDataCreateDTO dto,
+            Authentication authentication) {
+        return ResponseEntity.ok(migracaoService.migrar(id, dto, authentication.getName()));
     }
 
     private void exigirAcesso(Authentication authentication, Long unidadeId) {

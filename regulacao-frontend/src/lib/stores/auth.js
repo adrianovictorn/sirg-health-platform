@@ -1,16 +1,18 @@
-import { writable, derived } from 'svelte/store';
-import { browser } from '$app/environment';
-import { jwtDecode } from 'jwt-decode';
+import { writable, derived } from "svelte/store";
+import { browser } from "$app/environment";
+import { jwtDecode } from "jwt-decode";
 
-export const token = writable(browser ? localStorage.getItem('jwt_token') : null);
+export const token = writable(
+  browser ? localStorage.getItem("jwt_token") : null,
+);
 
-token.subscribe(value => {
+token.subscribe((value) => {
   if (browser) {
     if (value) {
-      localStorage.setItem('jwt_token', value);
+      localStorage.setItem("jwt_token", value);
     } else {
-      localStorage.removeItem('jwt_token');
-      localStorage.removeItem('profile_picture_url');
+      localStorage.removeItem("jwt_token");
+      localStorage.removeItem("profile_picture_url");
     }
   }
 });
@@ -26,7 +28,7 @@ export const user = derived(token, ($token) => {
       // passa a vir de `perfilAtivo`; `decoded.role` é o fallback para tokens
       // emitidos antes disso, que só tinham esse campo. Tudo que já lia `role`
       // (menu, telas) continua funcionando sem saber da mudança.
-      role: decoded.perfilAtivo ?? decoded.role
+      role: decoded.perfilAtivo ?? decoded.role,
     };
   } catch (e) {
     console.error("Token inválido:", e);
@@ -43,14 +45,16 @@ export const user = derived(token, ($token) => {
 export const perfisDisponiveis = writable([]);
 
 // Separate store for profile picture URL, persisted in localStorage
-export const profilePicture = writable(browser ? localStorage.getItem('profile_picture_url') : null);
+export const profilePicture = writable(
+  browser ? localStorage.getItem("profile_picture_url") : null,
+);
 
-profilePicture.subscribe(value => {
+profilePicture.subscribe((value) => {
   if (browser) {
     if (value) {
-      localStorage.setItem('profile_picture_url', value);
+      localStorage.setItem("profile_picture_url", value);
     } else {
-      localStorage.removeItem('profile_picture_url');
+      localStorage.removeItem("profile_picture_url");
     }
   }
 });
@@ -65,15 +69,17 @@ profilePicture.subscribe(value => {
 export async function refreshUsuarioAtual() {
   if (!browser) return;
   try {
-    const { getApi } = await import('$lib/api.js');
-    const res = await getApi('users/me');
+    const { getApi } = await import("$lib/api.js");
+    const res = await getApi("users/me");
     if (res.ok) {
       const userData = await res.json();
       profilePicture.set(userData.fotoUrl || null);
-      perfisDisponiveis.set(Array.isArray(userData.perfis) ? userData.perfis : []);
+      perfisDisponiveis.set(
+        Array.isArray(userData.perfis) ? userData.perfis : [],
+      );
     }
   } catch (e) {
-    console.error('Erro ao carregar usuário atual:', e);
+    console.error("Erro ao carregar usuário atual:", e);
   }
 }
 
@@ -86,11 +92,11 @@ export const refreshProfilePicture = refreshUsuarioAtual;
  * deriva dele, então o menu e as telas se reorganizam sozinhos.
  */
 export async function trocarPerfil(perfil) {
-  const { postApi } = await import('$lib/api.js');
-  const res = await postApi('users/me/perfil', { perfil });
+  const { postApi } = await import("$lib/api.js");
+  const res = await postApi("users/me/perfil", { perfil });
   if (!res.ok) {
     const erro = await res.json().catch(() => ({}));
-    throw new Error(erro.message || 'Não foi possível trocar de perfil.');
+    throw new Error(erro.message || "Não foi possível trocar de perfil.");
   }
   const { token: novoToken } = await res.json();
   token.set(novoToken);

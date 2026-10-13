@@ -580,4 +580,35 @@ class SegurancaEndpointsIT {
                 .doesNotContain(solicitacao.getCpfPaciente())
                 .doesNotContain(solicitacao.getCns());
     }
+
+    // ------------------------------------------------------------------
+    // Migracao de data de cota: so ADMIN (igual ao PUT /api/cotas/{id})
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("Migracao de data de cota: previa e migracao so para ADMIN")
+    void migracaoDeDataDeCotaSoParaAdmin() throws Exception {
+        String previa = "/api/cotas/999999999/migracao-data/previa?dataEspecifica=2030-01-15";
+        String migrar = "/api/cotas/999999999/migrar-data";
+        String corpo = "{\"dataEspecifica\":\"2030-01-15\"}";
+
+        assertThat(statusDe(get(previa))).as("previa sem login").isIn(401, 403);
+        assertThat(statusDe(post(migrar).contentType(MediaType.APPLICATION_JSON).content(corpo)))
+                .as("migrar sem login").isIn(401, 403);
+
+        for (Roles role : List.of(Roles.GESTOR, Roles.ADMIN_UNIDADE, Roles.RECEPCAO, Roles.MEDICO,
+                Roles.USER, Roles.PACIENTE, Roles.COORD_TRANSPORTE)) {
+            assertThat(statusDe(get(previa).with(como(role)))).as("previa " + role).isEqualTo(403);
+            assertThat(statusDe(post(migrar).with(como(role)).contentType(MediaType.APPLICATION_JSON).content(corpo)))
+                    .as("migrar " + role).isEqualTo(403);
+        }
+
+        // ADMIN passa pela autorizacao; a cota nao existe, entao 404 com `message`.
+        mockMvc.perform(get(previa).with(como(Roles.ADMIN)))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.message").exists());
+        mockMvc.perform(post(migrar).with(como(Roles.ADMIN)).contentType(MediaType.APPLICATION_JSON).content(corpo))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.message").exists());
+    }
 }

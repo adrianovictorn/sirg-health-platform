@@ -5,10 +5,13 @@ import java.util.List;
 import java.util.Optional;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
+
+import jakarta.persistence.LockModeType;
 
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.CotaUnidade;
 
@@ -130,4 +133,27 @@ public interface CotaUnidadeRepository extends JpaRepository<CotaUnidade, Long> 
     @Query("UPDATE CotaUnidade c SET c.quantidadeUtilizada = c.quantidadeUtilizada - 1 "
             + "WHERE c.id = :id AND c.quantidadeUtilizada > 0")
     int devolverVaga(@Param("id") Long id);
+
+    // -----------------------------------------------------------------------
+    // Migracao de data (CotaMigracaoDataService)
+    // -----------------------------------------------------------------------
+
+    /**
+     * Carrega a cota com bloqueio pessimista de escrita: serializa a migracao com
+     * outra migracao/edicao da mesma cota. O consumo atomico ({@link #consumirVaga})
+     * nao passa por aqui e segue valendo.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT c FROM CotaUnidade c WHERE c.id = :id")
+    Optional<CotaUnidade> findByIdParaMigracao(@Param("id") Long id);
+
+    /**
+     * Soma o total e o utilizado de uma cota que esta sendo unificada a esta.
+     * Update direto, como o consumo: a corretude vem do WHERE/aritmetica no banco.
+     * Limpa o contexto de persistencia — ver a ressalva de {@link #consumirVaga}.
+     */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("UPDATE CotaUnidade c SET c.quantidadeTotal = c.quantidadeTotal + :total, "
+            + "c.quantidadeUtilizada = c.quantidadeUtilizada + :utilizada WHERE c.id = :id")
+    int absorver(@Param("id") Long id, @Param("total") int total, @Param("utilizada") int utilizada);
 }

@@ -11,7 +11,11 @@
 // Roda com `node --test src/lib/menuConfig.characterization.test.mjs`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildMenuForRole } from "./menuConfig.js";
+import {
+  buildMenuForRole,
+  organizarItensDoGrupo,
+  roleVeRota,
+} from "./menuConfig.js";
 
 /** Todos os hrefs visíveis para uma role, achatando grupos e links soltos. */
 function hrefsVisiveis(role) {
@@ -239,4 +243,92 @@ test('O grupo proprio "Custos" nao existe mais para nenhum perfil', () => {
   for (const role of ["ADMIN", ...OUTRAS_ROLES, "COORD_TRANSPORTE"]) {
     assert.equal(hrefsDoGrupo(role, "custos"), null, role);
   }
+});
+
+// Terceiro nivel do menu (subgrupos). `organizarItensDoGrupo` so reorganiza para
+// exibicao os links que `buildMenuForRole` ja filtrou: nao pode esconder,
+// duplicar nem reordenar link, para nenhum perfil e nenhum grupo.
+const TODAS_AS_ROLES = ["ADMIN", ...OUTRAS_ROLES, "COORD_TRANSPORTE"];
+
+function grupoDe(role, key) {
+  for (const section of buildMenuForRole(role)) {
+    for (const item of section.items) {
+      if (item.type === "group" && item.key === key) return item;
+    }
+  }
+  return null;
+}
+
+test("Subgrupos: a organizacao em niveis devolve exatamente os links filtrados, na mesma ordem", () => {
+  for (const role of TODAS_AS_ROLES) {
+    for (const section of buildMenuForRole(role)) {
+      for (const item of section.items) {
+        if (item.type !== "group") continue;
+        const achatado = organizarItensDoGrupo(item).flatMap((e) =>
+          e.type === "subgroup" ? e.items : [e],
+        );
+        assert.deepEqual(achatado, item.items, `${role} / ${item.key}`);
+      }
+    }
+  }
+});
+
+test('Subgrupos: ADMIN ve "Unidades" e "Custos" dentro de "Unidades e Custos"', () => {
+  const entradas = organizarItensDoGrupo(
+    grupoDe("ADMIN", "gerenciamento-unidades"),
+  );
+  assert.deepEqual(
+    entradas.map((e) => [e.type, e.label, e.items.map((l) => l.href)]),
+    [
+      ["subgroup", "Unidades", ROTAS_GERENCIAMENTO_UNIDADES],
+      [
+        "subgroup",
+        "Custos",
+        [...ROTAS_DE_CUSTO_LEITURA, "/admin/custos/importar"],
+      ],
+    ],
+  );
+});
+
+test("Subgrupos: GESTOR, que so enxerga custos, recebe os tres links direto no grupo", () => {
+  const entradas = organizarItensDoGrupo(
+    grupoDe("GESTOR", "gerenciamento-unidades"),
+  );
+  assert.deepEqual(
+    entradas.map((e) => [e.type, e.href]),
+    ROTAS_DE_CUSTO_LEITURA.map((href) => [undefined, href]),
+  );
+});
+
+test("Subgrupos: nenhum perfil recebe subgrupo vazio ou de um item so", () => {
+  for (const role of TODAS_AS_ROLES) {
+    for (const section of buildMenuForRole(role)) {
+      for (const item of section.items) {
+        if (item.type !== "group") continue;
+        for (const e of organizarItensDoGrupo(item)) {
+          if (e.type === "subgroup") {
+            assert.ok(e.items.length >= 2, `${role} / ${e.key}`);
+          }
+        }
+      }
+    }
+  }
+});
+
+test("roleVeRota: coincide com o conjunto de rotas visiveis no menu, para toda role", () => {
+  for (const role of TODAS_AS_ROLES) {
+    const visiveis = hrefsVisiveis(role);
+    for (const href of ["/paciente", "/exames", "/admin/cotas"]) {
+      assert.equal(
+        roleVeRota(role, href),
+        visiveis.has(href),
+        `${role} ${href}`,
+      );
+    }
+  }
+});
+
+test("roleVeRota: sem role, ou rota fora do menu, nao ve nada", () => {
+  assert.equal(roleVeRota(null, "/paciente"), false);
+  assert.equal(roleVeRota("ADMIN", "/rota-que-nao-existe"), false);
 });
