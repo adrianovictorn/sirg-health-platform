@@ -213,16 +213,19 @@ Larguras de verificação do `ux-ui-designer`: 375px, 768px e 1280px ou mais.
 
 ## 10. Exceções documentadas
 
-**As telas de cotas usam um visual próprio, que mistura o SIRG com o da IBM.** A decisão é
-do responsável pelo produto (ADRs `docs/decisoes/0005-visual-ibm-em-admin-cotas.md` e
-`docs/decisoes/0006-visual-misto-em-unidade-cotas.md`) e contraria, só nessas telas, as
-seções 2 a 6 e a regra "não crie um estilo paralelo".
+**As telas de cotas e a tela de agendamento (`/agendar`) usam um visual próprio, que mistura
+o SIRG com o da IBM.** A decisão é do responsável pelo produto (ADRs
+`docs/decisoes/0005-visual-ibm-em-admin-cotas.md`,
+`docs/decisoes/0006-visual-misto-em-unidade-cotas.md` e
+`docs/decisoes/0007-visual-misto-e-escolha-explicita-do-paciente-em-agendar.md`) e contraria,
+só nessas telas, as seções 2 a 6 e a regra "não crie um estilo paralelo".
 
 | Tela                       | Visual                                | Observação                                                                                 |
 | -------------------------- | ------------------------------------- | ------------------------------------------------------------------------------------------ |
 | `/admin/cotas/nova`        | Misto (modelo de referência)          | Painéis em `rounded-lg` com sombra leve, título emerald-800 com `border-b`, campos IBM     |
 | `/admin/cotas/[id]/editar` | Misto                                 | Mesmos tokens e classes de `nova`                                                          |
 | `/unidade/cotas`           | Misto                                 | Mesmos tokens, mais `--sit-*` e `.ibm-cartao` para as situações                            |
+| `/agendar`                 | Misto (cópia de `nova`)               | Só as classes que a tela usa, mais as `ag-*` (passos, sugestões, paciente selecionado)     |
 | `/admin/cotas` (lista)     | IBM mais pura (raio zero, sem sombra) | Ainda não alinhada: `--ibm-fundo`, `--ibm-ok-*` e os tokens de mistura têm valor diferente |
 
 Em cada uma, o que vale é o próprio `+page.svelte`:
@@ -237,7 +240,19 @@ Em cada uma, o que vale é o próprio `+page.svelte`:
 - Situação da cota (`/unidade/cotas`): disponível (emerald, círculo), esgotada (vermelho
   escuro, losango) e inativa (cinza, círculo vazado), sempre com texto e marca, nunca só
   cor. Esgotadas e inativas ficam ao fim da lista; nada é escondido por padrão.
-- O CSS está **copiado** em cada tela (quatro cópias). Extrair para um arquivo compartilhado
+- Paciente em `/agendar`, três estados, sempre com texto e marca, nunca só cor: nenhum
+  selecionado (`.ag-vazio`, borda tracejada, "Nenhum paciente selecionado ainda"), carregando
+  (`.ag-carregando`, `LoadingSpinner` com a mensagem) e selecionado (`.ag-paciente`, borda e
+  filete emerald, ícone, nome em destaque, campos somente leitura e "Trocar paciente"). O
+  paciente selecionado é repetido como texto, não como campo, ao lado do botão de envio.
+- Item ativo de lista de sugestões (`/agendar`, `.ag-sugestao`): `$lib/sugestoesTeclado.js`
+  marca o botão com `aria-selected="true"`; o destaque é barra lateral emerald, nome em
+  negrito sublinhado e a etiqueta "Enter para escolher", além do fundo. É o único
+  `:global()` do visual misto, só no atributo e preso a uma classe escopada. A lista tem
+  cabeçalho fixo com a instrução de escolha, e cada linha mostra nome, CPF, CNS e unidade.
+- Painéis de `/agendar` numerados por passo (`.ag-passo`); antes da seleção do paciente, um
+  bloco tracejado (`.ag-proximos`) lista os passos que ainda vão aparecer.
+- O CSS está **copiado** em cada tela (cinco cópias). Extrair para um arquivo compartilhado
   é pedido à parte, quando o visual estiver estável.
 - `GrupoToggleButton` e `GrupoEspecialidadesPainel` aceitam `variante="ibm"`; o padrão
   continua o visual das seções 2 a 6 e é o que `dashboard/unidade` usa.

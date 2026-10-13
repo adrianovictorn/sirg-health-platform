@@ -108,6 +108,15 @@ docker compose -f docker-compose.prod.yaml up -d --build
 docker image prune -f
 ```
 
+### Deploy com a migração de data de cota (V108)
+
+A V108 é aditiva (coluna anulável e tabela nova). O que exige cuidado é o **binding novo do
+RabbitMQ** (`agendamento-remarcado.{MUNICIPIO}.#`): ele é declarado na subida da aplicação, então
+**as duas VPS precisam receber o deploy**. Uma instância antiga não cria o binding e não recebe o
+aviso de remarcação de pacientes do seu município; a migração em si não é afetada. Faça a migração
+de data de cota fora do pico: um agendamento que leu as cotas antes do bloqueio e consome depois
+do commit pode, numa janela de milissegundos, usar uma vaga na data antiga.
+
 ### Deploy seletivo
 
 Via `workflow_dispatch` é possível escolher `ambos`, `conceicao` ou `saofelipe`.
@@ -211,6 +220,11 @@ desligado**: quem liga é um ADMIN, em *Painel Admin → WhatsApp*.
 | `WHATSAPP_PHONE_NUMBER_ID` | "Identificação do número de telefone" (não é o número) | Painel do app → WhatsApp → Configuração da API |
 | `WHATSAPP_LIMITE_DIARIO` | Teto de mensagens por dia (padrão 200). O que passar fica como "não enviada" e **não** sai sozinha no dia seguinte | Defina abaixo do limite de conversas que o WhatsApp Manager mostra para o número |
 | `WHATSAPP_NUMEROS_TESTE` | Enquanto preenchida, **só** esses números recebem | Seu celular e o de quem vai conferir |
+
+**Migração de data de cota e o limite diário.** Cada agendamento migrado que tem item agendado
+gera uma mensagem de `REMARCACAO`. Uma migração grande (dezenas de pacientes) pode consumir boa
+parte de `WHATSAPP_LIMITE_DIARIO`; o que passar do limite fica como "não enviada" e não sai
+sozinho no dia seguinte. Confira o limite antes de migrar uma cota com muitos agendamentos.
 
 A versão da Graph API (`app.whatsapp.envio.api-version`, padrão `v23.0`) fica em
 `application.properties`. Confira a versão vigente no painel da Meta ao implantar; versão

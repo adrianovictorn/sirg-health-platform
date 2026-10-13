@@ -110,6 +110,27 @@ public class WhatsAppMensagemService {
         mensagemRepository.save(mensagem);
     }
 
+    /**
+     * O agendamento mudou de data sem ser excluido (migracao de cota). As
+     * mensagens ainda pendentes dele (confirmacao, lembrete ou remarcacao) falam da
+     * data antiga e sao descartadas; entra uma REMARCACAO com a data nova. O que
+     * ja foi enviado nao e tocado — a propria remarcacao corrige o paciente.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void enfileirarRemarcacao(Long agendamentoId, Long solicitacaoId, LocalDate dataNova, List<Long> itens) {
+        for (WhatsAppMensagem pendente : mensagemRepository.findByAlvoTipoAndAlvoIdAndResultado(
+                WhatsAppAlvoTipo.CONSULTA_EXAME, agendamentoId, WhatsAppResultado.PENDENTE)) {
+            if (pendente.getTipo() != WhatsAppTipoMensagem.CANCELAMENTO) {
+                mensagemRepository.descartarPendente(pendente.getId(),
+                        WhatsAppMotivoNaoEnvio.SUBSTITUIDO_POR_REMARCACAO);
+            }
+        }
+        WhatsAppMensagem mensagem = nova(agendamentoId, solicitacaoId, dataNova,
+                WhatsAppTipoMensagem.REMARCACAO, WhatsAppOrigem.AUTOMATICO);
+        mensagem.setItensRef(juntar(itens));
+        mensagemRepository.save(mensagem);
+    }
+
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void enfileirarCancelamento(Long agendamentoId, Long solicitacaoId, LocalDate data, List<Long> itens) {
         // Agendamento criado e excluido antes de a confirmacao sair: o paciente

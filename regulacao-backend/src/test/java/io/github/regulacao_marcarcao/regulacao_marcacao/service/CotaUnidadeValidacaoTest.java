@@ -34,7 +34,9 @@ import io.github.regulacao_marcarcao.regulacao_marcacao.entity.LocalAgendamento;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.Profissional;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.Unidade;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.enums.TipoPeriodoCota;
+import io.github.regulacao_marcarcao.regulacao_marcacao.repository.CotaConsumidoresRepository;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.CotaUnidadeRepository;
+import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.ConsumidorCotaProjection;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.EspecialidadeRepository;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.GrupoRelatorioRepository;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.LocalAgendamentoRepository;
@@ -64,6 +66,7 @@ class CotaUnidadeValidacaoTest {
     @Mock private EspecialidadeRepository especialidadeRepository;
     @Mock private ProfissionalRepository profissionalRepository;
     @Mock private LocalAgendamentoRepository localAgendamentoRepository;
+    @Mock private CotaConsumidoresRepository consumidoresRepository;
 
     @InjectMocks private CotaUnidadeService service;
 
@@ -303,6 +306,67 @@ class CotaUnidadeValidacaoTest {
                 .hasMessageContaining("agenda de origem");
 
         verify(cotaRepository, never()).save(any(CotaUnidade.class));
+    }
+
+    @Test
+    @DisplayName("Mudar a data de cota com agendamentos e recusado (409) e nada e gravado")
+    void mudarDataComAgendamentosERecusado() {
+        CotaUnidade cota = cotaPorData(400L, LocalDate.of(2026, 5, 20));
+        when(cotaRepository.findById(400L)).thenReturn(Optional.of(cota));
+        ConsumidorCotaProjection consumidor = org.mockito.Mockito.mock(ConsumidorCotaProjection.class);
+        when(consumidor.getAgendamentoId()).thenReturn(70L);
+        when(consumidoresRepository.consumidoresPorIncidencia(any(), any(), any(), any(), any(), any()))
+                .thenReturn(List.of(consumidor));
+
+        var dto = dtoPorData(LocalDate.of(2026, 6, 3));
+        assertThatThrownBy(() -> service.atualizar(400L, dto))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("1 agendamento(s)")
+                .hasMessageContaining("migrar os agendamentos");
+
+        verify(cotaRepository, never()).save(any(CotaUnidade.class));
+    }
+
+    @Test
+    @DisplayName("Mudar a data de cota sem agendamentos passa")
+    void mudarDataSemAgendamentosPassa() {
+        CotaUnidade cota = cotaPorData(400L, LocalDate.of(2026, 5, 20));
+        when(cotaRepository.findById(400L)).thenReturn(Optional.of(cota));
+        when(consumidoresRepository.consumidoresPorIncidencia(any(), any(), any(), any(), any(), any()))
+                .thenReturn(List.of());
+
+        assertThatCode(() -> service.atualizar(400L, dtoPorData(LocalDate.of(2026, 6, 3))))
+                .doesNotThrowAnyException();
+        assertThat(cota.getDataEspecifica()).isEqualTo(LocalDate.of(2026, 6, 3));
+    }
+
+    @Test
+    @DisplayName("Sem mudanca de periodo os consumidores nem sao consultados")
+    void semMudancaDePeriodoNaoConsultaConsumidores() {
+        CotaUnidade cota = cotaPorData(400L, LocalDate.of(2026, 5, 20));
+        when(cotaRepository.findById(400L)).thenReturn(Optional.of(cota));
+
+        assertThatCode(() -> service.atualizar(400L, dtoPorData(LocalDate.of(2026, 5, 20))))
+                .doesNotThrowAnyException();
+
+        org.mockito.Mockito.verifyNoInteractions(consumidoresRepository);
+    }
+
+    private CotaUnidade cotaPorData(Long id, LocalDate data) {
+        CotaUnidade cota = new CotaUnidade();
+        cota.setId(id);
+        cota.setUnidade(unidade);
+        cota.setTipoPeriodo(TipoPeriodoCota.DATA);
+        cota.setDataEspecifica(data);
+        cota.setQuantidadeTotal(5);
+        cota.setQuantidadeUtilizada(2);
+        cota.setAtivo(true);
+        return cota;
+    }
+
+    private CotaUnidadeUpdateDTO dtoPorData(LocalDate data) {
+        return new CotaUnidadeUpdateDTO(UNIDADE_ID, null, null, null, TipoPeriodoCota.DATA, null, data, 5, true,
+                null, null, false, null, null, null, null);
     }
 
     @Test

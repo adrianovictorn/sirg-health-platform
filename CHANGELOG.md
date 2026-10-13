@@ -4,6 +4,29 @@
 
 ### Novidades
 
+- **Migração dos agendamentos ao mudar a data de uma cota (`/admin/cotas`).** Ao editar a data de
+  uma cota "por data" que já tem agendamentos, a tela pergunta se deve migrá-los. **Sim:** os
+  agendamentos passam para a nova data (remarcação real — `data_agendada` muda) e a cota vai junto,
+  tudo ou nada. **Não:** nada é salvo. O diálogo mostra a quantidade por status e avisa de união
+  de cotas, de divergência de contagem, de WhatsApp e de transporte não ajustado.
+
+  **O que muda e o que não muda.** Só cota de tipo Data e origem manual migra; cota de agenda
+  segue somente leitura e cota mensal ou troca de tipo com agendamentos agora recebem 409 em
+  `PUT /api/cotas/{id}` (antes a data mudava e os pacientes ficavam na data antiga). Se já existe
+  cota igual na data nova, as duas são unificadas (somam-se total e utilizado). Cota mensal ou de
+  grupo esgotada na data nova, ou capacidade da especialidade excedida, abortam a migração inteira
+  com 409. O teto financeiro **não é redebitado** e o transporte sanitário **não é ajustado**.
+
+  **Efeitos.** O paciente com atendimento futuro recebe uma mensagem de `REMARCACAO` pelo WhatsApp
+  (as mensagens pendentes da data antiga são descartadas); o município de origem de paciente de
+  fora recebe o evento novo `agendamento-remarcado.{MUNICIPIO}`; o snapshot de indicadores das
+  duas datas é recalculado. Cada operação fica em `cota_migracao_data`, e a data original do
+  agendamento em `agendamento_solicitacao.data_agendada_original`.
+
+  **Novos:** `GET /api/cotas/{id}/migracao-data/previa` e `POST /api/cotas/{id}/migrar-data`
+  (ADMIN); migration **V108**; binding novo no RabbitMQ (**deploy nas duas VPS**); optimistic
+  lock da cota passa a responder 409 com mensagem em vez de 500.
+
 - **Landing publica do SIRG (app novo `sirg-landing/`) e resumo publico do municipio
   (`GET /api/transparencia/resumo`).** Pagina de apresentacao do sistema — vitrine para outros
   municipios e portfolio — em um app SvelteKit **separado** do `regulacao-frontend`, sem login e

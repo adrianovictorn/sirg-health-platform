@@ -13,6 +13,7 @@ import io.github.regulacao_marcarcao.regulacao_marcacao.dto.pacto.join.PactoJoin
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.pacto.join.PactoJoinAceiteMensagemDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.SolicitacaoEspecialidadeRepository;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.notificacao.AgendamentoExternoMensagemDTO;
+import io.github.regulacao_marcarcao.regulacao_marcacao.dto.notificacao.AgendamentoRemarcadoMensagemDTO;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.amqp.support.AmqpHeaders;
@@ -153,6 +154,29 @@ public class FilaRegionalService {
                         "cpf", dto.cpfMascarado(),
                         "nome", dto.nomePaciente(),
                         "data", String.valueOf(dto.dataAgendada()),
+                        "executor", dto.municipioExecutor()
+                ));
+                return;
+            }
+
+            // Remarcação de agendamento externo (migração de cota no município executor)
+            if (routingKey.startsWith("agendamento-remarcado.")) {
+                AgendamentoRemarcadoMensagemDTO dto = convertPayload(payload, AgendamentoRemarcadoMensagemDTO.class);
+                if (dto.municipioExecutor() != null && dto.municipioExecutor().equalsIgnoreCase(nomeMunicipioLocal)) {
+                    if (ignoreSelfExecutor) {
+                        return;
+                    }
+                }
+                String resumo = String.format(
+                        "Agendamento remarcado: CPF %s, de %s para %s; executor: %s",
+                        dto.cpfMascarado(), String.valueOf(dto.dataAnterior()), String.valueOf(dto.dataNova()),
+                        dto.municipioExecutor()
+                );
+                notificacaoService.criar("AGENDAMENTO_REMARCADO", resumo, "/filas/compartilhadas", java.util.Map.of(
+                        "cpf", dto.cpfMascarado(),
+                        "nome", dto.nomePaciente(),
+                        "dataAnterior", String.valueOf(dto.dataAnterior()),
+                        "data", String.valueOf(dto.dataNova()),
                         "executor", dto.municipioExecutor()
                 ));
                 return;

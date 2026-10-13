@@ -95,7 +95,8 @@
         return;
       }
 
-      error = err instanceof Error ? err.message : "Erro inesperado ao carregar pacientes.";
+      console.error("Erro ao carregar pacientes:", err);
+      error = "Falha ao carregar a lista de pacientes.";
       allPacientes = [];
       usingServerPagination = true;
       totalPacientes = 0;
@@ -204,7 +205,7 @@
             {/if}
           {:else}
             <ul class="space-y-4">
-              {#each pacientes as p, idx (p.cpfPaciente)}
+              {#each pacientes as p, idx (p.solicitacaoId)}
                 <li class="bg-white border border-gray-200 rounded-lg p-4 hover:shadow-md transition flex items-center">
                   <div class="text-emerald-700 font-bold text-xl mr-4">
                     {(currentPage - 1) * itemsPerPage + idx + 1}.
@@ -218,7 +219,7 @@
                       <h3 class="text-lg font-bold text-gray-800 mb-2">{p.nomePaciente}</h3>
                     </a>
                     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 text-sm">
-                      <div><span class="font-semibold text-gray-600">CPF:</span> {p.cpfPaciente}</div>
+                      <div><span class="font-semibold text-gray-600">CPF:</span> {p.cpfPaciente ?? '—'}</div>
                       <div><span class="font-semibold text-gray-600">Unidade:</span> {p.unidadeNome ?? '—'}</div>
                     </div>
                   </div>

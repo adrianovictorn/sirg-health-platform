@@ -380,6 +380,29 @@ class WhatsAppMensagemServiceTest {
     }
 
     @Test
+    void remarcacaoPorMigracaoDescartaAsPendentesDaDataAntigaEEnfileiraRemarcacaoComADataNova() {
+        WhatsAppMensagem confirmacaoNaFila = mensagem(WhatsAppTipoMensagem.CONFIRMACAO);
+        confirmacaoNaFila.setResultado(WhatsAppResultado.PENDENTE);
+        when(mensagemRepository.findByAlvoTipoAndAlvoIdAndResultado(
+                WhatsAppAlvoTipo.CONSULTA_EXAME, AGENDAMENTO, WhatsAppResultado.PENDENTE))
+                .thenReturn(List.of(confirmacaoNaFila));
+        LocalDate dataNova = LocalDate.of(2026, 10, 20);
+
+        service().enfileirarRemarcacao(AGENDAMENTO, SOLICITACAO, dataNova, List.of(10L, 11L));
+
+        verify(mensagemRepository).descartarPendente(MENSAGEM, WhatsAppMotivoNaoEnvio.SUBSTITUIDO_POR_REMARCACAO);
+        assertThat(salvas).singleElement().satisfies(m -> {
+            assertThat(m.getTipo()).isEqualTo(WhatsAppTipoMensagem.REMARCACAO);
+            assertThat(m.getAlvoId()).isEqualTo(AGENDAMENTO);
+            assertThat(m.getSolicitacaoId()).isEqualTo(SOLICITACAO);
+            assertThat(m.getDataReferencia()).isEqualTo(dataNova);
+            assertThat(m.getItensRef()).isEqualTo("10,11");
+            assertThat(m.getResultado()).isEqualTo(WhatsAppResultado.PENDENTE);
+            assertThat(m.getOrigem()).isEqualTo(WhatsAppOrigem.AUTOMATICO);
+        });
+    }
+
+    @Test
     void atendimentoQueJaPassouNaoGeraMensagem() {
         // AGORA = 06/10/2026 12h na Bahia.
         mensagem.setDataReferencia(LocalDate.of(2026, 10, 5));

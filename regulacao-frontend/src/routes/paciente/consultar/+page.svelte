@@ -166,7 +166,7 @@
                         <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">ID</th>
                         <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Paciente</th>
                         <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">USF</th>
-                        <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Malote</th>
+                        <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Recebimento do pedido</th>
                         <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Especialidades/Status</th>
                     </tr>
                 </thead>
@@ -219,7 +219,7 @@
                             <span>{solicitacao.usfOrigem}</span>
                         </div>
                         <div class="flex justify-between items-center">
-                            <span class="font-semibold text-gray-800">Data Malote:</span>
+                            <span class="font-semibold text-gray-800">Recebimento do pedido:</span>
                             <span>{solicitacao.dataMalote}</span>
                         </div>
                     </div>

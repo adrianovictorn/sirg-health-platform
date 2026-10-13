@@ -1,12 +1,14 @@
 package io.github.regulacao_marcarcao.regulacao_marcacao.repository;
 
 import java.time.LocalDate;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -17,6 +19,14 @@ import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.Gr
 public interface FechamentoIndicadoresDiaRepository extends JpaRepository<FechamentoIndicadoresDia, Long> {
     
     Optional<FechamentoIndicadoresDia> findByDataReferenciaAndLocalAgendamentoIdAndGrupoRelatorioId(LocalDate data, Long localAgendamentoId,Long grupoId);
+
+    /**
+     * Apaga o snapshot das datas (todas as linhas local x grupo de cada uma). Usado
+     * pela migracao de cota: o snapshot e recalculado na proxima consulta.
+     */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("DELETE FROM FechamentoIndicadoresDia f WHERE f.dataReferencia IN :datas")
+    int excluirPorDatas(@Param("datas") Collection<LocalDate> datas);
     
     //Contar total de pacientes agendados no dia
     @Query(value = """

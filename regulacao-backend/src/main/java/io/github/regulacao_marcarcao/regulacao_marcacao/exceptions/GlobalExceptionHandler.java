@@ -71,6 +71,26 @@ public class GlobalExceptionHandler {
         return erro(HttpStatus.CONFLICT, ex.getMessage());
     }
 
+    /**
+     * Duas edições simultâneas do mesmo registro ({@code @Version}) — 409 com a causa.
+     * Sem este handler a exceção do bloqueio otimista virava um 500 sem `message`.
+     */
+    @ExceptionHandler(org.springframework.dao.OptimisticLockingFailureException.class)
+    public ResponseEntity<Object> handleBloqueioOtimista(
+            org.springframework.dao.OptimisticLockingFailureException ex) {
+        return erro(HttpStatus.CONFLICT, "O registro foi alterado por outro usuário. Recarregue e tente de novo.");
+    }
+
+    /**
+     * Bloqueio pessimista não obtido (tempo esgotado ou deadlock, ex.: migração de cota
+     * concorrente) — 409; a operação foi desfeita inteira e pode ser repetida.
+     */
+    @ExceptionHandler(org.springframework.dao.PessimisticLockingFailureException.class)
+    public ResponseEntity<Object> handleBloqueioPessimista(
+            org.springframework.dao.PessimisticLockingFailureException ex) {
+        return erro(HttpStatus.CONFLICT, "O registro está em uso por outra operação. Tente de novo em instantes.");
+    }
+
     /** Dados inválidos enviados pelo cliente — 400 com a causa explícita. */
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<Object> handleArgumentoInvalido(IllegalArgumentException ex) {

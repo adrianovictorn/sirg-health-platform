@@ -755,6 +755,75 @@ Idempotente. A planilha inicial do cliente está em
 
 ---
 
+### 3.15e Migração de data de cota (V108)
+
+Ao mudar a **data** de uma cota por data que já tem agendamentos, o sistema pergunta se deve
+migrá-los. Fica em `CotaMigracaoDataService`; a edição comum (`PUT /cotas/{id}`) recusa essa
+mudança com 409.
+
+**Campos novos (V108):**
+
+| Onde | Campo | Notas |
+|---|---|---|
+| `agendamento_solicitacao` | `data_agendada_original` (`DATE`, anulável) | A data de antes da **primeira** migração (`COALESCE`, não é sobrescrita nas seguintes). Nulo = nunca migrado. Não aparece em nenhum DTO existente |
+| `cota_migracao_data` (entidade `CotaMigracaoData`) | `cota_origem_id`, `cota_resultante_id`, `data_de`, `data_para`, `unificada`, `agendamentos`, `itens`, `realizado_por_id`, `realizado_em` (`TIMESTAMPTZ`) | Uma linha por operação. Os ids de cota **não têm FK**: na unificação a cota de origem é excluída e a auditoria precisa sobreviver |
+
+**DTOs:** `CotaMigracaoDataCreateDTO(dataEspecifica)`; `CotaMigracaoDataPreviaDTO` (só
+contagens: agendamentos, itens e itens por status, `quantidadeUtilizada`, `divergente`,
+`existeCotaNoDestino` e totais do destino, `solicitacoesFederadas` — nenhum dado nominal nem
+valor em reais); `CotaMigracaoDataViewDTO(cotaResultanteId, unificada, agendamentosMigrados,
+itensMigrados)`.
+
+**Quem migra.** Só cota do tipo `DATA` e origem manual. Cota com profissional: os itens que
+apontam para ela pela FK `solicitacao_especialidade.cota_unidade_id`. Cota **sem** profissional
+não deixa FK no item (consome sem registrar qual), então os itens são reconstruídos por
+**incidência**: mesma unidade (ou grupo de unidades), mesma especialidade (ou grupo, ou qualquer
+uma se a cota é geral) e `data_agendada` = data da cota, com `cota_unidade_id IS NULL`. Isso
+inclui agendamentos feitos por ADMIN/GESTOR, que não consomem cota — por isso a prévia avisa
+quando o total de itens incidentes difere de `quantidadeUtilizada` (`divergente`). Migram os
+agendamentos em **qualquer status** (mudança de status não estorna cota) e **inteiros**, com
+todos os exames.
+
+**Fluxo (`CotaMigracaoDataService.migrar`, `@Transactional`, tudo ou nada):**
+
+```
+POST /api/cotas/{id}/migrar-data  { dataEspecifica }
+  1. findByIdParaMigracao (PESSIMISTIC_WRITE)
+  2. recusa: origem AGENDA (409), tipo MENSAL (409), data nula/igual (400)
+  3. copia os escalares da cota (os bulk updates abaixo desanexam as entidades)
+  4. agendamentos que a cota consome (FK ou incidência); nenhum → 400
+  5. cota de destino com a mesma chave (tipo DATA, titular, escopo, profissional, data nova)?
+       existe e é AGENDA ou está inativa → 409; existe e está ativa → UNIFICAÇÃO
+  6. capacidade global (Especialidade.vagas) na data nova, como em AgendamentoService → 409
+  7. mover a cota: saveAndFlush (confere @Version) — ou, na unificação, absorver() soma
+     total e utilizado no destino, repontarCota() reaponta TODAS as FKs e a origem é excluída
+  8. CotaUnidadeService.transferirUtilizacao(itens, viajantes): devolve as vagas das cotas da
+     data antiga e consome as da nova; a cota migrada (e o destino, se unificou) "viaja" — o
+     contador dela não é tocado. Cota presente nos dois lados (a mensal do mesmo mês) não é
+     tocada. Cota esgotada na data nova → 409 e rollback de tudo
+  9. remarcarEmLote: data_agendada = nova; data_agendada_original = COALESCE(original, anterior)
+ 10. apaga o snapshot fechamento_indicadores_dia das datas de origem e destino
+     (recalculado na próxima consulta)
+ 11. grava CotaMigracaoData
+ 12. publica os eventos (consumidos AFTER_COMMIT)
+```
+
+**Regras de recusa na transferência de contadores.** Item de carona com FK para **outra** cota com
+profissional que não vale na data nova: 409 ("Há agendamento com exame vinculado a outra cota com
+profissional (id=X) que não vale em {data}. Migre também essa cota ou trate o agendamento
+antes."). Agendamentos de ADMIN/GESTOR (que nunca consumiram) contam como consumidores, como no
+estorno de `deleteAgendamento`: ao mudar de mês podem devolver/consumir mensais e causar recusa
+por saldo no destino; o aviso `divergente` só compara com a cota migrada.
+
+**Eventos.** `AgendamentoRemarcadoEvent` (WhatsApp), um por agendamento com ao menos um item
+`AGENDADO`; `AgendamentoExternoRemarcadoEvent` (federação), um por solicitação com município de
+origem diferente do local.
+
+**Fora de escopo:** cota de agenda (continua somente leitura), cota mensal (não muda de mês com
+agendamentos: 409), troca de tipo de período com agendamentos (409), transporte sanitário (não
+é ajustado) e teto financeiro (**não é redebitado**: ao mudar de mês, teto e painel de custos
+divergem nesses itens). Decisões e alternativas: ADR 0008.
+
 ### 3.16 Profissional
 
 **Tabela:** `profissional`  
@@ -1081,6 +1150,15 @@ Usuário → DELETE /api/agendamentos/{id}
 > **Remanejar = excluir + recriar**, portanto estorna e reconsome — inclusive quando a
 > nova data cai em outro período.
 
+### 5.3c Fluxo de Migração de Data de Cota
+
+Ver §3.15e. Resumo: a tela de edição da cota (`/admin/cotas/{id}/editar`), quando só a data de
+uma cota por data mudou, chama `GET /cotas/{id}/migracao-data/previa`; com agendamentos, abre o
+diálogo "Migrar os agendamentos para a nova data?". **Sim** → `POST /cotas/{id}/migrar-data`;
+**Não** → nada é salvo. Sem agendamentos o `PUT` segue normal. Depois do commit, o WhatsApp
+recebe uma `REMARCACAO` por agendamento com item agendado e a federação avisa o município de
+origem dos pacientes de fora.
+
 ### 5.4 Fluxo de Upload de Foto de Perfil
 
 ```
@@ -1241,6 +1319,7 @@ Próxima requisição do usuário desativado:
 | V105 | Custo: `especialidade.valor_unitario`, `codigo_sus` (10 dígitos, **não único**), `valor_origem`, `valor_atualizado_em`, `valor_atualizado_por_id`. **Nenhum preço embutido** — ver §3.15d |
 | V106 | `solicitacao_especialidade.valor_unitario_agendado` — valor da época, **sem backfill** |
 | V107 | Tabela `teto_financeiro` (unidade + grupo de especialidades + mês, UNIQUE) e `solicitacao_especialidade.teto_financeiro_id` |
+| V108 | `agendamento_solicitacao.data_agendada_original` e tabela `cota_migracao_data` (auditoria da migração de data de cota, ids de cota sem FK) — ver §3.15e |
 
 > **Limite do backfill (V73/V76/V77):** só é possível vincular a unidade quando
 > `usf_origem` está preenchido **e** casa com alguma unidade cadastrada. O que sobra é
@@ -1387,7 +1466,7 @@ separados por vírgula. Valor inválido → 400.
 | Método | Endpoint | Descrição |
 |---|---|---|
 | POST | `/agendamentos` | Cria agendamento |
-| GET | `/agendamentos/pendentes/**` | Agendamentos pendentes (público) |
+| GET | `/agendamentos/pendentes/**` | Agendamentos pendentes (requer autenticação) |
 | GET | `/agendamentos` | Lista agendamentos |
 | PUT | `/agendamentos/{id}` | Atualiza |
 | DELETE | `/agendamentos/{id}` | Remove |
@@ -1446,7 +1525,9 @@ separados por vírgula. Valor inválido → 400.
 | GET | `/cotas/unidade/{id}/periodo/{periodo}` | Autenticado¹ | Cotas da unidade no período |
 | GET | `/cotas/saldo?unidadeId=&especialidadeId=&periodo=` | Autenticado¹ | Saldo disponível (menor entre as cotas incidentes) |
 | POST | `/cotas` | ADMIN | Cria cota (titular = `unidadeId` **ou** `grupoUnidadesId`; escopo = `especialidadeId` **ou** `grupoEspecialidadesId` **ou** nenhum) |
-| PUT | `/cotas/{id}` | ADMIN | Atualiza quantidade/status da cota |
+| PUT | `/cotas/{id}` | ADMIN | Atualiza quantidade/status da cota. **409** se o período mudou (tipo, mês ou data) e a cota tem agendamentos: "Esta cota tem N agendamento(s). Para mudar a data é preciso migrar os agendamentos." |
+| GET | `/cotas/{id}/migracao-data/previa?dataEspecifica=YYYY-MM-DD` | ADMIN | O que a migração faria, sem alterar nada (`CotaMigracaoDataPreviaDTO`). `agendamentos = 0` quando a cota não tem agendamentos |
+| POST | `/cotas/{id}/migrar-data` | ADMIN | Corpo `{ dataEspecifica }`. Muda a data da cota e migra os agendamentos, tudo ou nada (`CotaMigracaoDataViewDTO`). 409: cota de agenda, mensal, destino de agenda/inativo, capacidade ou cota esgotada na data nova, lock otimista ou pessimista (`O registro foi alterado por outro usuário...`) |
 
 ¹ Os endpoints que recebem `unidadeId` passam por `UnidadeAcessoService.exigirAcessoA`:
 trocar o id na chamada direta não dá acesso a outra unidade.
@@ -1575,6 +1656,7 @@ Sem `de`/`ate`, o período são os últimos 7 dias. As datas são do fuso `Ameri
 | Operação | Mensagem |
 |---|---|
 | `AgendamentoService.criarAgendamentoParaMultiplosExames` | `CONFIRMACAO` — ou `REMARCACAO`, se havia cancelamento pendente de algum dos mesmos itens |
+| `CotaMigracaoDataService.migrar` (§3.15e) | `REMARCACAO` com a data nova (`WhatsAppMensagemService.enfileirarRemarcacao`), um por agendamento com ao menos um item `AGENDADO`. Usa o template de confirmação, como a remarcação existente. As regras de `preparar` (data passada, opt-out, outro município) valem como sempre |
 | `AgendamentoService.deleteAgendamento` | `CANCELAMENTO`, que espera 10 min na fila |
 | Lote diário das 8h, ou "Rodar lembretes agora" | `LEMBRETE` para atendimentos de daqui a 3 dias |
 | Reenvio pelo painel | `CONFIRMACAO` ou `LEMBRETE`, origem `MANUAL` |
@@ -1609,7 +1691,7 @@ barrar vira `NAO_ENVIADO` com o motivo:
 | `SEM_TELEFONE` / `TELEFONE_INVALIDO` | Ver normalização abaixo |
 | `FORA_DA_LISTA_DE_TESTE` | Há lista de números de teste e o número não está nela |
 | `LIMITE_DIARIO` | Mensagens aceitas hoje atingiram `limite-diario`. Não é reenviada sozinha depois |
-| `SUBSTITUIDO_POR_REMARCACAO` | Cancelamento descartado porque o item foi reagendado |
+| `SUBSTITUIDO_POR_REMARCACAO` | Cancelamento descartado porque o item foi reagendado — ou confirmação, lembrete ou remarcação pendentes descartados porque a migração de data de cota (§3.15e) mudou a data do agendamento |
 
 **Telefone** (`TelefoneWhatsAppNormalizador`): remove máscara, zero inicial e `55`; insere o nono
 dígito em celular antigo de 10 dígitos; exige DDD válido. Fixo e número **sem DDD** não enviam —
@@ -2309,6 +2391,7 @@ A comunicação entre municípios usa **RabbitMQ** como broker. Cada instância 
 - Publicação de solicitação → `PactoEventoEnviadaViewDTO` (com FHIR payload)
 - Claim de solicitação → `PactoEventoClaimAceiteMensagemDTO`
 - Agendamento externo → `AgendamentoExternoMensagemDTO`
+- Agendamento remarcado (migração de data de cota) → `AgendamentoRemarcadoMensagemDTO`, routing key `agendamento-remarcado.{MUNICÍPIO}` (binding `agendamento-remarcado.{MUNICÍPIO}.#`), enviada **depois do commit** (`FederacaoRemarcacaoListener`) só quando a solicitação tem município de origem diferente do local — sem o fallback `BROADCAST` do agendamento externo. O município de origem cria a notificação `AGENDAMENTO_REMARCADO`
 
 ### 10.6 Interoperabilidade FHIR
 

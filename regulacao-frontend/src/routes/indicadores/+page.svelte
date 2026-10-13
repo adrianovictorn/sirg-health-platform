@@ -408,7 +408,7 @@
         {@render indicador(
           "Pacientes novos hoje",
           novosPacientesDoDia,
-          "Solicitações com data de malote de hoje.",
+          "Solicitações com data de recebimento do pedido de hoje.",
           "bg-white shadow border-l-emerald-600"
         )}
         {@render indicador(

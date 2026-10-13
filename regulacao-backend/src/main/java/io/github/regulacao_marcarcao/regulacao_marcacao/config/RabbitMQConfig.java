@@ -76,6 +76,13 @@ public class RabbitMQConfig {
         return BindingBuilder.bind(muncipioQueue).to(regionalExchange).with(routingKey);
     }
 
+    // Remarcação de agendamento (migração de cota) de paciente deste município, feita em outro
+    @Bean
+    public Binding bindingAgendamentoRemarcado(Queue muncipioQueue, TopicExchange regionalExchange, @Value("${app.municipio.nome-identificador}") String nomeMunicipio) {
+        String routingKey = String.format("agendamento-remarcado.%s.#", nomeMunicipio.toUpperCase());
+        return BindingBuilder.bind(muncipioQueue).to(regionalExchange).with(routingKey);
+    }
+
     // Fallback para broadcast de agendamentos externos (origem desconhecida)
     @Bean
     public Binding bindingAgendamentoExternoBroadcast(Queue muncipioQueue, TopicExchange regionalExchange) {

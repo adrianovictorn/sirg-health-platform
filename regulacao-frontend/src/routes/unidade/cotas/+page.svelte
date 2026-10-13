@@ -284,7 +284,7 @@
 <div class="flex min-h-screen bg-gray-200">
   <RoleBasedMenu activePage="/unidade/cotas" />
   <div class="flex-1 min-w-0 flex flex-col">
-    <header class="bg-emerald-700 text-white shadow py-4 pr-4 pl-12 md:p-4 flex items-center justify-between">
+    <header class="bg-emerald-700 text-white shadow p-4 flex items-center justify-between">
       <h1 class="text-xl font-semibold">Cotas — {unidadeNome}</h1>
       {#if $user}
         <UserMenu />
@@ -293,7 +293,7 @@
       {/if}
     </header>
 
-    <main class="cotas-ibm flex-1 py-4 pr-4 pl-12 md:p-6 overflow-auto">
+    <main class="cotas-ibm flex-1 p-4 md:p-6 overflow-auto">
       <div class="max-w-[1600px] mx-auto space-y-6">
 
         {#if isLoading}

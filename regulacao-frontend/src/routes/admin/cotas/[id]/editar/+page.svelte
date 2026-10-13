@@ -1,8 +1,11 @@
 <script>
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
   import { goto } from '$app/navigation';
   import { page } from '$app/stores';
-  import { getApi, putApi } from '$lib/api.js';
+  import { getApi, postApi, putApi } from '$lib/api.js';
+  import { formatarHora } from '$lib/cotas.js';
+  import { paraDataISO } from '$lib/dataIso.js';
+  import { formatarData } from '$lib/datas.js';
   import Content from '$lib/Content.svelte';
   import { toast } from 'svelte-sonner';
 
@@ -16,6 +19,15 @@
   let origemAgenda = $state(false);
   let agendaId = $state(null);
   let proximasOcorrencias = $state([]);
+
+  // Período como veio do servidor: decide se a edição só mudou a data de uma cota por data
+  // (caso em que há pergunta de migração dos agendamentos) e o que o PUT ainda precisa levar.
+  let periodoOriginal = $state(null);
+  let payloadOriginal = $state(null);
+  let dialogoMigracao = $state(null); // { previa, dataAnterior, dataNova, payload }
+  let erroMigracao = $state('');
+  let migrando = $state(false);
+  let dialogoEl = $state(null);
 
   let form = $state({
     titular: 'UNIDADE',
@@ -131,6 +143,8 @@
         return;
       }
       const c = await res.json();
+      // O backend manda LocalDate como array; o campo de data e a comparação em salvar() precisam de AAAA-MM-DD.
+      const dataISO = paraDataISO(c.dataEspecifica);
       origemAgenda = c.origem === 'AGENDA';
       agendaId = c.agendaId;
       proximasOcorrencias = c.proximasOcorrencias ?? [];
@@ -143,20 +157,26 @@
         especialidadeId: c.especialidadeId,
         tipoPeriodo: c.tipoPeriodo,
         periodo: c.periodo ?? new Date().toISOString().slice(0, 7),
-        dataEspecifica: c.dataEspecifica ?? new Date().toISOString().slice(0, 10),
+        dataEspecifica: dataISO || new Date().toISOString().slice(0, 10),
         quantidadeTotal: c.quantidadeTotal,
         ativo: c.ativo,
         profissionalId: c.profissionalId ?? null,
         localAgendamentoId: c.localAgendamentoId ?? null,
         horarioDinamico: c.horarioDinamico ?? false,
         tempoMedioAtendimentoMinutos: c.tempoMedioAtendimentoMinutos ?? null,
-        horaInicial: c.horaInicial ? c.horaInicial.slice(0, 5) : '',
-        horaFinal: c.horaFinal ? c.horaFinal.slice(0, 5) : '',
+        horaInicial: formatarHora(c.horaInicial),
+        horaFinal: formatarHora(c.horaFinal),
         diasSemana: c.diasSemana ?? []
       };
       if (c.profissionalId) {
         profissionalSelecionado = { id: c.profissionalId, nome: c.profissionalNome };
       }
+      periodoOriginal = {
+        tipoPeriodo: c.tipoPeriodo,
+        periodo: c.periodo ?? null,
+        dataEspecifica: dataISO || null
+      };
+      payloadOriginal = montarPayload();
     } catch {
       toast.error('Erro ao carregar cota.');
       goto('/admin/cotas');
@@ -202,7 +222,50 @@
       return;
     }
 
-    const payload = {
+    const payload = montarPayload();
+
+    // Só a data de uma cota por data mudou: se ela tem agendamentos, pergunta se migra.
+    const soDataMudou = periodoOriginal
+      && form.tipoPeriodo === 'DATA'
+      && periodoOriginal.tipoPeriodo === 'DATA'
+      && form.dataEspecifica
+      && form.dataEspecifica !== periodoOriginal.dataEspecifica;
+
+    salvando = true;
+    try {
+      if (soDataMudou) {
+        const resPrevia = await getApi(
+          `cotas/${cotaId}/migracao-data/previa?dataEspecifica=${encodeURIComponent(form.dataEspecifica)}`
+        );
+        if (!resPrevia.ok) {
+          const erro = await resPrevia.json().catch(() => ({}));
+          toast.error(erro.message ?? 'Erro ao verificar os agendamentos da cota.');
+          return;
+        }
+        const previa = await resPrevia.json();
+        if (previa.agendamentos > 0) {
+          await abrirDialogoMigracao({
+            previa,
+            dataAnterior: periodoOriginal.dataEspecifica,
+            dataNova: form.dataEspecifica,
+            payload
+          });
+          return;
+        }
+      }
+      await atualizarCota(cotaId, payload);
+    } catch {
+      toast.error('Erro ao salvar cota.');
+    } finally {
+      salvando = false;
+    }
+  }
+
+  function montarPayload() {
+    const porGrupoUnidades = form.titular === 'GRUPO';
+    const porGrupoEsp = form.escopo === 'GRUPO_ESPECIALIDADES';
+    const temDiasSemana = form.diasSemana.length > 0;
+    return {
       unidadeId: porGrupoUnidades ? null : Number(form.unidadeId),
       grupoUnidadesId: porGrupoUnidades ? Number(form.grupoUnidadesId) : null,
       especialidadeId: (!porGrupoEsp && form.especialidadeId) ? Number(form.especialidadeId) : null,
@@ -221,21 +284,89 @@
       horaFinal: form.horaFinal || null,
       diasSemana: temDiasSemana ? form.diasSemana : null
     };
+  }
 
-    salvando = true;
+  /** PUT da cota; o 409 do backend (ex.: mensal com agendamentos) aparece como mensagem. */
+  async function atualizarCota(id, payload) {
+    const res = await putApi(`cotas/${id}`, payload);
+    if (!res.ok) {
+      const erro = await res.json().catch(() => ({}));
+      toast.error(erro.message ?? 'Erro ao salvar cota.');
+      return false;
+    }
+    toast.success('Cota atualizada.');
+    goto('/admin/cotas');
+    return true;
+  }
+
+  // --- Migração dos agendamentos ao mudar a data ------------------------------
+
+  async function abrirDialogoMigracao(dados) {
+    erroMigracao = '';
+    dialogoMigracao = dados;
+    await tick();
+    dialogoEl?.showModal();
+  }
+
+  function fecharDialogoMigracao() {
+    if (dialogoEl?.open) dialogoEl.close();
+    dialogoMigracao = null;
+    erroMigracao = '';
+  }
+
+  /** Esc fecha (equivale a "Não"), exceto enquanto a migração está em andamento. */
+  function aoCancelarDialogo(evento) {
+    if (migrando) evento.preventDefault();
+  }
+
+  async function confirmarMigracao() {
+    if (!dialogoMigracao || migrando) return;
+    const { dataNova, payload } = dialogoMigracao;
+    migrando = true;
+    erroMigracao = '';
     try {
-      const res = await putApi(`cotas/${cotaId}`, payload);
+      const res = await postApi(`cotas/${cotaId}/migrar-data`, { dataEspecifica: dataNova });
       if (!res.ok) {
         const erro = await res.json().catch(() => ({}));
-        toast.error(erro.message ?? 'Erro ao salvar cota.');
+        erroMigracao = erro.message ?? 'Erro ao migrar os agendamentos. Nada foi alterado.';
         return;
       }
-      toast.success('Cota atualizada.');
-      goto('/admin/cotas');
+      const resultado = await res.json();
+      migrando = false; // antes de fechar: onclose reabre o diálogo enquanto migrando
+      fecharDialogoMigracao();
+
+      if (resultado.unificada) {
+        toast.success('Cotas unificadas. Revise a quantidade.');
+        goto('/admin/cotas');
+        return;
+      }
+
+      // A migração já gravou a nova data: o que sobrou de diferente vai no PUT.
+      periodoOriginal = { ...periodoOriginal, dataEspecifica: dataNova };
+      const outrosCamposMudaram = JSON.stringify({ ...payload, dataEspecifica: null })
+        !== JSON.stringify({ ...payloadOriginal, dataEspecifica: null });
+      if (!outrosCamposMudaram) {
+        toast.success(`${resultado.agendamentosMigrados} agendamento(s) migrado(s) para ${formatarData(dataNova)}.`);
+        goto('/admin/cotas');
+        return;
+      }
+      payloadOriginal = { ...payloadOriginal, dataEspecifica: dataNova };
+      salvando = true;
+      try {
+        const salvou = await atualizarCota(resultado.cotaResultanteId, payload);
+        if (!salvou) {
+          toast.error('Os agendamentos foram migrados, mas as demais alterações não foram salvas.');
+        }
+      } catch {
+        // O diálogo já fechou: o erro precisa aparecer fora dele, e a data nova já vale como original.
+        toast.error('Os agendamentos foram migrados, mas as demais alterações não foram salvas.');
+      } finally {
+        salvando = false;
+      }
     } catch {
-      toast.error('Erro ao salvar cota.');
+      erroMigracao = 'Erro ao migrar os agendamentos.';
     } finally {
-      salvando = false;
+      migrando = false;
     }
   }
 </script>
@@ -528,7 +659,7 @@
                     </div>
                     {#if proximasOcorrencias.length > 0}
                       <p class="ibm-ajuda">
-                        Próximas datas previstas: {proximasOcorrencias.join(', ')}
+                        Próximas datas previstas: {proximasOcorrencias.map((d) => formatarData(d)).join(', ')}
                       </p>
                     {/if}
                   </fieldset>
@@ -578,6 +709,191 @@
           {salvando ? 'Salvando...' : 'Salvar Cota'}
         </button>
       </div>
+
+      <dialog
+        bind:this={dialogoEl}
+        class="ibm-dialogo"
+        aria-labelledby="migracao-titulo"
+        aria-describedby="migracao-descricao"
+        aria-busy={migrando}
+        oncancel={aoCancelarDialogo}
+        onclose={() => {
+          // Esc repetido pode fechar sem disparar "cancel": durante a migração, reabre.
+          if (migrando) { dialogoEl?.showModal(); return; }
+          dialogoMigracao = null;
+          erroMigracao = '';
+        }}
+      >
+        {#if dialogoMigracao}
+          {@const previa = dialogoMigracao.previa}
+          <div class="ibm-dialogo-caixa">
+            <header class="ibm-dialogo-topo">
+              <svg
+                class="ibm-dialogo-icone"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                stroke-width="2"
+                aria-hidden="true"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  d="M12 9v4m0 4h.01M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"
+                />
+              </svg>
+              <h2 id="migracao-titulo" class="ibm-dialogo-titulo">Migrar os agendamentos para a nova data?</h2>
+            </header>
+
+            <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+            <div class="ibm-dialogo-corpo" role="region" aria-label="Detalhes da migração" tabindex="0">
+              <div id="migracao-descricao" class="ibm-resumo">
+                <p class="ibm-resumo-total">
+                  <strong class="ibm-resumo-numero">{previa.agendamentos}</strong>
+                  <span>
+                    <span class="ibm-resumo-legenda">
+                      {previa.agendamentos === 1 ? 'agendamento nesta cota' : 'agendamentos nesta cota'}
+                    </span>
+                    <span class="ibm-resumo-itens">
+                      ({previa.itens} {previa.itens === 1 ? 'item' : 'itens'})
+                    </span>
+                  </span>
+                </p>
+                <p class="ibm-resumo-datas">
+                  <span class="ibm-resumo-data">
+                    <span class="ibm-resumo-rotulo">Data atual</span>
+                    <span class="ibm-resumo-valor">{formatarData(dialogoMigracao.dataAnterior)}</span>
+                  </span>
+                  <svg
+                    class="ibm-resumo-seta"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    aria-hidden="true"
+                  >
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M5 12h14M13 6l6 6-6 6" />
+                  </svg>
+                  <span class="sr-only">passa para</span>
+                  <span class="ibm-resumo-data">
+                    <span class="ibm-resumo-rotulo">Nova data</span>
+                    <span class="ibm-resumo-valor ibm-resumo-valor--nova">{formatarData(dialogoMigracao.dataNova)}</span>
+                  </span>
+                </p>
+              </div>
+
+              <div>
+                <h3 class="ibm-rotulo">Itens por situação</h3>
+                <dl class="ibm-situacoes">
+                  <div class="ibm-situacao">
+                    <dt>Agendados</dt>
+                    <dd>{previa.itensAgendados}</dd>
+                  </div>
+                  <div class="ibm-situacao">
+                    <dt>Realizados</dt>
+                    <dd>{previa.itensRealizados}</dd>
+                  </div>
+                  <div class="ibm-situacao">
+                    <dt>Cancelados ou faltosos</dt>
+                    <dd>{previa.itensCanceladosOuFaltosos}</dd>
+                  </div>
+                </dl>
+              </div>
+
+              <div class="ibm-avisos">
+                <h3 class="ibm-avisos-titulo">
+                  <svg
+                    class="ibm-avisos-icone"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    aria-hidden="true"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      d="M12 9v4m0 4h.01M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"
+                    />
+                  </svg>
+                  Antes de confirmar
+                </h3>
+                <ul class="ibm-avisos-lista">
+                  {#if previa.existeCotaNoDestino}
+                    <li class="ibm-avisos-item">
+                      <strong class="ibm-avisos-assunto">Cota já existente na nova data</strong>
+                      Já existe uma cota igual em {formatarData(dialogoMigracao.dataNova)}
+                      (total {previa.destinoQuantidadeTotal}, utilizadas {previa.destinoQuantidadeUtilizada}).
+                      As duas serão unificadas: as quantidades são somadas e esta cota deixa de existir.
+                      Revise a quantidade depois.
+                    </li>
+                  {/if}
+                  {#if previa.divergente}
+                    <li class="ibm-avisos-item">
+                      <strong class="ibm-avisos-assunto">Contagem diferente da cota</strong>
+                      Esta cota registra {previa.quantidadeUtilizada} vaga(s) usada(s), mas a contagem acima inclui
+                      agendamentos que não consumiram esta cota (por exemplo, marcados pela administração).
+                      Todos serão migrados.
+                    </li>
+                  {/if}
+                  <li class="ibm-avisos-item">
+                    <strong class="ibm-avisos-assunto">WhatsApp</strong>
+                    Pacientes com atendimento futuro agendado recebem aviso de remarcação por WhatsApp.
+                  </li>
+                  <li class="ibm-avisos-item">
+                    <strong class="ibm-avisos-assunto">Transporte sanitário</strong>
+                    O transporte sanitário não é ajustado: confira os agendamentos de transporte dessa data.
+                  </li>
+                  {#if previa.solicitacoesFederadas > 0}
+                    <li class="ibm-avisos-item">
+                      <strong class="ibm-avisos-assunto">Outros municípios</strong>
+                      {previa.solicitacoesFederadas} solicitação(ões) são de pacientes de outros municípios, que
+                      recebem aviso da remarcação.
+                    </li>
+                  {/if}
+                </ul>
+              </div>
+
+              <ul class="ibm-escolhas">
+                <li><strong>Sim:</strong> os agendamentos passam para a nova data e a cota vai junto.</li>
+                <li><strong>Não:</strong> nada é salvo e a data da cota não muda.</li>
+              </ul>
+            </div>
+
+            <footer class="ibm-dialogo-base">
+              {#if erroMigracao}
+                <p class="ibm-erro ibm-dialogo-erro" role="alert">
+                  <svg
+                    class="ibm-dialogo-erro-icone"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    aria-hidden="true"
+                  >
+                    <circle cx="12" cy="12" r="9" />
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4m0 4h.01" />
+                  </svg>
+                  <span>{erroMigracao}</span>
+                </p>
+              {/if}
+
+              <div class="ibm-rodape ibm-dialogo-rodape">
+                <!-- svelte-ignore a11y_autofocus -->
+                <button type="button" onclick={fecharDialogoMigracao} disabled={migrando} autofocus
+                  class="ibm-btn ibm-btn--grande ibm-btn--secundario">
+                  Não
+                </button>
+                <button type="button" onclick={confirmarMigracao} disabled={migrando}
+                  class="ibm-btn ibm-btn--grande ibm-btn--primario">
+                  {#if migrando}<span class="ibm-giro" aria-hidden="true"></span>{/if}
+                  {migrando ? 'Migrando...' : 'Sim, migrar'}
+                </button>
+              </div>
+            </footer>
+          </div>
+        {/if}
+      </dialog>
     {/if}
   </div>
 </Content>
@@ -916,6 +1232,294 @@
     font-size: 14px;
   }
 
+  .ibm-erro {
+    padding: 12px 16px;
+    border-left: 4px solid #da1e28;
+    border-radius: 0 var(--ibm-raio-controle) var(--ibm-raio-controle) 0;
+    background: #fff1f1;
+    color: var(--ibm-tinta);
+    font-size: 14px;
+  }
+  .ibm-avisos-lista {
+    list-style: none;
+  }
+
+  /* Diálogo de migração dos agendamentos (nativo, modal) */
+  .ibm-dialogo {
+    /* Ícone de atenção: âmbar escuro, 3:1 ou mais sobre branco e sobre --ibm-aviso-fundo */
+    --ibm-aviso-tinta: #8e6a00;
+    --ibm-erro-tinta: #da1e28;
+    --ibm-dialogo-respiro: 16px;
+
+    width: min(36rem, calc(100vw - 32px));
+    max-width: calc(100vw - 32px);
+    max-height: calc(100vh - 32px);
+    max-height: calc(100dvh - 32px);
+    margin: auto;
+    padding: 0;
+    overflow: hidden;
+    border: 0;
+    border-radius: var(--ibm-raio-painel);
+    background: var(--ibm-camada);
+    color: var(--ibm-tinta);
+    font-family: var(--ibm-fonte);
+    font-size: 14px;
+    line-height: 1.43;
+    letter-spacing: 0.16px;
+    box-shadow: 0 10px 25px rgb(0 0 0 / 0.25);
+  }
+  @media (min-width: 640px) {
+    .ibm-dialogo {
+      --ibm-dialogo-respiro: 24px;
+    }
+  }
+  .ibm-dialogo::backdrop {
+    background: rgb(22 22 22 / 0.6);
+  }
+
+  /* Título e ações ficam fixos; só o corpo rola. Assim o foco inicial em "Não"
+     não desloca o resumo para fora da vista em telas baixas. */
+  .ibm-dialogo-caixa {
+    display: flex;
+    flex-direction: column;
+    max-height: inherit;
+  }
+  .ibm-dialogo-topo {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    flex: none;
+    padding: var(--ibm-dialogo-respiro) var(--ibm-dialogo-respiro) 16px;
+    border-bottom: 1px solid var(--ibm-linha);
+  }
+  .ibm-dialogo-icone {
+    flex: none;
+    width: 24px;
+    height: 24px;
+    color: var(--ibm-aviso-tinta);
+  }
+  .ibm-dialogo-titulo {
+    font-size: var(--ibm-titulo-tamanho);
+    font-weight: var(--ibm-titulo-peso);
+    line-height: 1.33;
+    color: var(--ibm-tinta);
+  }
+  .ibm-dialogo-corpo {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+    flex: 1 1 auto;
+    min-height: 0;
+    padding: var(--ibm-dialogo-respiro);
+    overflow-y: auto;
+  }
+  .ibm-dialogo-corpo:focus-visible {
+    outline: 2px solid var(--ibm-acento);
+    outline-offset: -2px;
+  }
+  .ibm-dialogo-base {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    flex: none;
+    padding: 16px var(--ibm-dialogo-respiro) var(--ibm-dialogo-respiro);
+    border-top: 1px solid var(--ibm-linha);
+    background: var(--ibm-camada);
+  }
+  .ibm-dialogo-rodape .ibm-btn {
+    gap: 8px;
+  }
+  .ibm-dialogo-erro {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    line-height: 1.43;
+  }
+  .ibm-dialogo-erro-icone {
+    flex: none;
+    width: 20px;
+    height: 20px;
+    color: var(--ibm-erro-tinta);
+  }
+
+  /* Resumo: o que se lê primeiro (quantos agendamentos, de qual data para qual) */
+  .ibm-resumo {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px 32px;
+    padding: 16px;
+    border-radius: var(--ibm-raio-controle);
+    background: var(--ibm-fundo);
+  }
+  .ibm-resumo-total {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 4px 12px;
+  }
+  .ibm-resumo-numero {
+    font-size: 40px;
+    font-weight: 600;
+    line-height: 1;
+    letter-spacing: 0;
+    font-variant-numeric: tabular-nums;
+  }
+  .ibm-resumo-legenda {
+    display: block;
+    font-weight: 600;
+  }
+  .ibm-resumo-itens {
+    display: block;
+    color: var(--ibm-tinta-suave);
+  }
+  .ibm-resumo-datas {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 8px 12px;
+  }
+  .ibm-resumo-data {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .ibm-resumo-rotulo {
+    font-size: 12px;
+    line-height: 1.33;
+    letter-spacing: 0.32px;
+    color: var(--ibm-tinta-suave);
+  }
+  .ibm-resumo-valor {
+    font-size: 20px;
+    line-height: 1.2;
+    letter-spacing: 0;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    color: var(--ibm-tinta-suave);
+  }
+  .ibm-resumo-valor--nova {
+    font-weight: 600;
+    color: var(--ibm-tinta);
+  }
+  .ibm-resumo-seta {
+    flex: none;
+    width: 20px;
+    height: 20px;
+    margin-bottom: 2px;
+    color: var(--ibm-tinta-suave);
+  }
+
+  /* Itens por situação: linhas no celular, três colunas a partir de 480 px */
+  .ibm-situacoes {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    border-top: 1px solid var(--ibm-linha);
+  }
+  .ibm-situacao {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--ibm-linha);
+  }
+  .ibm-situacao dt {
+    color: var(--ibm-tinta-suave);
+  }
+  .ibm-situacao dd {
+    font-size: 16px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+  @media (min-width: 480px) {
+    .ibm-situacoes {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      border-top: 0;
+    }
+    .ibm-situacao {
+      flex-direction: column;
+      justify-content: flex-start;
+      gap: 4px;
+      padding: 0 16px;
+      border-bottom: 0;
+      border-left: 1px solid var(--ibm-linha);
+    }
+    .ibm-situacao:first-child {
+      padding-left: 0;
+      border-left: 0;
+    }
+    .ibm-situacao dt {
+      font-size: 12px;
+      line-height: 1.33;
+      letter-spacing: 0.32px;
+    }
+    .ibm-situacao dd {
+      font-size: 20px;
+      line-height: 1.2;
+    }
+  }
+
+  /* Avisos: um só bloco de atenção, um assunto por linha */
+  .ibm-avisos {
+    padding: 16px;
+    border-left: 4px solid var(--ibm-aviso-borda);
+    border-radius: 0 var(--ibm-raio-controle) var(--ibm-raio-controle) 0;
+    background: var(--ibm-aviso-fundo);
+  }
+  .ibm-avisos-titulo {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 1.43;
+  }
+  .ibm-avisos-icone {
+    flex: none;
+    width: 20px;
+    height: 20px;
+    color: var(--ibm-aviso-tinta);
+  }
+  .ibm-avisos-item {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--ibm-aviso-borda);
+  }
+  .ibm-avisos-assunto {
+    display: block;
+    margin-bottom: 2px;
+    font-weight: 600;
+  }
+
+  /* O que cada botão faz, logo acima das ações */
+  .ibm-escolhas {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  /* Indicador de andamento dentro do botão (o texto "Migrando..." continua visível) */
+  .ibm-giro {
+    flex: none;
+    width: 16px;
+    height: 16px;
+    border: 2px solid currentColor;
+    border-right-color: transparent;
+    border-radius: 50%;
+  }
+  @keyframes ibm-giro {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .ibm-giro {
+      animation: ibm-giro 700ms linear infinite;
+    }
+  }
+
   /* Badges (pílula, como o Carbon faz para status) */
   .ibm-badge {
     display: inline-flex;
@@ -978,10 +1582,10 @@
     background: var(--ibm-secundario-fundo);
     color: var(--ibm-secundario-texto);
   }
-  .ibm-btn--secundario:hover {
+  .ibm-btn--secundario:hover:not(:disabled) {
     background: var(--ibm-secundario-hover);
   }
-  .ibm-btn--secundario:active {
+  .ibm-btn--secundario:active:not(:disabled) {
     background: var(--ibm-hover);
   }
   .ibm-btn--fantasma {
