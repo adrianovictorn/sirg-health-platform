@@ -12,6 +12,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -24,6 +25,8 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.Especialidade;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.Solicitacao;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.SolicitacaoEspecialidade;
@@ -35,6 +38,8 @@ import io.github.regulacao_marcarcao.regulacao_marcacao.entity.enums.StatusDaMar
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.EspecialidadeRepository;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.SolicitacaoRepository;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.UserRepository;
+import io.github.regulacao_marcarcao.regulacao_marcacao.repository.VitrinePublicaRepository;
+import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.VitrineTotaisProjection;
 
 /**
  * Autorizacao na borda HTTP dos endpoints que devolvem dados nominais de
@@ -58,9 +63,11 @@ class SegurancaEndpointsIT {
             "/api/fila-espera");
 
     @Autowired private MockMvc mockMvc;
+    @Autowired private ObjectMapper objectMapper;
     @Autowired private UserRepository userRepository;
     @Autowired private SolicitacaoRepository solicitacaoRepository;
     @Autowired private EspecialidadeRepository especialidadeRepository;
+    @Autowired private VitrinePublicaRepository vitrinePublicaRepository;
 
     private String sufixo;
     private Solicitacao solicitacao;
@@ -524,5 +531,53 @@ class SegurancaEndpointsIT {
                     .doesNotContainIgnoringCase("valorUtilizado")
                     .doesNotContainIgnoringCase("custoMedio");
         }
+    }
+
+    // Um unico teste chama a rota: o resumo fica em cache por uma hora no contexto
+    // do Spring, entao uma segunda chamada nao veria o que este setUp criou.
+    @Test
+    @DisplayName("Resumo publico da vitrine: abre sem login e so devolve a lista fechada de campos")
+    @SuppressWarnings("unchecked")
+    void resumoPublicoDaVitrineSoDevolveAListaFechada() throws Exception {
+        Especialidade sensivel = new Especialidade();
+        sensivel.setCodigo("SENS" + sufixo);
+        sensivel.setNome("Sensivel" + sufixo);
+        sensivel.setCategoria(ItemCategoria.ESPECIALIDADE_MEDICA);
+        sensivel.setAtivo(true);
+        sensivel.setSensivel(true);
+        sensivel.setVagas(0);
+        especialidadeRepository.saveAndFlush(sensivel);
+
+        String corpo = mockMvc.perform(get("/api/transparencia/resumo"))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+
+        Map<String, Object> resumo = objectMapper.readValue(corpo, Map.class);
+        assertThat(resumo.keySet())
+                .containsExactlyInAnyOrder("municipio", "totais", "catalogo", "sistema", "geradoEm");
+        assertThat(((Map<String, Object>) resumo.get("totais")).keySet())
+                .containsExactlyInAnyOrder("solicitacoes", "agendamentos", "pacientesAtendidos", "viagensTransporte");
+        assertThat(((Map<String, Object>) resumo.get("catalogo")).keySet())
+                .containsExactlyInAnyOrder("unidades", "especialidades", "nomesEspecialidades");
+        assertThat(((Map<String, Object>) resumo.get("sistema")).keySet())
+                .containsExactlyInAnyOrder("versao", "deployEm");
+
+        List<String> nomes = (List<String>) ((Map<String, Object>) resumo.get("catalogo")).get("nomesEspecialidades");
+        assertThat(nomes).contains("Cardiologia" + sufixo).doesNotContain("Sensivel" + sufixo);
+
+        // COUNT nunca devolve nulo: um getter nulo aqui e alias da consulta que nao casou
+        // com a projecao, defeito que o service esconderia como "suprimido".
+        VitrineTotaisProjection totais = vitrinePublicaRepository.totais();
+        assertThat(totais.getSolicitacoes()).isGreaterThanOrEqualTo(1);
+        assertThat(totais.getAgendamentos()).isNotNull();
+        assertThat(totais.getPacientesAtendidos()).isNotNull().isLessThanOrEqualTo(totais.getAgendamentos());
+        assertThat(totais.getViagensTransporte()).isNotNull();
+        assertThat(totais.getUnidades()).isNotNull();
+        assertThat(totais.getEspecialidades()).isGreaterThanOrEqualTo(2);
+
+        assertThat(corpo)
+                .doesNotContain(solicitacao.getNomePaciente())
+                .doesNotContain(solicitacao.getCpfPaciente())
+                .doesNotContain(solicitacao.getCns());
     }
 }

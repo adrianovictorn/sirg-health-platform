@@ -186,6 +186,14 @@
 						</exclude>
 					</excludes>
 				</configuration>
+				<!-- Gera META-INF/build-info.properties: a data do build aparece no resumo publico (/api/transparencia/resumo). -->
+				<executions>
+					<execution>
+						<goals>
+							<goal>build-info</goal>
+						</goals>
+					</execution>
+				</executions>
 			</plugin>
 		</plugins>
 	</build>
