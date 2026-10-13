@@ -113,7 +113,7 @@ class RelatorioUsfOrigemCaracterizacaoIT {
         solicitacaoEspecialidadeRepository.save(se);
 
         List<RelatorioGrupoAgendadoProjection> linhas =
-                solicitacaoEspecialidadeRepository.listarAgendadosPorGrupoEData(grupo.getCodigo(), LocalDate.now());
+                solicitacaoEspecialidadeRepository.listarAgendadosPorGrupoEData(grupo.getCodigo(), LocalDate.now(), null);
 
         assertThat(linhas).hasSize(1);
         assertThat(linhas.get(0).getUsfOrigem()).isEqualTo(unidade.getNome());
@@ -130,7 +130,7 @@ class RelatorioUsfOrigemCaracterizacaoIT {
         solicitacaoEspecialidadeRepository.save(se);
 
         List<RelatorioGrupoPendenteProjection> linhas =
-                solicitacaoEspecialidadeRepository.listarPendentesPorGrupo(grupo.getCodigo());
+                solicitacaoEspecialidadeRepository.listarPendentesPorGrupo(grupo.getCodigo(), null);
 
         assertThat(linhas).hasSize(1);
         assertThat(linhas.get(0).getUsfOrigem()).isEqualTo(unidade.getNome());
@@ -147,7 +147,7 @@ class RelatorioUsfOrigemCaracterizacaoIT {
         solicitacaoEspecialidadeRepository.save(se);
 
         List<RelatorioGrupoPendenteProjection> linhas =
-                solicitacaoEspecialidadeRepository.listarPendentesPorGrupo(grupo.getCodigo());
+                solicitacaoEspecialidadeRepository.listarPendentesPorGrupo(grupo.getCodigo(), null);
 
         assertThat(linhas).hasSize(1);
         assertThat(linhas.get(0).getUsfOrigem()).isEqualTo(UsfEnum.USF01.name());
@@ -163,7 +163,7 @@ class RelatorioUsfOrigemCaracterizacaoIT {
         solicitacaoEspecialidadeRepository.save(se);
 
         List<RelatorioGrupoPendenteProjection> linhas =
-                solicitacaoEspecialidadeRepository.listarPendentesPorGrupo(grupo.getCodigo());
+                solicitacaoEspecialidadeRepository.listarPendentesPorGrupo(grupo.getCodigo(), null);
 
         assertThat(linhas)
                 .as("solicitacao orfa nao pode desaparecer do relatorio por causa do LEFT JOIN com unidade")

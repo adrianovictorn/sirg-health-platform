@@ -34,18 +34,25 @@ public class RelatorioProducaoService {
     
 
     private final AgendamentoSolicitacaoRepository agendamentoSolicitacaoRepository;
+    private final UnidadeAcessoService unidadeAcessoService;
 
 
-    public RelatorioProducaoService(AgendamentoSolicitacaoRepository agendamentoSolicitacaoRepository) {
+    public RelatorioProducaoService(AgendamentoSolicitacaoRepository agendamentoSolicitacaoRepository,
+            UnidadeAcessoService unidadeAcessoService) {
         this.agendamentoSolicitacaoRepository = agendamentoSolicitacaoRepository;
+        this.unidadeAcessoService = unidadeAcessoService;
     }
 
-    public List<RelatorioProducaoViewDTO> dadosDoRelatorio(){
+    public List<RelatorioProducaoViewDTO> dadosDoRelatorio(Long unidadeSolicitada, String callerCpf){
+
+        Long unidadeId = unidadeAcessoService.resolverUnidadeAlvo(callerCpf, unidadeSolicitada);
 
         LocalDate hoje = LocalDate.now();
         LocalDateTime inicio  = hoje.atStartOfDay();
         LocalDateTime fim = inicio.plusDays(1).minusNanos(1);
-        List<AgendamentoSolicitacao> agendamentos = agendamentoSolicitacaoRepository.findByDataCriacaoBetween(inicio, fim);
+        List<AgendamentoSolicitacao> agendamentos = unidadeId == null
+                ? agendamentoSolicitacaoRepository.findByDataCriacaoBetween(inicio, fim)
+                : agendamentoSolicitacaoRepository.findByDataCriacaoBetweenAndSolicitacao_Unidade_Id(inicio, fim, unidadeId);
         List<RelatorioProducaoViewDTO> relatorioProducaoViewDTOs = agendamentos.stream().map(RelatorioProducaoViewDTO::fromEntity).toList();
         return relatorioProducaoViewDTOs;
         

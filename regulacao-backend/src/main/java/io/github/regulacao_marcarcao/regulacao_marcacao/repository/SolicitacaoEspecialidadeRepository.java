@@ -148,6 +148,7 @@ public interface SolicitacaoEspecialidadeRepository extends JpaRepository<Solici
             WHERE gr.codigo = :grupo
                 AND ag.data_agendada = :data
                 AND se.status = 'AGENDADO'
+                AND (CAST(:unidadeId AS bigint) IS NULL OR s.unidade_id = :unidadeId)
             GROUP BY
                 s.id,
                 s.nome_paciente,
@@ -159,7 +160,8 @@ public interface SolicitacaoEspecialidadeRepository extends JpaRepository<Solici
                 ag.data_agendada,
                 ag.turno
             """, nativeQuery = true)
-            List<RelatorioGrupoAgendadoProjection> listarAgendadosPorGrupoEData(@Param("grupo") String grupo, @Param("data") LocalDate data);
+            List<RelatorioGrupoAgendadoProjection> listarAgendadosPorGrupoEData(@Param("grupo") String grupo, @Param("data") LocalDate data,
+                    @Param("unidadeId") Long unidadeId);
 
             @Query(value = """
                     SELECT 
@@ -170,9 +172,11 @@ public interface SolicitacaoEspecialidadeRepository extends JpaRepository<Solici
                     JOIN agendamento_solicitacao ag ON ag.id = se.agendamento_id
                     JOIN grupo_relatorio gr ON gr.id = e.grupo_relatorio_id
                     WHERE gr.codigo = :grupo and ag.data_agendada = :data
+                        AND (CAST(:unidadeId AS bigint) IS NULL OR s.unidade_id = :unidadeId)
 
                     """, nativeQuery = true)
-            long countAgendadosPorGrupoEData(@Param("grupo") String grupo, @Param("data") LocalDate data);
+            long countAgendadosPorGrupoEData(@Param("grupo") String grupo, @Param("data") LocalDate data,
+                    @Param("unidadeId") Long unidadeId);
 
 
             @Query(value = """
@@ -193,6 +197,7 @@ public interface SolicitacaoEspecialidadeRepository extends JpaRepository<Solici
                     JOIN grupo_relatorio gr ON gr.id = e.grupo_relatorio_id
                     LEFT JOIN unidade u ON u.id = s.unidade_id
                     WHERE gr.codigo = :grupo and (se.status = 'AGUARDANDO' OR se.status = 'RETORNO' OR se.status = 'RETORNO_POLICLINICA')
+                        AND (CAST(:unidadeId AS bigint) IS NULL OR s.unidade_id = :unidadeId)
                     GROUP BY
                         s.id,
                         s.nome_paciente,
@@ -205,7 +210,8 @@ public interface SolicitacaoEspecialidadeRepository extends JpaRepository<Solici
                         se.status,
                         se.prioridade
                     """, nativeQuery = true)
-            List<RelatorioGrupoPendenteProjection> listarPendentesPorGrupo(@Param("grupo") String grupo);
+            List<RelatorioGrupoPendenteProjection> listarPendentesPorGrupo(@Param("grupo") String grupo,
+                    @Param("unidadeId") Long unidadeId);
 
 
             @Query(value = """
@@ -216,8 +222,10 @@ public interface SolicitacaoEspecialidadeRepository extends JpaRepository<Solici
                     JOIN especialidade e ON e.id = se.especialidade_id
                     JOIN grupo_relatorio gr ON gr.id = e.grupo_relatorio_id
                     WHERE gr.codigo = :grupo and (se.status = 'AGUARDANDO' OR se.status = 'RETORNO' OR se.status = 'RETORNO_POLICLINICA')
+                        AND (CAST(:unidadeId AS bigint) IS NULL OR s.unidade_id = :unidadeId)
                     """, nativeQuery = true)
-            long countPendentesPorGrupo(@Param("grupo") String grupo);
+            long countPendentesPorGrupo(@Param("grupo") String grupo,
+                    @Param("unidadeId") Long unidadeId);
 
             @Query(value = """
                     SELECT 
@@ -343,6 +351,7 @@ public interface SolicitacaoEspecialidadeRepository extends JpaRepository<Solici
                     JOIN solicitacao_especialidade se ON se.solicitacao_id = s.id
                     JOIN especialidade e ON e.id = se.especialidade_id
                     WHERE se.status = 'GEL'
+                        AND (CAST(:unidadeId AS bigint) IS NULL OR s.unidade_id = :unidadeId)
                     ORDER BY
                         CASE se.prioridade
                             WHEN 'EMERGENCIA' THEN 1
@@ -351,7 +360,7 @@ public interface SolicitacaoEspecialidadeRepository extends JpaRepository<Solici
                         END,
                         s.nome_paciente ASC
                     """, nativeQuery = true)
-            List<PacientesGelProjection> listarTodosPacientesGel();
+            List<PacientesGelProjection> listarTodosPacientesGel(@Param("unidadeId") Long unidadeId);
 
             @Query(value = """
                     SELECT

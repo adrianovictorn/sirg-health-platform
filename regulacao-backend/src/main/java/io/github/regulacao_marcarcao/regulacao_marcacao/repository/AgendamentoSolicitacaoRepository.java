@@ -20,6 +20,9 @@ public interface AgendamentoSolicitacaoRepository extends JpaRepository<Agendame
  
         List<AgendamentoSolicitacao> findByDataCriacaoBetween(LocalDateTime inicio, LocalDateTime fim);
 
+        /** Relatorio de producao de quem so enxerga a propria unidade (a solicitante). */
+        List<AgendamentoSolicitacao> findByDataCriacaoBetweenAndSolicitacao_Unidade_Id(LocalDateTime inicio, LocalDateTime fim, Long unidadeId);
+
         /** Agendamentos da data que ainda tem ao menos um item no status dado (lembrete do WhatsApp). */
         @Query("SELECT a FROM AgendamentoSolicitacao a WHERE a.dataAgendada = :data AND EXISTS ("
                 + "SELECT 1 FROM SolicitacaoEspecialidade se "

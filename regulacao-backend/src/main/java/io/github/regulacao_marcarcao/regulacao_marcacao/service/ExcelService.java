@@ -31,6 +31,7 @@ public class ExcelService {
 
     private final SolicitacaoEspecialidadeRepository especialidadeRepository;
     private final InstanceContext instanceContext;
+    private final UnidadeAcessoService unidadeAcessoService;
 
     private String getNomeCentral() {
         try {
@@ -53,12 +54,13 @@ public class ExcelService {
         }
     }
 
-    public ByteArrayInputStream gerarPlanilhaAguardando(String grupo) throws IOException {
+    public ByteArrayInputStream gerarPlanilhaAguardando(String grupo, Long unidadeSolicitada, String callerCpf) throws IOException {
+        Long unidadeId = unidadeAcessoService.resolverUnidadeAlvo(callerCpf, unidadeSolicitada);
         if (grupo == null || grupo.isEmpty()) {
             return new ByteArrayInputStream(new ByteArrayOutputStream().toByteArray());
         }
 
-        List<RelatorioGrupoPendenteProjection> rows = especialidadeRepository.listarPendentesPorGrupo(grupo);
+        List<RelatorioGrupoPendenteProjection> rows = especialidadeRepository.listarPendentesPorGrupo(grupo, unidadeId);
 
 
          if (rows == null || rows.isEmpty()) {
@@ -214,16 +216,18 @@ public class ExcelService {
         return new ByteArrayInputStream(out.toByteArray());
     }
 
-    public boolean haDadosParaRelatorioAguardando(String grupo) {
+    public boolean haDadosParaRelatorioAguardando(String grupo, Long unidadeSolicitada, String callerCpf) {
+        Long unidadeId = unidadeAcessoService.resolverUnidadeAlvo(callerCpf, unidadeSolicitada);
          if (grupo == null || grupo.isBlank()) return false;
-        return especialidadeRepository.countPendentesPorGrupo(grupo) > 0;        
+        return especialidadeRepository.countPendentesPorGrupo(grupo, unidadeId) > 0;        
     }
 
-    public ByteArrayInputStream gerarPlanilhaAgendamentos(String grupo, LocalDate data) throws IOException {
+    public ByteArrayInputStream gerarPlanilhaAgendamentos(String grupo, LocalDate data, Long unidadeSolicitada, String callerCpf) throws IOException {
+        Long unidadeId = unidadeAcessoService.resolverUnidadeAlvo(callerCpf, unidadeSolicitada);
         if (grupo == null || grupo.isEmpty()) {
             return new ByteArrayInputStream(new ByteArrayOutputStream().toByteArray());
         }
-        List<RelatorioGrupoAgendadoProjection> rows = especialidadeRepository.listarAgendadosPorGrupoEData(grupo, data);
+        List<RelatorioGrupoAgendadoProjection> rows = especialidadeRepository.listarAgendadosPorGrupoEData(grupo, data, unidadeId);
         
        if (rows == null || rows.isEmpty()) {
         return new ByteArrayInputStream(new ByteArrayOutputStream().toByteArray());
@@ -378,13 +382,15 @@ public class ExcelService {
         return new ByteArrayInputStream(out.toByteArray());
     }
 
-    public boolean haDadosParaRelatorio(String grupo, LocalDate data) {
+    public boolean haDadosParaRelatorio(String grupo, LocalDate data, Long unidadeSolicitada, String callerCpf) {
+        Long unidadeId = unidadeAcessoService.resolverUnidadeAlvo(callerCpf, unidadeSolicitada);
         if (grupo == null || grupo.isBlank() || data == null) return false;
-        return especialidadeRepository.countAgendadosPorGrupoEData(grupo, data) > 0;
+        return especialidadeRepository.countAgendadosPorGrupoEData(grupo, data, unidadeId) > 0;
     }
 
-    public ByteArrayInputStream gerarPlanilhaGel() throws IOException {
-        List<PacientesGelProjection> rows = especialidadeRepository.listarTodosPacientesGel();
+    public ByteArrayInputStream gerarPlanilhaGel(Long unidadeSolicitada, String callerCpf) throws IOException {
+        Long unidadeId = unidadeAcessoService.resolverUnidadeAlvo(callerCpf, unidadeSolicitada);
+        List<PacientesGelProjection> rows = especialidadeRepository.listarTodosPacientesGel(unidadeId);
 
         if (rows == null || rows.isEmpty()) {
             return new ByteArrayInputStream(new ByteArrayOutputStream().toByteArray());

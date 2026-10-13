@@ -161,7 +161,7 @@ export const MENU_SECTIONS = [
         label: "Relatórios",
         icon: ICONS.relatorio,
         href: "/relatorio",
-        roles: ["ADMIN", "GESTOR"],
+        roles: ["ADMIN", "ADMIN_UNIDADE", "GESTOR"],
       },
       {
         type: "link",

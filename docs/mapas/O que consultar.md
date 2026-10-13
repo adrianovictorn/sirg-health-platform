@@ -104,7 +104,11 @@ Svelte 5 com runes (`$state`, `$derived`, `$effect`) — não `export let` nem s
 
 ### Relatórios e exportação
 
-[[08 - Frontend]] §8.7 — Excel e PDF são gerados **no browser** (ExcelJS, jsPDF). O backend tem POI para o que precisa sair pronto do servidor.
+[[08 - Frontend]] §8.7 — Excel e PDF são gerados **no browser** (ExcelJS, jsPDF). O backend tem POI para o que precisa sair pronto do servidor: as planilhas de `/relatorio` e `/relatorio/hospital` vêm de `/api/exportar/**` e `/api/relatorio/producao/**`.
+
+Esses endpoints filtram por unidade no servidor ([[07 - APIs e Endpoints]] §7.9): quem tem unidade de lotação só recebe a própria. Uma query nova de relatório precisa receber a unidade resolvida no servidor, na listagem **e** na contagem; esconder na tela não protege, porque o arquivo já saiu do servidor.
+
+Armadilha: esses endpoints resolvem a unidade com `resolverUnidadeAlvo`, e não com `escopoDeListagem` (que a fila e o dashboard usam). A diferença é o perfil **sem** lotação: aqui ele continua vendo todas as unidades, para não zerar `/relatorio/hospital`; na fila ele fica sem acesso. As rotas também não têm regra de role. É um resíduo conhecido, não o padrão a copiar: para uma listagem nominal nova, prefira `escopoDeListagem`.
 
 ### Subir para produção
 
