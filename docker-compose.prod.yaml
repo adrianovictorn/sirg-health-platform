@@ -97,7 +97,33 @@ services:
     depends_on:
       - backend
 
-  # ─── Nginx (entrada única na porta 80) ────────────────────────────────────────
+  # ─── Landing pública (opcional — só sobe com COMPOSE_PROFILES=landing) ─────────
+  # Ligada apenas na VPS de São Felipe, que serve a landing em LANDING_DOMAIN.
+  # Sem o profile, `up` ignora o serviço e nada muda nas outras instâncias.
+  landing:
+    profiles: ["landing"]
+    build:
+      context: ./sirg-landing
+      dockerfile: Dockerfile
+    container_name: sirg_landing
+    restart: unless-stopped
+    environment:
+      ORIGIN: https://${LANDING_DOMAIN:-localhost}
+      PUBLIC_SITE_URL: https://${LANDING_DOMAIN:-localhost}
+      PUBLIC_INDEXAVEL: ${LANDING_INDEXAVEL:-false}
+      # *_API é lido pelo servidor da landing; São Felipe vai direto ao backend local.
+      SIRG_SAOFELIPE_API: ${SIRG_SAOFELIPE_API:-http://backend:8080}
+      SIRG_SAOFELIPE_ACESSO: ${SIRG_SAOFELIPE_ACESSO:-https://sirgsaofelipe.com/login}
+      SIRG_SAOFELIPE_MUNICIPIO: ${SIRG_SAOFELIPE_MUNICIPIO:-SAO_FELIPE}
+      SIRG_CONCEICAO_API: ${SIRG_CONCEICAO_API:-}
+      SIRG_CONCEICAO_ACESSO: ${SIRG_CONCEICAO_ACESSO:-}
+      SIRG_CONCEICAO_MUNICIPIO: ${SIRG_CONCEICAO_MUNICIPIO:-CONCEICAO_DO_ALMEIDA}
+    networks:
+      - sirg_net
+
+  # ─── Nginx (entrada única nas portas 80/443) ──────────────────────────────────
+  # nginx/start.sh gera a configuração; a landing só entra se LANDING_DOMAIN
+  # estiver definido (ver nginx/start.sh e INFRA.md).
   nginx:
     image: nginx:1.27-alpine
     container_name: sirg_nginx
@@ -107,12 +133,12 @@ services:
       - "443:443"
     environment:
       NGINX_DOMAIN: ${NGINX_DOMAIN}
+      LANDING_DOMAIN: ${LANDING_DOMAIN:-}
     volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf.template:ro
+      - ./nginx:/etc/nginx/sirg:ro
       - /etc/letsencrypt:/etc/letsencrypt:ro
-    command: >
-      /bin/sh -c "envsubst '$$NGINX_DOMAIN' < /etc/nginx/nginx.conf.template
-      > /etc/nginx/conf.d/default.conf && nginx -g 'daemon off;'"
+      - /var/www/certbot:/var/www/certbot:ro
+    command: ["/bin/sh", "/etc/nginx/sirg/start.sh"]
     networks:
       - sirg_net
     depends_on:

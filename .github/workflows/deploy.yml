@@ -50,6 +50,16 @@ jobs:
             echo ">>> Limpando imagens antigas..."
             docker image prune -f
 
+            echo ">>> Verificando nginx..."
+            sleep 5
+            if [ "$(docker inspect -f '{{.State.Status}} {{.State.Restarting}}' sirg_nginx 2>/dev/null)" != "running false" ] \
+               || ! docker exec sirg_nginx nginx -t > /dev/null 2>&1; then
+              echo "❌ sirg_nginx não está estável (parado, reiniciando em loop ou com configuração inválida)"
+              docker logs --tail 40 sirg_nginx || true
+              exit 1
+            fi
+            docker logs sirg_nginx 2>&1 | grep "\[sirg-nginx\]" || true
+
             echo "✅ Conceição do Almeida atualizado com sucesso"
 
   # ─── São Felipe (com Docker) ──────────────────────────────────────────────────
@@ -84,5 +94,43 @@ jobs:
 
             echo ">>> Limpando imagens antigas..."
             docker image prune -f
+
+            echo ">>> Verificando nginx..."
+            sleep 5
+            if [ "$(docker inspect -f '{{.State.Status}} {{.State.Restarting}}' sirg_nginx 2>/dev/null)" != "running false" ] \
+               || ! docker exec sirg_nginx nginx -t > /dev/null 2>&1; then
+              echo "❌ sirg_nginx não está estável (parado, reiniciando em loop ou com configuração inválida)"
+              docker logs --tail 40 sirg_nginx || true
+              exit 1
+            fi
+            docker logs sirg_nginx 2>&1 | grep "\[sirg-nginx\]" || true
+
+            echo ">>> Verificando landing..."
+            LANDING_DOMAIN=$(grep -E '^LANDING_DOMAIN=' .env 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '"' | tr -d "'" | tr -d '\r' || true)
+            if [ -z "$LANDING_DOMAIN" ]; then
+              echo "Landing desligada (LANDING_DOMAIN vazio no .env) — nada a verificar"
+            else
+              if [ "$(docker inspect -f '{{.State.Running}}' sirg_landing 2>/dev/null)" != "true" ]; then
+                echo "❌ sirg_landing não está rodando (falta COMPOSE_PROFILES=landing no .env?)"
+                docker logs --tail 40 sirg_landing || true
+                exit 1
+              fi
+              ok=0
+              for i in 1 2 3 4 5 6; do
+                if docker exec sirg_nginx wget -q -O /dev/null http://landing:3000/; then ok=1; break; fi
+                sleep 5
+              done
+              if [ "$ok" != "1" ]; then
+                echo "❌ landing não respondeu em http://landing:3000/"
+                docker logs --tail 40 sirg_landing || true
+                exit 1
+              fi
+              if [ -f "/etc/letsencrypt/live/$LANDING_DOMAIN/fullchain.pem" ]; then
+                docker exec sirg_nginx wget -q -O /dev/null --no-check-certificate                   --header "Host: $LANDING_DOMAIN" https://127.0.0.1/                   || { echo "❌ HTTPS da landing ($LANDING_DOMAIN) falhou pelo nginx"; exit 1; }
+                echo "Landing OK em https://$LANDING_DOMAIN"
+              else
+                echo "⚠️  Landing no ar, mas sem certificado de $LANDING_DOMAIN — emita-o (ver INFRA.md)"
+              fi
+            fi
 
             echo "✅ São Felipe atualizado com sucesso"

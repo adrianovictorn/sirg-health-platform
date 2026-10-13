@@ -1,0 +1,3 @@
+# O nginx do container roda start.sh e os templates .conf: CRLF quebraria o script.
+nginx/start.sh text eol=lf
+nginx/*.conf text eol=lf
