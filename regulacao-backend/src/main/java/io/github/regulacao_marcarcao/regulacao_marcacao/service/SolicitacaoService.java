@@ -7,6 +7,8 @@ import java.util.HashMap;
 import java.util.Locale;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 import org.springframework.data.domain.Page;
@@ -223,7 +225,7 @@ public class SolicitacaoService {
         Solicitacao s = solicitacaoRepository.findById(id)
             .orElseThrow(() -> new EntityNotFoundException("Solicitação não encontrada."));
         exigirAcessoASolicitacao(s, callerCpf);
-        return SolicitacaoViewDTO.fromSolicitacao(s);
+        return SolicitacaoViewDTO.paraFicha(s);
     }
 
     /**
@@ -576,6 +578,68 @@ public class SolicitacaoService {
                     return detalhes;
                 })
                 .collect(Collectors.toList());
+    }
+
+    private static final Set<StatusDaMarcacao> STATUS_PENDENTES = Set.of(
+            StatusDaMarcacao.AGUARDANDO, StatusDaMarcacao.RETORNO,
+            StatusDaMarcacao.RETORNO_POLICLINICA, StatusDaMarcacao.GEL);
+
+    /**
+     * Devolve a fila o paciente de um item que terminou em FALTOU ou CANCELADO
+     * (V109), criando um item NOVO pendente na mesma ficha.
+     *
+     * O item antigo nao e alterado: continua ligado ao agendamento, ocupando a vaga
+     * de cota e o teto do atendimento perdido, e segue nos relatorios. Por isso
+     * este metodo nao chama cota nem teto e nao publica evento. O item novo entra
+     * na fila com a data de cadastro do antigo — o paciente nao perde a posicao —
+     * e e agendado depois pelo fluxo normal, consumindo vaga e teto novos.
+     */
+    @Transactional
+    public SolicitacaoViewDTO devolverItemAFila(Long itemId, String callerCpf) {
+        SolicitacaoEspecialidade antigo = especialidadeRepository.findByIdParaAtualizar(itemId)
+                .orElseThrow(() -> new EntityNotFoundException("Item da solicitação não encontrado."));
+        Solicitacao solicitacao = antigo.getSolicitacao();
+        exigirAcessoASolicitacao(solicitacao, callerCpf);
+
+        if (antigo.getStatus() != StatusDaMarcacao.FALTOU && antigo.getStatus() != StatusDaMarcacao.CANCELADO) {
+            throw new IllegalStateException("Só um item com falta ou cancelamento pode ser devolvido à fila.");
+        }
+        if (antigo.getAgendamentoSolicitacao() == null) {
+            throw new IllegalStateException("Este item não chegou a ser agendado e não precisa ser devolvido à fila.");
+        }
+        if (antigo.getDevolvidoComo() != null) {
+            throw new IllegalStateException("Este item já foi devolvido à fila.");
+        }
+        // O agendamento pega o primeiro item pendente da especialidade: dois na mesma
+        // ficha seriam ambiguos.
+        Long especialidadeId = antigo.getEspecialidadeSolicitada() != null
+                ? antigo.getEspecialidadeSolicitada().getId() : null;
+        boolean jaPendente = solicitacao.getEspecialidades().stream()
+                .filter(outro -> STATUS_PENDENTES.contains(outro.getStatus()))
+                .anyMatch(outro -> especialidadeId != null
+                        ? outro.getEspecialidadeSolicitada() != null
+                                && especialidadeId.equals(outro.getEspecialidadeSolicitada().getId())
+                        : Objects.equals(outro.getEspecialidadeCodigoLegacy(),
+                                antigo.getEspecialidadeCodigoLegacy()));
+        if (jaPendente) {
+            throw new IllegalStateException("O paciente já tem um pedido pendente desta especialidade na ficha.");
+        }
+
+        SolicitacaoEspecialidade novo = new SolicitacaoEspecialidade();
+        novo.setSolicitacao(solicitacao);
+        novo.setEspecialidadeSolicitada(antigo.getEspecialidadeSolicitada());
+        novo.setEspecialidadeCodigoLegacy(antigo.getEspecialidadeCodigoLegacy());
+        novo.setProfissionalSolicitante(antigo.getProfissionalSolicitante());
+        novo.setPrioridade(antigo.getPrioridade());
+        novo.setStatus(StatusDaMarcacao.AGUARDANDO);
+        novo.setCriadoPor(userRepository.findByCpf(callerCpf).orElse(null));
+        novo = especialidadeRepository.saveAndFlush(novo);
+        antigo.setDevolvidoComo(novo);
+
+        Long solicitacaoId = solicitacao.getId();
+        // Limpa o contexto: a ficha e relida abaixo ja com o item novo e a data certa.
+        especialidadeRepository.definirDataDeCadastro(novo.getId(), antigo.getDataDeCadastro());
+        return SolicitacaoViewDTO.paraFicha(solicitacaoRepository.findById(solicitacaoId).orElseThrow());
     }
 
     @Transactional

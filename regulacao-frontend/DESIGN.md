@@ -213,20 +213,23 @@ Larguras de verificação do `ux-ui-designer`: 375px, 768px e 1280px ou mais.
 
 ## 10. Exceções documentadas
 
-**As telas de cotas e a tela de agendamento (`/agendar`) usam um visual próprio, que mistura
-o SIRG com o da IBM.** A decisão é do responsável pelo produto (ADRs
-`docs/decisoes/0005-visual-ibm-em-admin-cotas.md`,
-`docs/decisoes/0006-visual-misto-em-unidade-cotas.md` e
-`docs/decisoes/0007-visual-misto-e-escolha-explicita-do-paciente-em-agendar.md`) e contraria,
-só nessas telas, as seções 2 a 6 e a regra "não crie um estilo paralelo".
+**As telas de cotas, a tela de agendamento (`/agendar`) e a tela de atendimentos
+(`/atendimentos`) usam um visual próprio, que mistura o SIRG com o da IBM.** A decisão é do
+responsável pelo produto (ADRs `docs/decisoes/0005-visual-ibm-em-admin-cotas.md`,
+`docs/decisoes/0006-visual-misto-em-unidade-cotas.md`,
+`docs/decisoes/0007-visual-misto-e-escolha-explicita-do-paciente-em-agendar.md` e
+`docs/decisoes/0009-visual-misto-com-mais-sirg-em-atendimentos.md`) e contraria, só nessas
+telas, as seções 2 a 6 e a regra "não crie um estilo paralelo".
 
-| Tela                       | Visual                                | Observação                                                                                 |
-| -------------------------- | ------------------------------------- | ------------------------------------------------------------------------------------------ |
-| `/admin/cotas/nova`        | Misto (modelo de referência)          | Painéis em `rounded-lg` com sombra leve, título emerald-800 com `border-b`, campos IBM     |
-| `/admin/cotas/[id]/editar` | Misto                                 | Mesmos tokens e classes de `nova`                                                          |
-| `/unidade/cotas`           | Misto                                 | Mesmos tokens, mais `--sit-*` e `.ibm-cartao` para as situações                            |
-| `/agendar`                 | Misto (cópia de `nova`)               | Só as classes que a tela usa, mais as `ag-*` (passos, sugestões, paciente selecionado)     |
-| `/admin/cotas` (lista)     | IBM mais pura (raio zero, sem sombra) | Ainda não alinhada: `--ibm-fundo`, `--ibm-ok-*` e os tokens de mistura têm valor diferente |
+| Tela                          | Visual                                | Observação                                                                                    |
+| ----------------------------- | ------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `/admin/cotas/nova`           | Misto (modelo de referência)          | Painéis em `rounded-lg` com sombra leve, título emerald-800 com `border-b`, campos IBM        |
+| `/admin/cotas/[id]/editar`    | Misto                                 | Mesmos tokens e classes de `nova`                                                             |
+| `/unidade/cotas`              | Misto                                 | Mesmos tokens, mais `--sit-*` e `.ibm-cartao` para as situações                               |
+| `/agendar`                    | Misto (cópia de `nova`)               | Só as classes que a tela usa, mais as `ag-*` (passos, sugestões, paciente selecionado)        |
+| `/atendimentos`               | Misto com mais SIRG                   | Tokens de `nova` mais `--sirg-*`/`--at-*`: emerald também nas superfícies; classes `at-*`     |
+| `/atendimentos/quantitativos` | Misto com mais SIRG (cópia podada)    | Mesmos tokens de `/atendimentos`; só cabeçalho do dia, cartões de totais e tabela por unidade |
+| `/admin/cotas` (lista)        | IBM mais pura (raio zero, sem sombra) | Ainda não alinhada: `--ibm-fundo`, `--ibm-ok-*` e os tokens de mistura têm valor diferente    |
 
 Em cada uma, o que vale é o próprio `+page.svelte`:
 
@@ -252,8 +255,31 @@ Em cada uma, o que vale é o próprio `+page.svelte`:
   cabeçalho fixo com a instrução de escolha, e cada linha mostra nome, CPF, CNS e unidade.
 - Painéis de `/agendar` numerados por passo (`.ag-passo`); antes da seleção do paciente, um
   bloco tracejado (`.ag-proximos`) lista os passos que ainda vão aparecer.
-- O CSS está **copiado** em cada tela (cinco cópias). Extrair para um arquivo compartilhado
-  é pedido à parte, quando o visual estiver estável.
+- Mais SIRG (`/atendimentos`, padrão das telas do módulo da unidade executante): o emerald
+  deixa de ser só acento. Cabeçalho do dia e faixa de topo dos painéis em emerald-50,
+  cabeçalho de tabela em emerald-100 com texto emerald-900, rodapé e hover de linha em
+  emerald-50, rótulo de campo em emerald-800 e botão secundário com contorno emerald. Campo
+  cinza com linha inferior, foco e tipografia continuam IBM. Os valores ficam na seção "Mais
+  SIRG" do `<style>`, com o valor de `nova` anotado ao lado. As outras telas mistas não
+  foram alteradas.
+- Situação do atendimento (módulo da unidade executante), sempre com texto e marca, nunca só
+  cor: confirmado (emerald, círculo cheio), agendado (azul, círculo vazado), falta (âmbar,
+  losango) e cancelado (vermelho, quadrado), nos cartões de totais (Quantitativos), no badge e
+  no filete da linha (`/atendimentos`).
+- `/atendimentos` tem três regiões: cabeçalho do dia, "Pacientes do dia" e "Relatório de
+  Atendimento". A lista é **um bloco por paciente** (`.at-paciente`: borda de 1 px, filete
+  emerald, sem sombra) com uma tabela pequena dos itens dentro, nunca cartões por item nem
+  accordion; todos os itens ficam visíveis. No topo do bloco, nome em destaque e linha de
+  dados (Nascimento, CPF e CNS completos com pontuação só de exibição, Unidade solicitante).
+  "Confirmar marcados (N)" é a única ação cheia do bloco; "Faltou" e "Cancelar" são contorno,
+  item a item. Item desmarcado: filete cinza tracejado e o texto "Fora da confirmação". Lote em
+  andamento: o botão não esmaece, mostra "Confirmando X de Y…" e o bloco ganha contorno
+  emerald. Itens que não casam com o filtro de situação ficam em texto cinza, sem sumir.
+- `/atendimentos/quantitativos`: cabeçalho do dia com "Atualizado às…", cinco cartões de
+  totais e tabela por unidade com rodapé "Município"; a unidade é link sublinhado para
+  `/atendimentos` filtrado.
+- O CSS está **copiado** em cada tela (sete cópias, contando `/atendimentos/quantitativos`).
+  Extrair para um arquivo compartilhado é pedido à parte, quando o visual estiver estável.
 - `GrupoToggleButton` e `GrupoEspecialidadesPainel` aceitam `variante="ibm"`; o padrão
   continua o visual das seções 2 a 6 e é o que `dashboard/unidade` usa.
 

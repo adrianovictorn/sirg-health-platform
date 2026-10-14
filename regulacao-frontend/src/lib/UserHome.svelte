@@ -8,7 +8,7 @@
     <p class="text-lg text-gray-600">Utilize o menu lateral para navegar pelo sistema.</p>
     
     <div class="mt-8 flex justify-center gap-4">
-        <a href="/dashboard/procedimentos" class="bg-emerald-600 text-white px-6 py-3 rounded-lg font-semibold shadow hover:bg-emerald-700 transition">
+        <a href={$user?.role === 'USER' ? '/atendimentos' : '/dashboard/procedimentos'} class="bg-emerald-600 text-white px-6 py-3 rounded-lg font-semibold shadow hover:bg-emerald-700 transition">
             Agendamentos
         </a>
         

@@ -1,6 +1,7 @@
 package io.github.regulacao_marcarcao.regulacao_marcacao.entity;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -107,6 +108,36 @@ public class SolicitacaoEspecialidade {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "teto_financeiro_id", nullable = true)
     private TetoFinanceiro tetoFinanceiro;
+
+    /**
+     * Observacao da falta (opcional) ou motivo do cancelamento (obrigatorio),
+     * lancados na tela de Atendimentos (V109). O status diz qual dos dois. Nao e
+     * a observacao do agendamento, que pertence a quem agendou.
+     */
+    @Column(name = "atendimento_observacao", length = 500)
+    private String atendimentoObservacao;
+
+    /** Operador que lancou o desfecho na tela de Atendimentos (V109). */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "atendimento_registrado_por_id", nullable = true)
+    private User atendimentoRegistradoPor;
+
+    /**
+     * Quando o desfecho foi lancado na tela de Atendimentos (V109). Nulo significa
+     * que o status veio de outro fluxo (ou de antes da V109) — e so o que tem esta
+     * marca pode ser desfeito naquela tela.
+     */
+    @Column(name = "atendimento_registrado_em")
+    private Instant atendimentoRegistradoEm;
+
+    /**
+     * Item novo (AGUARDANDO) criado quando a unidade devolveu a fila este item
+     * FALTOU/CANCELADO (V109). Este item nao muda: segue ocupando a vaga e o teto
+     * do atendimento perdido.
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "devolvido_como_item_id", nullable = true)
+    private SolicitacaoEspecialidade devolvidoComo;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "status", length = 50)

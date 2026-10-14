@@ -23,10 +23,17 @@ Ver [[diagrama-solicitacoes]] e, para o passo a passo, [[05 - Fluxos do Sistema]
 
 Regras em [[03 - Entidades e Classes de Domínio]] (seções 3.15 e 3.15.1) e [[10 - Padrões e Arquitetura]].
 
-> [!todo] Agenda — especificada, ainda não implementada
-> Hoje "abrir agenda" é cadastrar cota à mão. A entidade `Agenda` (executante, profissional,
-> procedimento, vigência, horário) passará a **gerar** cotas por data e a distribuir vagas entre
-> as unidades solicitantes. Ver [[Agenda e Oferta]].
+> [!note] Agenda (oferta) — implementada, com a entrada de menu oculta
+> A entidade `Agenda` (executante, profissional, procedimento, vigência, horário) **gera** cotas
+> por data e distribui vagas entre as unidades solicitantes (`AgendaController`, V89/V90, rota
+> `/liberacao-agenda`, só ADMIN). O item de menu está comentado em `menuConfig.js`; no dia a dia
+> a cota ainda é cadastrada à mão. Ver [[Agenda e Oferta]].
+
+> [!note] Atendimentos — a tela de quem executa
+> O Usuário Padrão (operador da unidade executante) registra o desfecho de cada atendimento em
+> `/atendimentos`, com o município inteiro: Confirmado (`REALIZADO`), Faltou, Cancelado e data da
+> coleta. Falta e cancelamento não devolvem vaga; a unidade solicitante devolve o paciente à fila
+> pela ficha, criando um item novo. Detalhes em [[03 - Entidades e Classes de Domínio]] (3.15f).
 
 ## Blocos de entidades
 

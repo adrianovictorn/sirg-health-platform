@@ -94,6 +94,9 @@ const DASHBOARD_HREF_POR_ROLE = {
   RECEPCAO: "/dashboard/unidade",
   ENFERMEIRO: "/dashboard/unidade",
   MEDICO: "/dashboard/unidade",
+  // Usuário Padrão é o operador da unidade executante: o trabalho do dia dele
+  // é a tela de Atendimentos (município inteiro), não a agenda por unidade.
+  USER: "/atendimentos",
 };
 
 /** Para onde mandar o usuário logo após assumir `role` (troca de perfil, pós-login, etc.). */
@@ -185,6 +188,25 @@ export const MENU_SECTIONS = [
         roles: CLINICOS_E_UNIDADE,
       },
       {
+        // Para o USER este é o próprio "Dashboard" (ver DASHBOARD_HREF_POR_ROLE),
+        // então o link só é declarado para o ADMIN: evita dois itens no menu do
+        // operador apontando para a mesma tela.
+        type: "link",
+        label: "Atendimentos",
+        icon: ICONS.agendaDia,
+        href: "/atendimentos",
+        roles: ["ADMIN"],
+      },
+      {
+        // Os números do dia de Atendimentos (totais e por unidade solicitante).
+        // Para o USER cai logo abaixo de Dashboard; para o ADMIN, de Atendimentos.
+        type: "link",
+        label: "Quantitativos",
+        icon: ICONS.chart,
+        href: "/atendimentos/quantitativos",
+        roles: ["USER", "ADMIN"],
+      },
+      {
         type: "link",
         label: "Cotas da Unidade",
         icon: ICONS.cotas,
@@ -213,6 +235,11 @@ export const MENU_SECTIONS = [
         // pacientes do dia por unidade — dado operacional, não o do próprio
         // paciente. O backend (`/especialidades/listar|contar/pacientes/por/grupo`)
         // já nega esse acesso; aqui é só para não oferecer um link que dá 403.
+        //
+        // Cada agenda abre a tela de Atendimentos já filtrada pelo grupo (ver
+        // `hrefDaAgendaDoGrupo`), com o município inteiro. As telas antigas
+        // /agendas/{grupo} filtram pela unidade SOLICITANTE e ficavam vazias para
+        // quem é lotado numa unidade executante; continuam existindo, sem link.
         dynamic: "agendasHospital",
         roles: ["USER"],
         items: [],
@@ -578,7 +605,10 @@ export function organizarItensDoGrupo(group) {
   return semSubgrupoDeUm;
 }
 
-/** Monta o href da agenda de um grupo. O backend casa por `grupo_relatorio.codigo`. */
+/**
+ * Monta o href da agenda de um grupo: a tela de Atendimentos filtrada por ele.
+ * O backend casa por `grupo_relatorio.codigo`.
+ */
 export function hrefDaAgendaDoGrupo(codigo) {
-  return `/agendas/${encodeURIComponent(codigo)}`;
+  return `/atendimentos?grupo=${encodeURIComponent(codigo)}`;
 }

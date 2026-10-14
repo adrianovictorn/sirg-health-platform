@@ -13,7 +13,10 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   buildMenuForRole,
+  hrefDaAgendaDoGrupo,
+  hrefDashboardPorRole,
   organizarItensDoGrupo,
+  resolveHref,
   roleVeRota,
 } from "./menuConfig.js";
 
@@ -33,6 +36,33 @@ function hrefsVisiveis(role) {
   }
   return hrefs;
 }
+
+/** Como `hrefsVisiveis`, mas com o destino que a role de fato recebe (`hrefByRole`). */
+function hrefsVisiveisResolvidos(role) {
+  const hrefs = new Set();
+  for (const section of buildMenuForRole(role)) {
+    for (const item of section.items) {
+      if (item.type === "group") {
+        for (const link of item.items) hrefs.add(resolveHref(link, role));
+      } else {
+        hrefs.add(resolveHref(item, role));
+      }
+    }
+  }
+  return hrefs;
+}
+
+const TODAS_AS_ROLES = [
+  "ADMIN",
+  "GESTOR",
+  "ADMIN_UNIDADE",
+  "RECEPCAO",
+  "ENFERMEIRO",
+  "MEDICO",
+  "USER",
+  "PACIENTE",
+  "COORD_TRANSPORTE",
+];
 
 const ROTAS_GERENCIAMENTO_UNIDADES = [
   "/admin/cotas",
@@ -113,6 +143,101 @@ test('Perfis clinicos e de unidade continuam vendo "Agenda do Dia" (/dashboard/p
       `${role} deveria ver /dashboard/procedimentos/data`,
     );
   }
+});
+
+// Atendimentos (/atendimentos): tela do operador da unidade executante (USER),
+// com o municipio inteiro. Para o USER e o proprio "Dashboard"; o ADMIN tem um
+// link dedicado. O backend (/api/atendimentos) so responde a esses dois perfis.
+test("Atendimentos: so USER e ADMIN veem /atendimentos no menu", () => {
+  for (const role of ["USER", "ADMIN"]) {
+    assert.ok(
+      hrefsVisiveisResolvidos(role).has("/atendimentos"),
+      `${role} deveria ver /atendimentos`,
+    );
+  }
+  for (const role of [
+    "GESTOR",
+    "ADMIN_UNIDADE",
+    "RECEPCAO",
+    "ENFERMEIRO",
+    "MEDICO",
+    "PACIENTE",
+    "COORD_TRANSPORTE",
+  ]) {
+    assert.ok(
+      !hrefsVisiveisResolvidos(role).has("/atendimentos"),
+      `${role} nao deveria ver /atendimentos`,
+    );
+  }
+});
+
+test("Atendimentos: e o destino do Dashboard do USER (menu e troca de perfil); o do ADMIN nao muda", () => {
+  assert.equal(hrefDashboardPorRole("USER"), "/atendimentos");
+  assert.equal(hrefDashboardPorRole("ADMIN"), "/dashboard");
+  assert.equal(hrefDashboardPorRole("PACIENTE"), "/dashboard/procedimentos");
+});
+
+// O grupo dinamico "Agendas" e so do USER, e cada agenda abre a tela de
+// Atendimentos filtrada pelo grupo — nao mais /agendas/{grupo}, que filtra pela
+// unidade solicitante e ficava vazia para o executante.
+test('Grupo "Agendas": so o USER recebe, com os grupos carregados', () => {
+  const dinamicos = {
+    agendasHospital: [
+      { label: "Laboratorio", href: hrefDaAgendaDoGrupo("lab") },
+    ],
+  };
+  for (const role of TODAS_AS_ROLES) {
+    const grupo = buildMenuForRole(role, dinamicos)
+      .flatMap((section) => section.items)
+      .find((item) => item.key === "agendas");
+    if (role === "USER") {
+      assert.deepEqual(
+        grupo.items.map((l) => l.href),
+        ["/atendimentos?grupo=lab"],
+      );
+    } else {
+      assert.equal(grupo, undefined, role);
+    }
+  }
+  // Sem grupos carregados, o grupo nao aparece nem para o USER.
+  assert.ok(
+    !buildMenuForRole("USER")
+      .flatMap((section) => section.items)
+      .some((item) => item.key === "agendas"),
+  );
+});
+
+test("Agenda do grupo: abre /atendimentos filtrado, com o codigo escapado", () => {
+  assert.equal(hrefDaAgendaDoGrupo("lab"), "/atendimentos?grupo=lab");
+  assert.equal(
+    hrefDaAgendaDoGrupo("raio x&y"),
+    "/atendimentos?grupo=raio%20x%26y",
+  );
+});
+
+test("Quantitativos: so USER e ADMIN veem, logo depois do item que abre /atendimentos", () => {
+  const rota = "/atendimentos/quantitativos";
+  for (const role of TODAS_AS_ROLES) {
+    const deve = role === "USER" || role === "ADMIN";
+    assert.equal(hrefsVisiveisResolvidos(role).has(rota), deve, role);
+  }
+  for (const role of ["USER", "ADMIN"]) {
+    const links = buildMenuForRole(role)
+      .flatMap((section) => section.items)
+      .filter((item) => item.type !== "group")
+      .map((item) => resolveHref(item, role));
+    assert.equal(
+      links[links.indexOf("/atendimentos") + 1],
+      rota,
+      `${role}: Quantitativos depois de /atendimentos`,
+    );
+  }
+});
+
+test("USER continua sem ver a Agenda do Dia do ADMIN (/dashboard/procedimentos/data)", () => {
+  assert.ok(
+    !hrefsVisiveisResolvidos("USER").has("/dashboard/procedimentos/data"),
+  );
 });
 
 // "Pacientes" virou grupo com "Pacientes" e "Fila de Espera". Quem via
@@ -248,8 +373,6 @@ test('O grupo proprio "Custos" nao existe mais para nenhum perfil', () => {
 // Terceiro nivel do menu (subgrupos). `organizarItensDoGrupo` so reorganiza para
 // exibicao os links que `buildMenuForRole` ja filtrou: nao pode esconder,
 // duplicar nem reordenar link, para nenhum perfil e nenhum grupo.
-const TODAS_AS_ROLES = ["ADMIN", ...OUTRAS_ROLES, "COORD_TRANSPORTE"];
-
 function grupoDe(role, key) {
   for (const section of buildMenuForRole(role)) {
     for (const item of section.items) {

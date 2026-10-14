@@ -2,11 +2,15 @@ package io.github.regulacao_marcarcao.regulacao_marcacao.service;
 
 
 import io.github.regulacao_marcarcao.regulacao_marcacao.config.InstanceContext;
+import io.github.regulacao_marcarcao.regulacao_marcacao.repository.AtendimentoExecutanteRepository;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.SolicitacaoEspecialidadeRepository;
+import io.github.regulacao_marcarcao.regulacao_marcacao.repository.UserRepository;
+import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.AtendimentoRelatorioProjection;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.PacientesGelProjection;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.RelatorioGrupoAgendadoProjection;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.RelatorioGrupoPendenteProjection;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.ss.util.CellRangeAddress;
 import org.apache.poi.util.IOUtils;
@@ -20,16 +24,21 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.text.Normalizer;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Locale;
 
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class ExcelService {
 
     private final SolicitacaoEspecialidadeRepository especialidadeRepository;
+    private final AtendimentoExecutanteRepository atendimentoRepository;
+    private final UserRepository userRepository;
     private final InstanceContext instanceContext;
     private final UnidadeAcessoService unidadeAcessoService;
 
@@ -380,6 +389,198 @@ public class ExcelService {
         workbook.write(out);
         workbook.close();
         return new ByteArrayInputStream(out.toByteArray());
+    }
+
+    static final int PERIODO_MAXIMO_ATENDIMENTOS_DIAS = 31;
+    private static final ZoneId FUSO_ATENDIMENTOS = ZoneId.of("America/Bahia");
+
+    /**
+     * Relatorio de Atendimento (V109): uma linha por item com desfecho — Confirmado,
+     * Faltou ou Cancelado — agendado no periodo, o municipio inteiro.
+     *
+     * Quem gera e quem opera a tela de Atendimentos (USER ou ADMIN), nao o escopo
+     * por unidade das demais planilhas. A planilha leva CPF e CNS completos e sai
+     * do controle do sistema depois de baixada: por isso o periodo e limitado e
+     * cada geracao fica registrada no log (quem e qual periodo, nunca o conteudo).
+     *
+     * Periodo sem atendimento devolve a planilha so com o cabecalho, nao um arquivo vazio.
+     */
+    public ByteArrayInputStream gerarPlanilhaAtendimentos(LocalDate inicio, LocalDate fim, String grupo,
+            String callerCpf) throws IOException {
+        unidadeAcessoService.exigirOperadorDeAtendimentos(callerCpf);
+        if (inicio == null || fim == null) {
+            throw new IllegalArgumentException("Informe o início e o fim do período.");
+        }
+        if (fim.isBefore(inicio)) {
+            throw new IllegalArgumentException("O fim do período não pode ser anterior ao início.");
+        }
+        if (ChronoUnit.DAYS.between(inicio, fim) >= PERIODO_MAXIMO_ATENDIMENTOS_DIAS) {
+            throw new IllegalArgumentException(
+                    "O período do relatório é de no máximo " + PERIODO_MAXIMO_ATENDIMENTOS_DIAS + " dias.");
+        }
+        String grupoFiltro = grupo == null || grupo.isBlank() ? null : grupo.replaceAll("\\p{Cntrl}", " ").strip();
+
+        List<AtendimentoRelatorioProjection> rows = atendimentoRepository.listarRelatorio(inicio, fim, grupoFiltro);
+
+        DateTimeFormatter fmt = DateTimeFormatter.ofPattern("dd/MM/yyyy");
+        DateTimeFormatter fmtHora = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm").withZone(FUSO_ATENDIMENTOS);
+
+        try (XSSFWorkbook workbook = new XSSFWorkbook()) {
+            Sheet sheet = workbook.createSheet("Relatório de Atendimento");
+
+            Font titleFont = workbook.createFont();
+            titleFont.setBold(true);
+            titleFont.setFontHeightInPoints((short) 14);
+            titleFont.setFontName("Arial");
+            CellStyle titleStyle = workbook.createCellStyle();
+            titleStyle.setFont(titleFont);
+            titleStyle.setAlignment(HorizontalAlignment.CENTER);
+            titleStyle.setVerticalAlignment(VerticalAlignment.CENTER);
+
+            Font subtitleFont = workbook.createFont();
+            subtitleFont.setFontHeightInPoints((short) 10);
+            subtitleFont.setFontName("Arial");
+            CellStyle subtitleStyle = workbook.createCellStyle();
+            subtitleStyle.setFont(subtitleFont);
+            subtitleStyle.setAlignment(HorizontalAlignment.CENTER);
+            subtitleStyle.setVerticalAlignment(VerticalAlignment.CENTER);
+
+            Font headerFont = workbook.createFont();
+            headerFont.setBold(true);
+            headerFont.setFontHeightInPoints((short) 10);
+            headerFont.setFontName("Arial");
+            CellStyle headerStyle = workbook.createCellStyle();
+            headerStyle.setFont(headerFont);
+            headerStyle.setFillForegroundColor(IndexedColors.SEA_GREEN.getIndex());
+            headerStyle.setFillPattern(FillPatternType.SOLID_FOREGROUND);
+            headerStyle.setAlignment(HorizontalAlignment.CENTER);
+            headerStyle.setVerticalAlignment(VerticalAlignment.CENTER);
+            headerStyle.setBorderTop(BorderStyle.THIN);
+            headerStyle.setBorderBottom(BorderStyle.THIN);
+            headerStyle.setBorderLeft(BorderStyle.THIN);
+            headerStyle.setBorderRight(BorderStyle.THIN);
+
+            CellStyle dataStyle = workbook.createCellStyle();
+            dataStyle.setBorderBottom(BorderStyle.THIN);
+            dataStyle.setBorderLeft(BorderStyle.THIN);
+            dataStyle.setBorderRight(BorderStyle.THIN);
+            dataStyle.setVerticalAlignment(VerticalAlignment.CENTER);
+            dataStyle.setAlignment(HorizontalAlignment.LEFT);
+            dataStyle.setWrapText(true);
+
+            CellStyle centerStyle = workbook.createCellStyle();
+            centerStyle.cloneStyleFrom(dataStyle);
+            centerStyle.setAlignment(HorizontalAlignment.CENTER);
+
+            String[] headers = {"DATA", "PACIENTE", "NASCIMENTO", "CPF", "CNS", "UNIDADE DE ORIGEM", "PROCEDIMENTO",
+                    "SITUAÇÃO", "DATA DA COLETA", "OBSERVAÇÃO/MOTIVO", "REGISTRADO POR", "REGISTRADO EM"};
+            int[] larguras = {13, 38, 13, 15, 19, 28, 34, 13, 15, 40, 26, 18};
+            int numberOfColumns = headers.length;
+
+            try (InputStream is = new ClassPathResource(getBrasaoPath()).getInputStream()) {
+                byte[] bytes = IOUtils.toByteArray(is);
+                int picIdx = workbook.addPicture(bytes, Workbook.PICTURE_TYPE_PNG);
+                Drawing<?> drawing = sheet.createDrawingPatriarch();
+                ClientAnchor anchor = workbook.getCreationHelper().createClientAnchor();
+                anchor.setCol1(5);
+                anchor.setRow1(0);
+                anchor.setCol2(6);
+                anchor.setRow2(3);
+                anchor.setAnchorType(ClientAnchor.AnchorType.MOVE_AND_RESIZE);
+                drawing.createPicture(anchor, picIdx).resize(0.99);
+            } catch (Exception e) {
+                log.warn("Relatorio de Atendimento sem brasao: {}", e.getMessage());
+            }
+
+            Row rowTitle = sheet.createRow(3);
+            rowTitle.setHeightInPoints(20);
+            Cell cellTitle = rowTitle.createCell(0);
+            cellTitle.setCellValue("SIRG - Relatório de Atendimento");
+            cellTitle.setCellStyle(titleStyle);
+            sheet.addMergedRegion(new CellRangeAddress(3, 3, 0, numberOfColumns - 1));
+
+            Row rowSub = sheet.createRow(4);
+            rowSub.setHeightInPoints(16);
+            Cell cellSub = rowSub.createCell(0);
+            cellSub.setCellValue(getNomeCentral() + " — " + inicio.format(fmt) + " a " + fim.format(fmt));
+            cellSub.setCellStyle(subtitleStyle);
+            sheet.addMergedRegion(new CellRangeAddress(4, 4, 0, numberOfColumns - 1));
+
+            Row rowHead = sheet.createRow(6);
+            rowHead.setHeightInPoints(18);
+            for (int i = 0; i < headers.length; i++) {
+                Cell cell = rowHead.createCell(i);
+                cell.setCellValue(headers[i]);
+                cell.setCellStyle(headerStyle);
+            }
+
+            int r = 7;
+            for (AtendimentoRelatorioProjection it : rows) {
+                Row row = sheet.createRow(r++);
+                int linhas = Math.max(1, (int) Math.ceil((double) safe(it.getObservacao()).length() / 40));
+                row.setHeightInPoints(Math.max(18f, linhas * 15f));
+
+                String[] valores = {
+                        it.getDataAgendada() != null ? it.getDataAgendada().format(fmt) : "",
+                        safe(it.getNomePaciente()),
+                        it.getDataNascimento() != null ? it.getDataNascimento().format(fmt) : "",
+                        safe(it.getCpfPaciente()),
+                        safe(it.getCns()),
+                        it.getUnidadeNome() != null ? it.getUnidadeNome() : "Sem unidade",
+                        safe(it.getEspecialidadeNome()),
+                        rotuloDoDesfecho(it.getStatus()),
+                        it.getDataColeta() != null ? it.getDataColeta().format(fmt) : "",
+                        safe(it.getObservacao()),
+                        safe(it.getRegistradoPorNome()),
+                        it.getRegistradoEm() != null ? fmtHora.format(it.getRegistradoEm()) : ""};
+                for (int i = 0; i < valores.length; i++) {
+                    Cell cell = row.createCell(i);
+                    // Sempre texto: CPF/CNS nao perdem zeros a esquerda, e a observacao
+                    // (texto livre do operador) nunca e lida como formula pelo Excel.
+                    cell.setCellValue(valores[i]);
+                    cell.setCellStyle(i == 1 || i == 5 || i == 6 || i == 9 || i == 10 ? dataStyle : centerStyle);
+                }
+            }
+            if (rows.isEmpty()) {
+                Cell vazio = sheet.createRow(r).createCell(0);
+                vazio.setCellValue("Nenhum atendimento confirmado, com falta ou cancelado no período.");
+                vazio.setCellStyle(subtitleStyle);
+                sheet.addMergedRegion(new CellRangeAddress(r, r, 0, numberOfColumns - 1));
+            }
+
+            for (int i = 0; i < larguras.length; i++) {
+                sheet.setColumnWidth(i, larguras[i] * 256);
+            }
+
+            Footer footer = sheet.getFooter();
+            footer.setCenter("Direitos reservados a SIRG, desenvolvido por Adriano Victor N. Ribeiro e Filipe da Silva Ribeiro");
+
+            sheet.getPrintSetup().setLandscape(true);
+            sheet.setFitToPage(true);
+            sheet.getPrintSetup().setFitWidth((short) 1);
+            sheet.getPrintSetup().setFitHeight((short) 0);
+
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            workbook.write(out);
+            // Pelo id do usuario, nunca pelo CPF; e so depois de a planilha existir.
+            log.info("Relatorio de Atendimento gerado pelo usuario id={}: {} a {}, grupo {}, {} linha(s)",
+                    userRepository.findByCpf(callerCpf).map(u -> u.getId()).orElse(null),
+                    inicio, fim, grupoFiltro != null ? grupoFiltro : "todos", rows.size());
+            return new ByteArrayInputStream(out.toByteArray());
+        }
+    }
+
+    /** "Confirmado" e o status REALIZADO; os demais saem pelo valor gravado, sem misturar falta e cancelamento. */
+    private static String rotuloDoDesfecho(String status) {
+        if (status == null) {
+            return "";
+        }
+        return switch (status) {
+            case "REALIZADO" -> "Confirmado";
+            case "FALTOU" -> "Faltou";
+            case "CANCELADO" -> "Cancelado";
+            default -> status;
+        };
     }
 
     public boolean haDadosParaRelatorio(String grupo, LocalDate data, Long unidadeSolicitada, String callerCpf) {

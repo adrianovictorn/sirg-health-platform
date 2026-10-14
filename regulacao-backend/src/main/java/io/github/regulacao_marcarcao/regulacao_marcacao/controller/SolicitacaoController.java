@@ -126,7 +126,16 @@ public class SolicitacaoController {
         return ResponseEntity.ok(updatedSolicitacao);
     }
 
-   @DeleteMapping("especialidades/{id}") 
+    // Devolver a fila um item com falta ou cancelamento e da unidade solicitante.
+    // USER (operador da unidade executante) fica de fora: ele registra o desfecho,
+    // nao decide o retorno a fila. GESTOR, como no resto da ficha, so consulta.
+    @PostMapping("especialidades/{id}/devolver-a-fila")
+    @PreAuthorize("hasAnyRole('ADMIN', 'ADMIN_UNIDADE', 'RECEPCAO', 'ENFERMEIRO', 'MEDICO')")
+    public ResponseEntity<SolicitacaoViewDTO> devolverItemAFila(@PathVariable Long id, Authentication authentication) {
+        return ResponseEntity.ok(service.devolverItemAFila(id, authentication != null ? authentication.getName() : null));
+    }
+
+   @DeleteMapping("especialidades/{id}")
     @PreAuthorize("hasAnyRole('ADMIN', 'ADMIN_UNIDADE', 'USER', 'RECEPCAO', 'ENFERMEIRO', 'MEDICO')")
     public ResponseEntity<Void> deletarEspecialidade(@PathVariable Long id, Authentication authentication){
         service.removerEspecialidade(id, authentication != null ? authentication.getName() : null);

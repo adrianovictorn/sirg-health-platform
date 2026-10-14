@@ -263,6 +263,45 @@ public class UnidadeAcessoService {
     }
 
     /**
+     * Exige o perfil de quem opera a tela de Atendimentos (perfil ativo na
+     * requisição): USER — o operador da unidade executante — ou ADMIN.
+     *
+     * É uma dimensão à parte do escopo por unidade: o executante atende pacientes
+     * vindos de qualquer unidade solicitante, então enxerga o município inteiro
+     * <b>só nessa tela</b>, tenha ou não unidade de lotação. Não altera
+     * {@link #contextoDe} nem {@link #escopoDeListagem}: na fila, na ficha, nos
+     * relatórios e no agendamento o USER continua restrito como antes.
+     */
+    @Transactional(readOnly = true)
+    public void exigirOperadorDeAtendimentos(String cpf) {
+        boolean operador = cpf != null && userRepository.findByCpf(cpf)
+                .map(user -> {
+                    Roles perfil = perfilEfetivo(user);
+                    return perfil == Roles.USER || perfil == Roles.ADMIN;
+                })
+                .orElse(false);
+        if (!operador) {
+            throw new AccessDeniedException("Acesso restrito a quem opera os atendimentos.");
+        }
+    }
+
+    /**
+     * Exige o perfil USER exato (perfil ativo na requisição) — quem de fato lança
+     * o desfecho do atendimento. Mais estreito que
+     * {@link #exigirOperadorDeAtendimentos}: o ADMIN acompanha a tela, mas não
+     * confirma, não registra falta, não cancela nem desfaz.
+     */
+    @Transactional(readOnly = true)
+    public void exigirExecutorDeAtendimentos(String cpf) {
+        boolean executor = cpf != null && userRepository.findByCpf(cpf)
+                .map(user -> perfilEfetivo(user) == Roles.USER)
+                .orElse(false);
+        if (!executor) {
+            throw new AccessDeniedException("Só o operador da unidade executante registra o atendimento.");
+        }
+    }
+
+    /**
      * Garante que o chamador pode operar sobre a unidade informada.
      * Usado nos endpoints que recebem um {@code unidadeId} vindo do request —
      * sem isto, um ADMIN_UNIDADE poderia ler dados de outra unidade trocando o

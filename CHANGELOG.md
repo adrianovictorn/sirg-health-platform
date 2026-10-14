@@ -4,6 +4,46 @@
 
 ### Novidades
 
+- **Atendimentos: tela do Usuário Padrão, o operador da unidade executante (`/atendimentos`).**
+  As agendas do Usuário Padrão filtravam pela unidade **solicitante** e ficavam vazias para quem
+  é lotado no laboratório ou em outra unidade executante. A tela nova mostra o **município
+  inteiro**, sem precisar escolher unidade: um bloco por paciente com os exames e consultas dele
+  no dia, com **CPF e CNS completos** (sem máscara, decisão registrada no ADR 0010). A busca acha
+  por nome, ou por CPF ou CNS completos.
+
+  **Registro do atendimento (só o Usuário Padrão).** O operador marca o que foi feito e confirma
+  o paciente de uma vez (**Confirmar marcados**); o que não foi feito recebe **Faltou**
+  (observação opcional) ou **Cancelar** (motivo obrigatório) item a item. Também informa a **data
+  da coleta** (exame ou procedimento) e pode **Desfazer** um registro lançado por engano. Falta e
+  cancelamento **continuam ocupando a vaga** da cota e o paciente **não é avisado** por WhatsApp.
+  O ADMIN acompanha a tela, sem registrar.
+
+  **Quantitativos (`/atendimentos/quantitativos`).** Os totais do dia (pacientes, agendados,
+  confirmados, faltas e cancelados) e a contagem por unidade solicitante, numa tela própria;
+  clicar numa unidade abre a lista dela.
+
+  **Menu.** "Dashboard" do Usuário Padrão abre `/atendimentos`, e o grupo "Agendas" abre a mesma
+  tela filtrada pelo grupo (Laboratório, USG...). "Quantitativos" para USER e ADMIN; o ADMIN
+  ganhou também o item "Atendimentos".
+
+  **Agenda do Dia do ADMIN.** CPF e CNS da lista de pacientes passam a aparecer completos.
+
+  **Relatório de Atendimento.** Planilha Excel com confirmados, faltas e cancelamentos do período
+  (até 31 dias) e a data da coleta, com CPF e CNS **completos**; cada geração fica no log.
+
+  **Ficha do paciente.** Faltas passam a aparecer em "Histórico de Faltas e Cancelamentos", com o
+  motivo e quem registrou. Botão novo **Devolver à fila** (unidade solicitante): cria um pedido
+  pendente novo, na mesma posição da fila; a vaga do atendimento perdido continua ocupada.
+
+  **O que não muda.** O resto da Agenda do Dia do ADMIN, as telas `/agendas/*` (sem link no menu)
+  e o "Faltou" de `/paciente/agendados`, que segue gravando `CANCELADO`.
+
+  **Novos:** `/api/atendimentos/**`, `POST /api/solicitacoes/especialidades/{id}/devolver-a-fila`;
+  migration **V109** (quatro colunas anuláveis em `solicitacao_especialidade`); ADRs 0009 (visual)
+  e 0010 (lista por paciente, documentos completos, Quantitativos). Na Agenda do Dia do ADMIN os
+  campos `cpfMascarado`/`cnsMascarado` viraram `cpf`/`cns`.
+  **Deploy:** backend antes do frontend, ou os dois juntos.
+
 - **Migração dos agendamentos ao mudar a data de uma cota (`/admin/cotas`).** Ao editar a data de
   uma cota "por data" que já tem agendamentos, a tela pergunta se deve migrá-los. **Sim:** os
   agendamentos passam para a nova data (remarcação real — `data_agendada` muda) e a cota vai junto,
