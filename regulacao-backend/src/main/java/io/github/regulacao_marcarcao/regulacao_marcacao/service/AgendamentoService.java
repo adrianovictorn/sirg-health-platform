@@ -134,6 +134,10 @@ public class AgendamentoService {
         // Atualiza status da especialidade
         especialidade.setStatus(StatusDaMarcacao.AGENDADO);
         especialidade.setAgendamentoSolicitacao(ag);
+        // Agendamento novo nao herda o desfecho de um atendimento anterior (V109).
+        especialidade.setAtendimentoObservacao(null);
+        especialidade.setAtendimentoRegistradoPor(null);
+        especialidade.setAtendimentoRegistradoEm(null);
         solicitacaoRepository.save(solicitacao);
 
         notificarAgendamentoExternoSeAplicavel(solicitacao, ag);
@@ -330,6 +334,11 @@ public class AgendamentoService {
             // fila por troca manual de status): o que vale e o preco de agora.
             especialidadeParaAgendar.setValorUnitarioAgendado(null);
             especialidadeParaAgendar.setTetoFinanceiro(null);
+            // Idem para o desfecho de um atendimento anterior (V109): este agendamento
+            // ainda nao tem desfecho, e a marca antiga o deixaria "desfazivel".
+            especialidadeParaAgendar.setAtendimentoObservacao(null);
+            especialidadeParaAgendar.setAtendimentoRegistradoPor(null);
+            especialidadeParaAgendar.setAtendimentoRegistradoEm(null);
             EspecialidadeCustoProjection custo = custoPorCodigo.get(nomeExame.trim().toUpperCase());
             if (custo != null && custo.getValorUnitario() != null) {
                 itensComCusto.add(new ItemComCusto(
@@ -680,6 +689,18 @@ public class AgendamentoService {
             .orElseThrow(() -> new EntityNotFoundException("Agendamento não encontrado."));
 
         exigirAcessoAoAgendamento(agendamento, callerCpf);
+
+        // V109: excluir devolve TODOS os itens a fila. Um item com falta/cancelamento
+        // que a unidade ja devolveu tem um item novo pendente na ficha; reabri-lo
+        // deixaria dois pedidos da mesma especialidade para o mesmo paciente. Recusa
+        // antes de qualquer estorno. A saida e remover da ficha o pedido pendente
+        // criado na devolucao (nao consumiu cota nem teto): o vinculo some (SET NULL)
+        // e a exclusao volta a valer, reabrindo o item antigo no lugar dele.
+        if (solicitacaoEspecialidadeRepository.existsByAgendamentoSolicitacaoIdAndDevolvidoComoIsNotNull(id)) {
+            throw new IllegalStateException(
+                    "Este agendamento tem falta ou cancelamento já devolvido à fila: excluí-lo reabriria o mesmo pedido "
+                            + "em duplicidade. Remova antes, na ficha, o pedido pendente criado na devolução.");
+        }
 
         // WhatsApp: fotografa o agendamento ANTES de qualquer alteracao — o estorno
         // abaixo limpa o contexto de persistencia e, ao final, a linha nao existe mais.

@@ -408,6 +408,11 @@ Acordo de cooperação entre municípios.
 
 **LocalAgendamento** (`local_agendamento`): Local físico de atendimento (clínica, hospital, etc.) vinculado a uma Cidade. Possui `enumValue` único para compatibilidade com `LocalDeAgendamentoEnum`.
 
+Desde a V110, `unidade_executante_id` (FK `unidade`, `ON DELETE SET NULL`, anulável) liga o local à
+**unidade executante** que atende nele (§3.15g). Só é gravado pela parametrização da executante e
+pela ação "Vincular" da tela de Locais (`PATCH /api/unidades-executantes/locais/{id}`); a edição
+inline do local (`PUT /api/local/agendamento/{id}`) não o toca.
+
 ---
 
 ### 3.11 Transporte e Motorista
@@ -823,6 +828,166 @@ origem diferente do local.
 agendamentos: 409), troca de tipo de período com agendamentos (409), transporte sanitário (não
 é ajustado) e teto financeiro (**não é redebitado**: ao mudar de mês, teto e painel de custos
 divergem nesses itens). Decisões e alternativas: ADR 0008.
+
+---
+
+### 3.15f Atendimentos do executante (V109)
+
+Tela de trabalho do **Usuário Padrão** (`Roles.USER`), o operador da unidade executante
+(laboratório e demais unidades que realizam o atendimento). As agendas por unidade (3.15c) filtram
+pela unidade **solicitante** e ficavam vazias para quem é lotado no executante; `/atendimentos`
+mostra o **município inteiro**, sem filtro obrigatório por unidade.
+
+**Acesso — dimensão à parte do escopo por unidade** (`UnidadeAcessoService`):
+
+| Método | Aceita (perfil ativo) | Usado em |
+|---|---|---|
+| `exigirOperadorDeAtendimentos` | `USER`, `ADMIN` | Leitura da tela e Relatório de Atendimento |
+| `exigirExecutorDeAtendimentos` | `USER` | Lançar e desfazer o desfecho |
+
+`contextoDe`, `escopoDeListagem` e `exigirAdminGlobal` não mudaram: fora dessa tela o USER segue
+restrito como antes, e a Agenda do Dia consolidada (`/api/agenda-dia/**`) segue só do ADMIN.
+
+**Campos novos (V109), todos em `solicitacao_especialidade`, anuláveis e sem backfill:**
+
+| Campo | Notas |
+|---|---|
+| `atendimento_observacao` (`VARCHAR(500)`) | Observação da falta (opcional) ou motivo do cancelamento (obrigatório). **Não** é `agendamento_solicitacao.observacoes`, que pertence a quem agendou |
+| `atendimento_registrado_por_id` (FK `usuarios`) | Quem lançou o desfecho |
+| `atendimento_registrado_em` (`TIMESTAMPTZ`) | Quando lançou. É a marca de "lançado na tela de Atendimentos": só o que tem a marca pode ser desfeito ali |
+| `devolvido_como_item_id` (FK para a própria tabela, `SET NULL`) | No item `FALTOU`/`CANCELADO`, aponta para o item novo criado ao devolver o paciente à fila |
+
+`data_coleta` (V81) é reutilizada. O CHECK de status (V64) não foi tocado.
+
+**Desfecho (`AtendimentoExecutanteService`, item carregado com `PESSIMISTIC_WRITE`):**
+
+| Ação | Transição | Regra |
+|---|---|---|
+| Confirmar | `AGENDADO → REALIZADO` | "Confirmado" é o rótulo; o status gravado é `REALIZADO` |
+| Faltou | `AGENDADO → FALTOU` | Observação opcional |
+| Cancelar | `AGENDADO → CANCELADO` | Motivo obrigatório (400 se vazio) |
+| Data da coleta | não muda o status | Só `EXAME_OU_PROCEDIMENTO`, em item `AGENDADO` ou `REALIZADO` |
+| Desfazer | `REALIZADO`/`FALTOU`/`CANCELADO → AGENDADO` | Só registro com a marca e ainda não devolvido à fila |
+
+Um desfecho não troca direto por outro (409): desfaz e lança de novo. **Nenhuma ação toca cota ou
+teto** — falta e cancelamento continuam ocupando a vaga —, nem publica evento: o paciente **não é
+avisado** por WhatsApp do cancelamento feito pelo executante.
+
+**Convivência com o legado.** `PATCH /api/especialidades/{id}/faltou` continua gravando
+`CANCELADO` e sobrescrevendo a observação do agendamento (não foi alterado). Passam a coexistir o
+`FALTOU`/`CANCELADO` com autoria (tela nova) e o `CANCELADO` sem autoria (legado, que a tela não
+deixa desfazer). Para a marca não sobreviver ao atendimento a que pertence, ela é apagada ao
+excluir o agendamento (`desvincularAgendamento`) e ao reagendar o item (`AgendamentoService`).
+
+**Devolver à fila (`SolicitacaoService.devolverItemAFila`).** Para um item `FALTOU`/`CANCELADO`
+com agendamento, cria um item **novo** `AGUARDANDO` na mesma ficha — mesma especialidade,
+solicitante, prioridade e **data de cadastro** (o paciente não perde a posição na fila) — e liga
+o antigo a ele. O item antigo não muda: segue ocupando a vaga e o teto do atendimento perdido e
+continua nos relatórios. 409 se o item já foi devolvido ou se a ficha já tem pendente da mesma
+especialidade. Um agendamento com item já devolvido não pode ser excluído inteiro (409): reabriria
+o item e duplicaria o pedido. A saída é remover da ficha o pedido pendente criado na devolução; o
+vínculo some (`SET NULL`) e a exclusão volta a valer.
+
+**Relatório de Atendimento (`ExcelService.gerarPlanilhaAtendimentos`).** Uma linha por item com
+desfecho no período (máximo de 31 dias), o município inteiro, com **CPF e CNS completos**. Cada
+geração é registrada no log (quem e qual período, nunca o conteúdo).
+
+**Lista por paciente (`GET /api/atendimentos`).** Pagina por **ficha** (`solicitacao.id`), em duas
+consultas: `listarPacientes` pagina as fichas com algum item no dia e na agenda que atenda aos
+filtros, e `listarItensDosPacientes` traz os itens delas. Cada elemento é um
+`AtendimentoPacienteViewDTO` (nome, CPF, CNS, nascimento, unidade e `itens`). O total conta
+pacientes; com `grupo`, o bloco só tem os itens daquela agenda. `status` seleciona pacientes que
+têm algum item na situação e devolve o bloco inteiro. "Confirmar marcados" na tela são N chamadas
+sequenciais a `PATCH /{id}/confirmar` (ADR 0010).
+
+**Privacidade.** CPF e CNS saem **completos**, como estão gravados, na lista (só no bloco do
+paciente; as respostas das ações não levam documento) e na Agenda do Dia consolidada do ADMIN
+(`AgendaDiaItemViewDTO.cpf`/`cns`) — decisão do ADR 0010. O resumo só tem contagens. A busca casa
+nome por trecho e CPF (11 dígitos) ou CNS (15) **só completos**. A observação do executante sai em
+três lugares: na própria tela (`GET /api/atendimentos`, USER e ADMIN), no Relatório de Atendimento
+e na ficha do paciente (`SolicitacaoViewDTO.paraFicha`, depois da checagem de unidade). As
+listagens de `/api/especialidades`, as demais respostas com `SolicitacaoViewDTO` e o que vai para
+outro município pela federação **não** a levam. No log do relatório vai o id do usuário, não o CPF.
+
+| Endpoint | Perfil |
+|---|---|
+| `GET /api/atendimentos/resumo?data&grupo` | USER, ADMIN |
+| `GET /api/atendimentos?data&grupo&unidadeId&semUnidade&status&termo&page&size` | USER, ADMIN |
+| `GET /api/atendimentos/relatorio?inicio&fim&grupo` | USER, ADMIN |
+| `GET /api/atendimentos/agendas` | USER, ADMIN — grupos do menu "Agendas" e dos seletores, já no escopo do chamador (V110) |
+| `PATCH /api/atendimentos/{id}/confirmar` · `/falta` · `/cancelar` · `/data-coleta` · `/desfazer` | USER |
+| `POST /api/solicitacoes/especialidades/{id}/devolver-a-fila` | ADMIN, ADMIN_UNIDADE, RECEPCAO, ENFERMEIRO, MEDICO |
+
+`grupo` é o código do Grupo de Relatório: os itens do menu "Agendas" do USER abrem
+`/atendimentos?grupo=<código>`. `/atendimentos` também aceita `data`, `unidadeId` e `semUnidade`
+na URL. Os Totais do dia e a tabela por unidade ficam em `/atendimentos/quantitativos` (menu
+"Quantitativos", USER e ADMIN), que leva a `/atendimentos` já filtrado ao clicar numa unidade.
+Decisões: ADR 0010; visual: ADR 0009.
+
+Desde a V110, resumo, lista, bloco do paciente, contagem e relatório são recortados pela unidade
+executante do operador (lotação ou lista de operadores); USER sem executante configurada não vê
+nada (ADR 0013) — ver §3.15g.
+
+---
+
+### 3.15g Unidade executante parametrizada (V110, V111)
+
+A executante continua sendo uma `Unidade` (tipo `EXECUTANTE` ou `AMBOS`, V86) — não há entidade
+nova. A parametrização diz o que ela **realiza**, onde **atende** e quem a **opera**:
+
+| Parte | Tabela | Regra |
+|---|---|---|
+| Grupos inteiros | `unidade_executante_grupo` (`unidade_id`, `grupo_relatorio_id` RESTRICT, UNIQUE no par — V111) | Todas as especialidades do grupo passam a ser da executante; o mesmo grupo pode estar em várias |
+| Especialidades avulsas | `unidade_executante_especialidade` (`unidade_id`, `especialidade_id`, UNIQUE no par — V111) | Ajuste fino; avulsa já coberta por grupo escolhido não é gravada; a mesma avulsa pode estar em várias |
+| Locais | `local_agendamento.unidade_executante_id` | Um local é de no máximo uma executante; vincular local de outra **move** |
+| Operadores | `usuario_unidade_executante` (`usuario_id`, `unidade_id`, UNIQUE no par) | Usuário com o perfil USER concedido; pode estar em várias. Somam-se à lotação (`usuarios.unidade_id`), que não é tocada |
+
+**Não confundir** com `unidade.grupo_relatorio_id` (V82), que é o titular de cota coletiva da
+unidade **solicitante**.
+
+**Compartilhamento (V111, ADR 0013).** Grupo e especialidade avulsa podem estar em mais de uma
+executante (ex.: dois laboratórios com os mesmos exames); a V110 os tornava exclusivos. Os índices
+únicos no par só impedem o vínculo repetido na mesma executante. Não deduza a executante de um
+agendamento pela especialidade: quem desempata é o local. Excluir um Grupo de Relatório ligado a
+qualquer executante é 409 (`GrupoRelatorioService.deletarGrupoRelatorio`).
+
+**Configurada** = ativa, tipo `EXECUTANTE`/`AMBOS`, ao menos um local e ao menos um grupo ou
+especialidade. Só executante configurada dá visão ao operador.
+
+**Pertencimento de um item** (calculado em `AtendimentoExecutanteRepository.FILTRO_EXECUTANTE`,
+nunca gravado): a especialidade do item está no conjunto efetivo da executante **e** o local do
+agendamento está ligado a ela. Agendamento **sem local** pertence pela especialidade só quando a
+executante é a **única** ativa (`EXECUTANTE`/`AMBOS`) com aquela especialidade, por grupo ou
+avulsa; especialidade compartilhada sem local só aparece na visão municipal — nem o operador
+vinculado às duas a vê. A conferência é por executante — especialidade de A com local de B não é
+de nenhuma. Item com `especialidade_id` nulo não pertence a nenhuma executante.
+
+**Escopo (`UnidadeAcessoService.escopoDeAtendimentos`, ADR 0013).** As executantes do perfil
+ativo USER são a união da unidade de lotação (se for executante configurada) com as da lista de
+operadores → só os itens dessas executantes em resumo, lista, bloco do paciente,
+contagem/paginação, Relatório de Atendimento e agendas do menu. USER **sem** executante
+configurada (sem lotação nem lista, ou só executante incompleta) → `EscopoAtendimento.NENHUMA`:
+não vê nada, e o resumo vem com `semExecutante = true` para a tela dizer isso em vez de "nenhum
+atendimento". ADMIN → município inteiro (`MUNICIPAL`). No menu, o restrito vê os grupos das suas
+executantes **sem** depender de `direcionadoHospital`.
+
+**Fora do recorte, de propósito (ADR 0011, mantido no 0013):** o desfecho por id (`PATCH /api/atendimentos/{id}/…`)
+não confere a executante do item; `/agendar`, cota, teto e federação não mudam; ADMIN/GESTOR não
+têm filtro por executante.
+
+| Endpoint | Perfil |
+|---|---|
+| `GET /api/unidades-executantes` | ADMIN — unidades `EXECUTANTE`/`AMBOS` ativas, com contagens e `configurada` |
+| `GET /api/unidades-executantes/operadores` | ADMIN — usuários ativos com perfil USER (sem CPF) |
+| `GET /api/unidades-executantes/{unidadeId}` | ADMIN — parametrização completa |
+| `PUT /api/unidades-executantes/{unidadeId}` | ADMIN — substitui `{grupoIds, especialidadeIds, localIds, usuarioIds}` |
+| `PATCH /api/unidades-executantes/locais/{localId}` | ADMIN — `{unidadeId}`; nulo desliga |
+
+Telas: `/admin/unidades/[id]/executante` (botão "Parametrizar executante" na lista de Unidades,
+para unidade que não é só solicitante), coluna e ação "Unidade executante" em
+`/cadastrar/cidade/local-agendamento`, e o campo **Tipo** em nova/editar Unidade.
+
+---
 
 ### 3.16 Profissional
 
@@ -1320,6 +1485,8 @@ Próxima requisição do usuário desativado:
 | V106 | `solicitacao_especialidade.valor_unitario_agendado` — valor da época, **sem backfill** |
 | V107 | Tabela `teto_financeiro` (unidade + grupo de especialidades + mês, UNIQUE) e `solicitacao_especialidade.teto_financeiro_id` |
 | V108 | `agendamento_solicitacao.data_agendada_original` e tabela `cota_migracao_data` (auditoria da migração de data de cota, ids de cota sem FK) — ver §3.15e |
+| V110 | Unidade executante parametrizada: `local_agendamento.unidade_executante_id` e tabelas `unidade_executante_grupo`, `unidade_executante_especialidade`, `usuario_unidade_executante` — sem backfill, ver §3.15g |
+| V111 | Grupo e especialidade avulsa compartilháveis entre executantes: índices únicos de `unidade_executante_grupo` e `unidade_executante_especialidade` passam a ser no par com `unidade_id` — sem alteração de dados, ver §3.15g |
 
 > **Limite do backfill (V73/V76/V77):** só é possível vincular a unidade quando
 > `usf_origem` está preenchido **e** casa com alguma unidade cadastrada. O que sobra é
@@ -1514,6 +1681,8 @@ separados por vírgula. Valor inválido → 400.
 | POST | `/unidades` | ADMIN | Cria unidade |
 | PUT | `/unidades/{id}` | ADMIN | Atualiza unidade |
 | PATCH | `/unidades/{id}/status` | ADMIN | Ativa/Desativa unidade |
+
+Parametrização da unidade executante (`/unidades-executantes/**`, só ADMIN): ver §3.15g.
 
 ### 7.10c Cotas por Unidade (`/cotas`)
 
@@ -2249,6 +2418,10 @@ resultados, sempre pelo perfil **ativo**:
 **listar/contar** usa `escopoDeListagem`; **escrita e acesso por id** continuam em `contextoDe`,
 `resolverUnidadeAlvo` e `exigirAcessoA`. As duas regras compartilham o mesmo predicado de
 "perfil global" (ADMIN ou GESTOR).
+
+A tela de Atendimentos tem um escopo próprio, `escopoDeAtendimentos(cpf)` (V110, ADR 0013): o USER
+vê só os itens das executantes configuradas dele (lotação ou lista de operadores) e, sem nenhuma,
+não vê nada; o ADMIN vê o município inteiro. Ver §3.15g.
 
 ### 9.4b Tratamento de Erros (GlobalExceptionHandler)
 

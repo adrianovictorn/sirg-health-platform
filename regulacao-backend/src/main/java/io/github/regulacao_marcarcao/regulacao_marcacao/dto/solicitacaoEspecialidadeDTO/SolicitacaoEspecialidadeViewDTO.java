@@ -1,5 +1,6 @@
 package io.github.regulacao_marcarcao.regulacao_marcacao.dto.solicitacaoEspecialidadeDTO;
 
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -34,10 +35,31 @@ public record SolicitacaoEspecialidadeViewDTO (
     LocalTime horaFinal,
     LocalTime horaAgendada,
     String adicionadoPorNome,
-    String agendadoPorNome
+    String agendadoPorNome,
+    // V109: desfecho lancado na tela de Atendimentos (observacao da falta ou motivo
+    // do cancelamento, e quem lancou) e se o item ja foi devolvido a fila.
+    String atendimentoObservacao,
+    String atendimentoRegistradoPorNome,
+    Instant atendimentoRegistradoEm,
+    boolean devolvidoAFila
 ) {
 
+    /**
+     * Sem o registro do desfecho (V109): os campos {@code atendimento*} saem nulos.
+     * Este factory atende tambem as listagens de {@code /api/especialidades}, que nao
+     * checam unidade — e a observacao do executante e texto livre sobre o paciente.
+     * Quem pode ve-la e quem abre a ficha: use {@link #paraFicha}.
+     */
     public static SolicitacaoEspecialidadeViewDTO fromSolicitacaoEspecialidade(SolicitacaoEspecialidade se) {
+        return montar(se, false);
+    }
+
+    /** Para a ficha do paciente, cujo acesso ja passou pela checagem de unidade: inclui o desfecho. */
+    public static SolicitacaoEspecialidadeViewDTO paraFicha(SolicitacaoEspecialidade se) {
+        return montar(se, true);
+    }
+
+    private static SolicitacaoEspecialidadeViewDTO montar(SolicitacaoEspecialidade se, boolean comDesfecho) {
         CotaUnidade cota = se.getCotaUnidade();
         var agendamento = se.getAgendamentoSolicitacao();
         String localExecucao = cota != null && cota.getLocalAgendamento() != null
@@ -69,7 +91,11 @@ public record SolicitacaoEspecialidadeViewDTO (
             cota != null ? cota.getHoraFinal() : null,
             se.getHoraAgendada(),
             se.getCriadoPor() != null ? se.getCriadoPor().getNome() : null,
-            agendamento != null && agendamento.getCriadoPor() != null ? agendamento.getCriadoPor().getNome() : null
+            agendamento != null && agendamento.getCriadoPor() != null ? agendamento.getCriadoPor().getNome() : null,
+            comDesfecho ? se.getAtendimentoObservacao() : null,
+            comDesfecho && se.getAtendimentoRegistradoPor() != null ? se.getAtendimentoRegistradoPor().getNome() : null,
+            comDesfecho ? se.getAtendimentoRegistradoEm() : null,
+            se.getDevolvidoComo() != null
         );
     }
 }

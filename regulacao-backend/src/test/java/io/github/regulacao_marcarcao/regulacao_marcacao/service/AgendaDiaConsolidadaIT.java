@@ -244,8 +244,24 @@ class AgendaDiaConsolidadaIT {
     }
 
     @Test
-    @DisplayName("Lista nominal mascara CPF/CNS, so traz a data pedida e limita o tamanho da pagina")
-    void listaNominalMascarada() {
+    @DisplayName("Usuario Padrao (USER), com ou sem unidade de lotacao, leva acesso negado no agregado e na lista nominal")
+    void usuarioPadraoENegado() {
+        User comLotacao = novoUsuario("Usuario Padrao da Unidade A", Roles.USER, unidadeA);
+        User semLotacao = novoUsuario("Usuario Padrao sem unidade", Roles.USER, null);
+
+        for (User u : List.of(comLotacao, semLotacao)) {
+            assertThatThrownBy(() -> service.consolidar(hoje, null, null, null, u.getCpf()))
+                    .as(u.getNome()).isInstanceOf(AccessDeniedException.class);
+            assertThatThrownBy(() -> service.consolidar(hoje, unidadeA.getId(), null, null, u.getCpf()))
+                    .as(u.getNome()).isInstanceOf(AccessDeniedException.class);
+            assertThatThrownBy(() -> service.listarPacientes(hoje, cardiologia.getId(), null, false, 0, 10, u.getCpf()))
+                    .as(u.getNome()).isInstanceOf(AccessDeniedException.class);
+        }
+    }
+
+    @Test
+    @DisplayName("Lista nominal traz CPF/CNS completos, so traz a data pedida e limita o tamanho da pagina")
+    void listaNominalComDocumentos() {
         agendar(unidadeA, 1);
 
         var pagina = service.listarPacientes(hoje, cardiologia.getId(), unidadeA.getId(), false, 0, 1000, admin.getCpf());
@@ -253,8 +269,9 @@ class AgendaDiaConsolidadaIT {
         assertThat(pagina.getSize()).isLessThanOrEqualTo(AgendaDiaConsolidadaService.TAMANHO_MAXIMO_PAGINA);
         assertThat(pagina.getContent()).singleElement().satisfies(i -> {
             assertThat(i.nomePaciente()).startsWith("Paciente 1");
-            assertThat(i.cpfMascarado()).startsWith("*").hasSize(11);
-            assertThat(i.cnsMascarado()).startsWith("*").hasSize(15);
+            // ADR 0010: CPF e CNS completos, como estao gravados (antes saiam mascarados).
+            assertThat(i.cpf()).hasSize(11).doesNotContain("*");
+            assertThat(i.cns()).isEqualTo("700" + String.format("%012d", 1));
         });
 
         var outroDia = service.listarPacientes(hoje.plusDays(1), cardiologia.getId(), unidadeA.getId(), false, 0, 10,

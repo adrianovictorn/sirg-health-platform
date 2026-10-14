@@ -54,6 +54,7 @@ Cota esgotada é `IllegalStateException` → **409** via `GlobalExceptionHandler
 [[10 - Padrões e Arquitetura]] §10.0 | A regra de escopo por unidade, com a tabela por role |
 `service/UnidadeAcessoService.java` | **Autoridade central.** `contextoDe(cpf)`, `isAcessoGlobal(cpf)`, `exigirAcessoA(cpf, unidadeId)`. Essa decisão já esteve duplicada em dois services, cada um com seu `role.equals("ADMIN")` — não duplique de novo |
 `config/JwtAuthenticationFilter.java` | O perfil ativo é reconferido **a cada requisição** contra os perfis concedidos. É o que faz retirar um perfil ter efeito imediato |
+[[03 - Entidades e Classes de Domínio]] §3.15g · `UnidadeAcessoService.escopoDeAtendimentos` | Terceira dimensão, só na tela de Atendimentos: o USER vê só os itens das executantes configuradas dele (lotação **ou** lista de operadores); sem nenhuma, não vê nada (ADR 0013). Grupo e especialidade podem estar em várias executantes: quem desempata é o local, e item sem local de especialidade compartilhada só aparece para o ADMIN. O recorte (`FILTRO_EXECUTANTE`) tem de entrar em **todas** as consultas da tela — lista, bloco do paciente, contagem, resumo e relatório —, senão vaza paciente de outra executante. O desfecho por id não é recortado (ADR 0011) |
 [[09 - Segurança]] | Claims, rotas públicas, proteções pontuais |
 
 ### Criar entidade ou mexer no schema
@@ -136,7 +137,7 @@ Ordem de leitura, com o motivo de cada parada:
 
 ---
 
-## Cinco armadilhas que não se descobre lendo o código devagar
+## Seis armadilhas que não se descobre lendo o código devagar
 
 Estão documentadas num lugar só cada uma. Quem não leu, erra.
 
@@ -149,6 +150,8 @@ Estão documentadas num lugar só cada uma. Quem não leu, erra.
 **4. A JVM do container roda em UTC.** `LocalDate.now()` devolve o dia seguinte entre 21h e 0h de Brasília. Regra que depende de "hoje" usa um fuso explícito — `WhatsAppEnvioProperties.FUSO` ou o `ZoneId` de `AgendaDiaConsolidadaService`. Ver [[07 - APIs e Endpoints]] §7.10h.
 
 **5. Escrita no banco depois do commit some sem erro.** Um `@TransactionalEventListener(AFTER_COMMIT)` que grava precisa de `@Transactional(propagation = REQUIRES_NEW)` no método chamado. Os ITs `@Transactional` não detectam a falta: neles nunca há commit e o listener nem roda. Ver `WhatsAppEnvioFluxoIT`.
+
+**6. `/atendimentos` vazio para um Usuário Padrão não quer dizer dia sem paciente.** Sem executante configurada (lotação ou lista de operadores), o USER não vê nada — é falha fechada, não erro (ADR 0013). `EscopoAtendimento` distingue `MUNICIPAL` (ADMIN) de `NENHUMA`; lista vazia nunca significa "município inteiro", e o `IN (:executanteIds)` nunca pode ir vazio (`idsDoFiltro` manda a sentinela). Ver [[03 - Entidades e Classes de Domínio]] §3.15g.
 
 ---
 

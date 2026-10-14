@@ -3,21 +3,30 @@ package io.github.regulacao_marcarcao.regulacao_marcacao.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.Unidade;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.User;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.enums.Roles;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.UserRepository;
+import io.github.regulacao_marcarcao.regulacao_marcacao.repository.UsuarioUnidadeExecutanteRepository;
 
 /**
  * Regras de segregacao de dados por unidade — a base de seguranca do perfil
@@ -30,6 +39,9 @@ class UnidadeAcessoServiceTest {
 
     @Mock
     private UserRepository userRepository;
+
+    @Mock
+    private UsuarioUnidadeExecutanteRepository usuarioUnidadeExecutanteRepository;
 
     @InjectMocks
     private UnidadeAcessoService service;
@@ -245,5 +257,85 @@ class UnidadeAcessoServiceTest {
 
         when(userRepository.findByCpf(CPF)).thenReturn(Optional.empty());
         assertThat(service.escopoDeListagem(CPF, null).isSemAcesso()).isTrue();
+    }
+
+    // ------------------------------------------------------------------
+    // Escopo da tela de Atendimentos por unidade executante (V110)
+    // ------------------------------------------------------------------
+
+    @AfterEach
+    void limparContextoDeSeguranca() {
+        SecurityContextHolder.clearContext();
+    }
+
+    private User usuarioComId(Roles role, Long id) {
+        User u = usuario(role, null);
+        u.setId(id);
+        return u;
+    }
+
+    @Test
+    void escopoDeAtendimentosDoAdminEMunicipal() {
+        dadoUsuario(usuarioComId(Roles.ADMIN, 1L));
+
+        assertThat(service.escopoDeAtendimentos(CPF).isMunicipal()).isTrue();
+        verify(usuarioUnidadeExecutanteRepository, never()).findExecutantesConfiguradasDoUsuario(1L);
+    }
+
+    /** ADR 0013: USER sem executante configurada (lotacao ou lista) nao ve nada, nunca o municipio. */
+    @Test
+    void escopoDeAtendimentosDoUserSemExecutanteEVazio() {
+        dadoUsuario(usuarioComId(Roles.USER, 1L));
+        when(usuarioUnidadeExecutanteRepository.findExecutantesConfiguradasDoUsuario(1L)).thenReturn(List.of());
+
+        var escopo = service.escopoDeAtendimentos(CPF);
+
+        assertThat(escopo.isMunicipal()).isFalse();
+        assertThat(escopo.isNenhuma()).isTrue();
+    }
+
+    @Test
+    void escopoAtendimentoDistingueMunicipalDeNenhuma() {
+        assertThat(UnidadeAcessoService.EscopoAtendimento.MUNICIPAL.isNenhuma()).isFalse();
+        assertThat(UnidadeAcessoService.EscopoAtendimento.NENHUMA.isMunicipal()).isFalse();
+        assertThat(new UnidadeAcessoService.EscopoAtendimento(List.of()).isNenhuma()).isTrue();
+        assertThat(new UnidadeAcessoService.EscopoAtendimento(List.of(5L)).isNenhuma()).isFalse();
+    }
+
+    /** A consulta so devolve executante configurada: vinculo so a incompleta chega aqui vazio. */
+    @Test
+    void escopoDeAtendimentosDoUserVinculadoRestringeAsExecutantes() {
+        dadoUsuario(usuarioComId(Roles.USER, 1L));
+        when(usuarioUnidadeExecutanteRepository.findExecutantesConfiguradasDoUsuario(1L)).thenReturn(List.of(5L, 9L));
+
+        var escopo = service.escopoDeAtendimentos(CPF);
+
+        assertThat(escopo.isMunicipal()).isFalse();
+        assertThat(escopo.executanteIds()).containsExactly(5L, 9L);
+    }
+
+    /** Quem tem ADMIN e USER e alterna para USER fica restrito; no ADMIN, nao. */
+    @Test
+    void escopoDeAtendimentosSegueOPerfilAtivo() {
+        User u = usuarioComId(Roles.ADMIN, 1L);
+        u.setPerfis(Set.of(Roles.ADMIN, Roles.USER));
+        dadoUsuario(u);
+        when(usuarioUnidadeExecutanteRepository.findExecutantesConfiguradasDoUsuario(1L)).thenReturn(List.of(5L));
+
+        SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(CPF, null,
+                List.of(new SimpleGrantedAuthority("ROLE_USER"))));
+        assertThat(service.escopoDeAtendimentos(CPF).executanteIds()).containsExactly(5L);
+
+        SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(CPF, null,
+                List.of(new SimpleGrantedAuthority("ROLE_ADMIN"))));
+        assertThat(service.escopoDeAtendimentos(CPF).isMunicipal()).isTrue();
+    }
+
+    @Test
+    void escopoDeAtendimentosSemCpfOuSemUsuarioEMunicipal() {
+        assertThat(service.escopoDeAtendimentos(null).isMunicipal()).isTrue();
+
+        when(userRepository.findByCpf(CPF)).thenReturn(Optional.empty());
+        assertThat(service.escopoDeAtendimentos(CPF).isMunicipal()).isTrue();
     }
 }

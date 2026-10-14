@@ -1,10 +1,12 @@
 package io.github.regulacao_marcarcao.regulacao_marcacao.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -158,6 +160,34 @@ class SegurancaEndpointsIT {
     }
 
     @Test
+    @DisplayName("Parametrizacao de unidade executante: so ADMIN le ou altera; agendas de Atendimentos so USER e ADMIN")
+    void unidadeExecutanteSoParaAdmin() throws Exception {
+        List<org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder> rotas = List.of(
+                get("/api/unidades-executantes"),
+                get("/api/unidades-executantes/operadores"),
+                get("/api/unidades-executantes/1"),
+                put("/api/unidades-executantes/1").contentType(MediaType.APPLICATION_JSON).content("{}"),
+                patch("/api/unidades-executantes/locais/1").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"unidadeId\":null}"));
+
+        for (var rota : rotas) {
+            assertThat(statusDe(rota)).as("sem login").isIn(401, 403);
+        }
+        for (Roles role : List.of(Roles.GESTOR, Roles.ADMIN_UNIDADE, Roles.USER, Roles.RECEPCAO, Roles.PACIENTE)) {
+            RequestPostProcessor usuario = como(role);
+            for (var rota : rotas) {
+                assertThat(statusDe(rota.with(usuario))).as(role.name()).isEqualTo(403);
+            }
+        }
+        mockMvc.perform(get("/api/unidades-executantes").with(como(Roles.ADMIN))).andExpect(status().isOk());
+
+        for (Roles role : List.of(Roles.GESTOR, Roles.ADMIN_UNIDADE, Roles.RECEPCAO, Roles.PACIENTE)) {
+            assertThat(statusDe(get("/api/atendimentos/agendas").with(como(role)))).as(role.name()).isEqualTo(403);
+        }
+        mockMvc.perform(get("/api/atendimentos/agendas").with(como(Roles.USER))).andExpect(status().isOk());
+    }
+
+    @Test
     @DisplayName("Painel do WhatsApp: so ADMIN le, liga o envio ou dispara mensagem")
     void painelDoWhatsAppSoParaAdmin() throws Exception {
         List<org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder> rotas = List.of(
@@ -240,6 +270,191 @@ class SegurancaEndpointsIT {
         mockMvc.perform(put("/api/especialidades/" + pedido.getId()).with(como(Roles.USER))
                 .contentType(MediaType.APPLICATION_JSON).content("{\"prioridade\":\"URGENTE\"}"))
                 .andExpect(status().isOk());
+    }
+
+    /**
+     * CARACTERIZACAO, nao regra desejada: estes dois PATCH nao tem @PreAuthorize nem
+     * checagem de unidade, entao qualquer perfil autenticado troca o status do pedido.
+     * O teste fixa o estado atual para acusar mudanca acidental; fechar essas rotas e
+     * um ajuste proprio, e entao este teste muda junto.
+     */
+    @Test
+    @DisplayName("Caracterizacao: PATCH realizado/faltou respondem 204 a qualquer perfil autenticado; faltou grava CANCELADO")
+    void patchLegadosDeDesfechoSeguemAbertos() throws Exception {
+        String realizado = "/api/especialidades/" + pedido.getId() + "/realizado";
+        String faltou = "/api/especialidades/" + pedido.getId() + "/faltou";
+
+        assertThat(statusDe(patch(realizado))).as("sem login").isIn(401, 403);
+        assertThat(statusDe(patch(faltou))).as("sem login").isIn(401, 403);
+
+        for (Roles role : List.of(Roles.USER, Roles.RECEPCAO, Roles.GESTOR, Roles.PACIENTE)) {
+            assertThat(statusDe(patch(realizado).with(como(role)))).as("realizado " + role).isEqualTo(204);
+            assertThat(solicitacaoRepository.findById(solicitacao.getId()).orElseThrow()
+                    .getEspecialidades().get(0).getStatus()).isEqualTo(StatusDaMarcacao.REALIZADO);
+
+            // Corpo e opcional: /paciente/agendados chama sem corpo.
+            assertThat(statusDe(patch(faltou).with(como(role)))).as("faltou " + role).isEqualTo(204);
+            assertThat(solicitacaoRepository.findById(solicitacao.getId()).orElseThrow()
+                    .getEspecialidades().get(0).getStatus()).isEqualTo(StatusDaMarcacao.CANCELADO);
+        }
+
+        // Item inexistente: RuntimeException generica, que o GlobalExceptionHandler nao
+        // mapeia — escapa do MockMvc aqui e vira 500 em producao, nao 404.
+        RequestPostProcessor usuario = como(Roles.USER);
+        assertThatThrownBy(() -> mockMvc.perform(patch("/api/especialidades/999999999/realizado").with(usuario)))
+                .hasRootCauseInstanceOf(RuntimeException.class)
+                .hasRootCauseMessage("Especialidade não encontrada");
+    }
+
+    @Test
+    @DisplayName("Caracterizacao: faltou so existe em PATCH; o PUT que /agendas/[grupo] envia nao e atendido")
+    void faltouPorPutNaoEAtendido() throws Exception {
+        assertThat(statusDe(put("/api/especialidades/" + pedido.getId() + "/faltou").with(como(Roles.USER))
+                .contentType(MediaType.APPLICATION_JSON).content("{\"observacao\":\"x\"}"))).isEqualTo(405);
+        assertThat(solicitacaoRepository.findById(solicitacao.getId()).orElseThrow()
+                .getEspecialidades().get(0).getStatus()).isEqualTo(StatusDaMarcacao.AGUARDANDO);
+    }
+
+    @Test
+    @DisplayName("Caracterizacao: campos do item do pedido na ficha (GET /api/solicitacoes/{id})")
+    @SuppressWarnings("unchecked")
+    void camposDoItemNaFicha() throws Exception {
+        String corpo = mockMvc.perform(get("/api/solicitacoes/" + solicitacao.getId()).with(como(Roles.ADMIN)))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+
+        Map<String, Object> ficha = objectMapper.readValue(corpo, Map.class);
+        List<Map<String, Object>> itens = (List<Map<String, Object>>) ficha.get("especialidades");
+        // contains, nao containsExactly: campos novos no fim do DTO sao aditivos; sumir ou renomear um destes quebra a ficha.
+        assertThat(itens).singleElement().satisfies(item -> assertThat(item.keySet()).contains(
+                "id", "solicitacaoId", "agendamentoId", "especialidadeSolicitada", "profissionalId",
+                "profissionalNome", "dataColeta", "status", "prioridade", "dataDeCadastro",
+                "profissionalExecutanteId", "profissionalExecutanteNome", "localExecucaoNome",
+                "horaInicial", "horaFinal", "horaAgendada", "adicionadoPorNome", "agendadoPorNome",
+                // V109
+                "atendimentoObservacao", "atendimentoRegistradoPorNome", "atendimentoRegistradoEm",
+                "devolvidoAFila"));
+    }
+
+    @Test
+    @DisplayName("Atendimentos: so USER e ADMIN leem o resumo e a lista nominal do municipio; sem valor em reais")
+    void atendimentosSoParaQuemOpera() throws Exception {
+        List<String> rotas = List.of("/api/atendimentos/resumo", "/api/atendimentos");
+
+        for (String rota : rotas) {
+            assertThat(statusDe(get(rota))).as("sem login").isIn(401, 403);
+        }
+        for (Roles role : List.of(Roles.GESTOR, Roles.ADMIN_UNIDADE, Roles.RECEPCAO, Roles.ENFERMEIRO,
+                Roles.MEDICO, Roles.COORD_TRANSPORTE, Roles.PACIENTE)) {
+            RequestPostProcessor usuario = como(role);
+            for (String rota : rotas) {
+                assertThat(statusDe(get(rota).with(usuario))).as(role + " " + rota).isEqualTo(403);
+            }
+        }
+        for (Roles role : List.of(Roles.USER, Roles.ADMIN)) {
+            RequestPostProcessor usuario = como(role);
+            for (String rota : rotas) {
+                var resposta = mockMvc.perform(get(rota).with(usuario)).andExpect(status().isOk())
+                        .andReturn().getResponse();
+                assertThat(resposta.getHeader("Cache-Control")).as(rota).contains("no-store");
+                // Pelo nome do campo, nao por texto solto: a base pode ter um "Custodio".
+                assertThat(resposta.getContentAsString()).as(rota)
+                        .doesNotContainIgnoringCase("\"valor")
+                        .doesNotContainIgnoringCase("\"custo")
+                        .doesNotContainIgnoringCase("\"teto");
+            }
+            // O resumo e so contagem: nenhum documento. A lista nominal leva CPF e CNS
+            // completos de proposito (ADR 0010) e por isso nao entra nesta asserção.
+            assertThat(mockMvc.perform(get("/api/atendimentos/resumo").with(usuario))
+                    .andReturn().getResponse().getContentAsString())
+                    .doesNotContain("\"cpf")
+                    .doesNotContain("\"cns\"")
+                    .doesNotContain("nomePaciente");
+        }
+
+        mockMvc.perform(get("/api/atendimentos").param("status", "INEXISTENTE").with(como(Roles.USER)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").exists());
+    }
+
+    @Test
+    @DisplayName("Relatorio de Atendimento: so USER e ADMIN baixam; sai como anexo, sem cache; periodo invalido e 400")
+    void relatorioDeAtendimentoSoParaQuemOpera() throws Exception {
+        String rota = "/api/atendimentos/relatorio?inicio=2030-01-01&fim=2030-01-02";
+
+        assertThat(statusDe(get(rota))).as("sem login").isIn(401, 403);
+        for (Roles role : List.of(Roles.GESTOR, Roles.ADMIN_UNIDADE, Roles.RECEPCAO, Roles.ENFERMEIRO,
+                Roles.MEDICO, Roles.COORD_TRANSPORTE, Roles.PACIENTE)) {
+            assertThat(statusDe(get(rota).with(como(role)))).as(role.name()).isEqualTo(403);
+        }
+        for (Roles role : List.of(Roles.USER, Roles.ADMIN)) {
+            var resposta = mockMvc.perform(get(rota).with(como(role))).andExpect(status().isOk())
+                    .andReturn().getResponse();
+            assertThat(resposta.getHeader("Content-Disposition"))
+                    .isEqualTo("attachment; filename=\"relatorio_atendimentos_2030-01-01_a_2030-01-02.xlsx\"");
+            assertThat(resposta.getHeader("Cache-Control")).contains("no-store");
+            assertThat(resposta.getContentAsByteArray()).isNotEmpty();
+        }
+
+        RequestPostProcessor operador = como(Roles.USER);
+        for (String invalido : List.of(
+                "/api/atendimentos/relatorio?inicio=2030-01-02&fim=2030-01-01",
+                "/api/atendimentos/relatorio?inicio=2030-01-01&fim=2030-03-01")) {
+            mockMvc.perform(get(invalido).with(operador))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.message").exists());
+        }
+    }
+
+    @Test
+    @DisplayName("Atendimentos: so o USER lanca o desfecho; ADMIN, que le a tela, recebe 403 nas acoes")
+    void desfechoDoAtendimentoSoParaOUsuarioPadrao() throws Exception {
+        String base = "/api/atendimentos/" + pedido.getId();
+        List<String> acoes = List.of("/confirmar", "/falta", "/cancelar", "/data-coleta", "/desfazer");
+
+        for (String acao : acoes) {
+            assertThat(statusDe(patch(base + acao))).as("sem login " + acao).isIn(401, 403);
+        }
+        for (Roles role : List.of(Roles.ADMIN, Roles.GESTOR, Roles.ADMIN_UNIDADE, Roles.RECEPCAO,
+                Roles.ENFERMEIRO, Roles.MEDICO, Roles.COORD_TRANSPORTE, Roles.PACIENTE)) {
+            RequestPostProcessor usuario = como(role);
+            for (String acao : acoes) {
+                assertThat(statusDe(patch(base + acao).with(usuario).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"motivo\":\"x\"}"))).as(role + " " + acao).isEqualTo(403);
+            }
+        }
+
+        // USER passa pela autorizacao. O pedido do setUp esta na fila (sem agendamento):
+        // regra de negocio vira 409 com `message`; item inexistente, 404; sem motivo, 400.
+        RequestPostProcessor operador = como(Roles.USER);
+        mockMvc.perform(patch(base + "/confirmar").with(operador))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message").exists());
+        mockMvc.perform(patch("/api/atendimentos/999999999/confirmar").with(operador))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.message").exists());
+        mockMvc.perform(patch(base + "/cancelar").with(operador))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").exists());
+        assertThat(solicitacaoRepository.findById(solicitacao.getId()).orElseThrow()
+                .getEspecialidades().get(0).getStatus()).isEqualTo(StatusDaMarcacao.AGUARDANDO);
+    }
+
+    @Test
+    @DisplayName("Devolver a fila: so perfis da unidade solicitante; USER e GESTOR recebem 403")
+    void devolverAFilaSoParaAUnidadeSolicitante() throws Exception {
+        String rota = "/api/solicitacoes/especialidades/" + pedido.getId() + "/devolver-a-fila";
+
+        assertThat(statusDe(post(rota))).as("sem login").isIn(401, 403);
+        for (Roles role : List.of(Roles.USER, Roles.GESTOR, Roles.COORD_TRANSPORTE, Roles.PACIENTE)) {
+            assertThat(statusDe(post(rota).with(como(role)))).as(role.name()).isEqualTo(403);
+        }
+        // Quem pode passa pela autorizacao; o pedido esta AGUARDANDO, entao 409 com `message`.
+        for (Roles role : List.of(Roles.ADMIN, Roles.RECEPCAO, Roles.ENFERMEIRO, Roles.MEDICO)) {
+            mockMvc.perform(post(rota).with(como(role)))
+                    .andExpect(status().isConflict())
+                    .andExpect(jsonPath("$.message").exists());
+        }
     }
 
     @Test

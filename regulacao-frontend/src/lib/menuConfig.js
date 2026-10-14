@@ -94,6 +94,9 @@ const DASHBOARD_HREF_POR_ROLE = {
   RECEPCAO: "/dashboard/unidade",
   ENFERMEIRO: "/dashboard/unidade",
   MEDICO: "/dashboard/unidade",
+  // Usuário Padrão é o operador da unidade executante: o trabalho do dia dele
+  // é a tela de Atendimentos (só as executantes dele, ADR 0013), não a agenda por unidade.
+  USER: "/atendimentos",
 };
 
 /** Para onde mandar o usuário logo após assumir `role` (troca de perfil, pós-login, etc.). */
@@ -185,6 +188,25 @@ export const MENU_SECTIONS = [
         roles: CLINICOS_E_UNIDADE,
       },
       {
+        // Para o USER este é o próprio "Dashboard" (ver DASHBOARD_HREF_POR_ROLE),
+        // então o link só é declarado para o ADMIN: evita dois itens no menu do
+        // operador apontando para a mesma tela.
+        type: "link",
+        label: "Atendimentos",
+        icon: ICONS.agendaDia,
+        href: "/atendimentos",
+        roles: ["ADMIN"],
+      },
+      {
+        // Os números do dia de Atendimentos (totais e por unidade solicitante).
+        // Para o USER cai logo abaixo de Dashboard; para o ADMIN, de Atendimentos.
+        type: "link",
+        label: "Quantitativos",
+        icon: ICONS.chart,
+        href: "/atendimentos/quantitativos",
+        roles: ["USER", "ADMIN"],
+      },
+      {
         type: "link",
         label: "Cotas da Unidade",
         icon: ICONS.cotas,
@@ -201,8 +223,10 @@ export const MENU_SECTIONS = [
         key: "agendas",
         label: "Agendas",
         icon: ICONS.calendar,
-        // Grupo DINÂMICO: os itens não são fixos aqui — vêm dos Grupos de Relatório
-        // marcados como "direcionado ao hospital" (grupo_relatorio.direcionado_hospital).
+        // Grupo DINÂMICO: os itens não são fixos aqui — vêm de /api/atendimentos/agendas:
+        // os Grupos de Relatório marcados como "direcionado ao hospital"
+        // (grupo_relatorio.direcionado_hospital) ou, para o operador vinculado a
+        // unidades executantes (V110), os grupos parametrizados nelas.
         // Antes esta lista era fixa (Cardiologista, Doppler, ..., USG) e ficava fora de
         // sincronia com o cadastro: bastava criar/renomear um grupo para o menu mentir.
         // Agora, marcar o grupo em /cadastrar/grupo-relatorio é o que o coloca no menu.
@@ -213,6 +237,11 @@ export const MENU_SECTIONS = [
         // pacientes do dia por unidade — dado operacional, não o do próprio
         // paciente. O backend (`/especialidades/listar|contar/pacientes/por/grupo`)
         // já nega esse acesso; aqui é só para não oferecer um link que dá 403.
+        //
+        // Cada agenda abre a tela de Atendimentos já filtrada pelo grupo (ver
+        // `hrefDaAgendaDoGrupo`), no escopo das executantes dele. As telas antigas
+        // /agendas/{grupo} filtram pela unidade SOLICITANTE e ficavam vazias para
+        // quem é lotado numa unidade executante; continuam existindo, sem link.
         dynamic: "agendasHospital",
         roles: ["USER"],
         items: [],
@@ -466,6 +495,24 @@ export function resolveHref(item, role) {
   return (item.hrefByRole && item.hrefByRole[role]) || item.href;
 }
 
+/**
+ * Fontes dos grupos dinâmicos que a role enxerga (ex.: `["agendasHospital"]`).
+ * Serve ao RoleBasedMenu para só buscar no backend o que a role vai exibir —
+ * a regra continua sendo a de `roles` no próprio grupo, sem role literal no componente.
+ */
+export function fontesDinamicasDaRole(role) {
+  if (!role) return [];
+  return MENU_SECTIONS.flatMap((section) => section.items)
+    .filter(
+      (item) =>
+        item.type === "group" &&
+        item.dynamic &&
+        Array.isArray(item.roles) &&
+        item.roles.includes(role),
+    )
+    .map((item) => item.dynamic);
+}
+
 function isLinkVisible(link, role) {
   return !!role && Array.isArray(link.roles) && link.roles.includes(role);
 }
@@ -578,7 +625,10 @@ export function organizarItensDoGrupo(group) {
   return semSubgrupoDeUm;
 }
 
-/** Monta o href da agenda de um grupo. O backend casa por `grupo_relatorio.codigo`. */
+/**
+ * Monta o href da agenda de um grupo: a tela de Atendimentos filtrada por ele.
+ * O backend casa por `grupo_relatorio.codigo`.
+ */
 export function hrefDaAgendaDoGrupo(codigo) {
-  return `/agendas/${encodeURIComponent(codigo)}`;
+  return `/atendimentos?grupo=${encodeURIComponent(codigo)}`;
 }

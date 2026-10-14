@@ -11,6 +11,7 @@ import io.github.regulacao_marcarcao.regulacao_marcacao.entity.GrupoRelatorio;
 import io.github.regulacao_marcarcao.regulacao_marcacao.mapper.GrupoRelatorioMapper;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.CotaUnidadeRepository;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.GrupoRelatorioRepository;
+import io.github.regulacao_marcarcao.regulacao_marcacao.repository.UnidadeExecutanteGrupoRepository;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.UnidadeRepository;
 import jakarta.persistence.EntityNotFoundException;
 import jakarta.transaction.Transactional;
@@ -22,15 +23,18 @@ public class GrupoRelatorioService {
     private final GrupoRelatorioMapper mapper;
     private final UnidadeRepository unidadeRepository;
     private final CotaUnidadeRepository cotaUnidadeRepository;
+    private final UnidadeExecutanteGrupoRepository unidadeExecutanteGrupoRepository;
 
     public GrupoRelatorioService(GrupoRelatorioRepository grupoRelatorioRepository,
             GrupoRelatorioMapper mapper,
             UnidadeRepository unidadeRepository,
-            CotaUnidadeRepository cotaUnidadeRepository) {
+            CotaUnidadeRepository cotaUnidadeRepository,
+            UnidadeExecutanteGrupoRepository unidadeExecutanteGrupoRepository) {
         this.grupoRelatorioRepository = grupoRelatorioRepository;
         this.mapper = mapper;
         this.unidadeRepository = unidadeRepository;
         this.cotaUnidadeRepository = cotaUnidadeRepository;
+        this.unidadeExecutanteGrupoRepository = unidadeExecutanteGrupoRepository;
     }
 
    public GrupoRelatorioViewDTO criarGrupo(GrupoRelatorioCreateDTO dto){
@@ -89,6 +93,13 @@ public class GrupoRelatorioService {
        throw new IllegalStateException(
            "Este grupo possui " + unidadesVinculadas + " unidade(s) vinculada(s). "
          + "Desvincule as unidades (em Unidades) antes de excluir o grupo.");
+     }
+
+     // V110: o grupo pode estar na parametrizacao de uma unidade executante (FK RESTRICT).
+     if (unidadeExecutanteGrupoRepository.existsByGrupoRelatorioId(id)) {
+       throw new IllegalStateException(
+           "Este grupo está vinculado a uma unidade executante. "
+         + "Remova-o da parametrização da executante (em Unidades) antes de excluí-lo.");
      }
 
      grupoRelatorioRepository.delete(grupoRelatorioExistente);

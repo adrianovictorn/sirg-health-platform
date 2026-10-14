@@ -12,6 +12,8 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import lombok.Data;
+import lombok.EqualsAndHashCode;
+import lombok.ToString;
 
 @Entity
 @Data
@@ -71,5 +73,16 @@ public class LocalAgendamento {
     /** Quando os dados vieram da API do CNES. Nulo = cadastro 100% manual. */
     @Column(name = "sincronizado_cnes_em")
     private LocalDateTime sincronizadoCnesEm;
+
+    /**
+     * Unidade executante que atende neste local (V110). Nulo = nao ligado. So e
+     * gravado pela parametrizacao da executante; a edicao inline do local nao o
+     * toca. Fora de toString/equals/hashCode para nao inicializar o proxy LAZY.
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "unidade_executante_id")
+    @ToString.Exclude
+    @EqualsAndHashCode.Exclude
+    private Unidade unidadeExecutante;
 
 }

@@ -58,8 +58,8 @@
     type ItemNominal = {
         id: number;
         nomePaciente: string;
-        cpfMascarado: string | null;
-        cnsMascarado: string | null;
+        cpf: string | null;
+        cns: string | null;
         dataNascimento: string | null;
         unidadeNome: string | null;
         usfOrigem: string | null;
@@ -510,7 +510,6 @@
                     </h3>
                     <button type="button" class="min-h-10 rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600" onclick={fecharLista}>Fechar lista</button>
                 </div>
-                <p class="mt-1 text-xs text-gray-600">CPF e CNS aparecem mascarados.</p>
 
                 {#if carregandoItens}
                     <p class="mt-3 flex items-center gap-3 text-gray-600" role="status">
@@ -541,8 +540,8 @@
                                     <tr class="hover:bg-gray-50">
                                         <th scope="row" class="px-3 py-2 font-medium text-gray-800">{i.nomePaciente}</th>
                                         <td class="whitespace-nowrap px-3 py-2">{formatarData(i.dataNascimento)}</td>
-                                        <td class="whitespace-nowrap px-3 py-2 font-mono">{i.cpfMascarado ?? '—'}</td>
-                                        <td class="whitespace-nowrap px-3 py-2 font-mono">{i.cnsMascarado ?? '—'}</td>
+                                        <td class="whitespace-nowrap px-3 py-2 font-mono">{i.cpf ?? '—'}</td>
+                                        <td class="whitespace-nowrap px-3 py-2 font-mono">{i.cns ?? '—'}</td>
                                         <td class="px-3 py-2">{i.usfOrigem ?? '—'}</td>
                                         <td class="whitespace-nowrap px-3 py-2">{[i.turno, i.horaAgendada].filter(Boolean).join(' · ') || '—'}</td>
                                         <td class="px-3 py-2">

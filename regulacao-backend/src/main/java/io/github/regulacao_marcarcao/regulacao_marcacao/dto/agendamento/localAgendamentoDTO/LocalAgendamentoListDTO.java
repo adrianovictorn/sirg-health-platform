@@ -10,7 +10,9 @@ public record LocalAgendamentoListDTO(
     Long cidadeId,
     String cidadeNome,
     String enumValue,
-    String cnes
+    String cnes,
+    Long unidadeExecutanteId,
+    String unidadeExecutanteNome
 ) {
     public static LocalAgendamentoListDTO fromEntity(LocalAgendamento localAgendamento) {
         return new LocalAgendamentoListDTO(
@@ -21,7 +23,9 @@ public record LocalAgendamentoListDTO(
             localAgendamento.getCidade() != null ? localAgendamento.getCidade().getId() : null,
             localAgendamento.getCidade() != null ? localAgendamento.getCidade().getNomeCidade() : null,
             localAgendamento.getEnumValue(),
-            localAgendamento.getCnes()
+            localAgendamento.getCnes(),
+            localAgendamento.getUnidadeExecutante() != null ? localAgendamento.getUnidadeExecutante().getId() : null,
+            localAgendamento.getUnidadeExecutante() != null ? localAgendamento.getUnidadeExecutante().getNome() : null
         );
     }
 }

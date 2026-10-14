@@ -4,10 +4,12 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -30,6 +32,7 @@ import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.Te
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.TempoEsperaGeralProjection;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.TetoEstornoProjection;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.UnidadePendentesProjection;
+import jakarta.persistence.LockModeType;
 
 public interface SolicitacaoEspecialidadeRepository extends JpaRepository<SolicitacaoEspecialidade, Long> {
 
@@ -84,11 +87,35 @@ public interface SolicitacaoEspecialidadeRepository extends JpaRepository<Solici
     // clearAutomatically: o UPDATE em massa nao atualiza as entidades ja carregadas,
     // que continuariam apontando para o agendamento prestes a ser removido e
     // quebrariam o flush da exclusao. Depois desta chamada o contexto esta limpo.
+    //
+    // V109: apaga tambem o registro do desfecho (observacao e autoria). O item volta
+    // para a fila sem atendimento nenhum; se a marca ficasse, um desfecho futuro
+    // lancado por outro fluxo pareceria "lancado na tela de Atendimentos" e ficaria
+    // desfazivel ali, com a observacao do atendimento antigo.
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("UPDATE SolicitacaoEspecialidade se SET se.agendamentoSolicitacao = NULL, se.status = 'AGUARDANDO', "
-            + "se.valorUnitarioAgendado = NULL, se.tetoFinanceiro = NULL "
+            + "se.valorUnitarioAgendado = NULL, se.tetoFinanceiro = NULL, "
+            + "se.atendimentoObservacao = NULL, se.atendimentoRegistradoPor = NULL, se.atendimentoRegistradoEm = NULL "
             + "WHERE se.agendamentoSolicitacao.id = :agendamentoId")
     void desvincularAgendamento(@Param("agendamentoId") Long agendamentoId);
+
+    /**
+     * Carrega o item travando a linha ate o fim da transacao. Usado por quem lanca
+     * ou desfaz o desfecho do atendimento e por quem devolve o item a fila: sao
+     * operadores de unidades diferentes agindo sobre o mesmo item, e a entidade nao
+     * tem {@code @Version} (os updates em massa acima a contornariam).
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT se FROM SolicitacaoEspecialidade se WHERE se.id = :id")
+    Optional<SolicitacaoEspecialidade> findByIdParaAtualizar(@Param("id") Long id);
+
+    /** True se algum item do agendamento ja foi devolvido a fila (tem item novo pendente ligado a ele). */
+    boolean existsByAgendamentoSolicitacaoIdAndDevolvidoComoIsNotNull(Long agendamentoId);
+
+    /** Recoloca a data de cadastro que o {@code @CreationTimestamp} sobrescreve na insercao. */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("UPDATE SolicitacaoEspecialidade se SET se.dataDeCadastro = :dataDeCadastro WHERE se.id = :id")
+    void definirDataDeCadastro(@Param("id") Long id, @Param("dataDeCadastro") LocalDateTime dataDeCadastro);
 
     /**
      * Quanto cada teto financeiro foi debitado por um agendamento (V107), por

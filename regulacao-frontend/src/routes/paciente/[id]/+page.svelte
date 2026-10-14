@@ -38,6 +38,12 @@
         horaFinal?: string | null;
         adicionadoPorNome?: string | null;
         agendadoPorNome?: string | null;
+        // V109 — desfecho lancado pelo executante na tela de Atendimentos e se a
+        // unidade ja devolveu o paciente a fila.
+        atendimentoObservacao?: string | null;
+        atendimentoRegistradoPorNome?: string | null;
+        atendimentoRegistradoEm?: string | null;
+        devolvidoAFila?: boolean;
     };
 
     let todosOsCids = $state<CID[]>([]); // Guarda a lista completa de CIDs para o dropdown
@@ -320,6 +326,36 @@
         }
     }
 
+    // Devolver a fila e da unidade solicitante: o executante (USER) so registra o
+    // desfecho, e o GESTOR so consulta. O backend aplica a mesma regra.
+    const podeDevolverAFila = $derived(
+        ['ADMIN', 'ADMIN_UNIDADE', 'RECEPCAO', 'ENFERMEIRO', 'MEDICO'].includes($user?.role ?? '')
+    );
+
+    async function devolverAFila(itemId: number) {
+        if (!confirm('A vaga do atendimento anterior continua ocupada. Será criado um novo pedido pendente para este paciente, na mesma posição da fila. Confirmar?')) return;
+        try {
+            const res = await postApi(`solicitacoes/especialidades/${itemId}/devolver-a-fila`, {});
+            if (res.ok) {
+                alert('Paciente devolvido à fila.');
+                location.reload();
+            } else {
+                const erro = await res.json().catch(() => ({}));
+                alert(erro.message || 'Não foi possível devolver o paciente à fila.');
+            }
+        } catch (e: any) {
+            alert(`Erro na requisição: ${e.message}`);
+        }
+    }
+
+    /** Instante gravado pelo servidor (UTC), exibido no horario da Bahia. */
+    function formatarRegistro(instante: string | null | undefined): string {
+        if (!instante) return '';
+        const d = new Date(instante);
+        if (Number.isNaN(d.getTime())) return '';
+        return new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'America/Bahia' }).format(d);
+    }
+
     async function baixarComprovante(ag: any, itens: EspecialidadeItem[]) {
         if (!solicitacao) return;
         const unico = itens.length === 1 ? itens[0] : null;
@@ -481,7 +517,7 @@
             const st = ((e.status ?? '') as string).toString().trim().toUpperCase();
             const semAgendamento = e.agendamentoId == null;
             const ehPendentePorStatus = (st === 'AGUARDANDO' || st === 'RETORNO' || st === 'RETORNO_POLICLINICA');
-            const naoFinalizado = (st !== 'CANCELADO' && st !== 'REALIZADO');
+            const naoFinalizado = (st !== 'CANCELADO' && st !== 'REALIZADO' && st !== 'FALTOU');
             return ehPendentePorStatus || (semAgendamento && naoFinalizado);
         })) as EspecialidadeItem[])
     );
@@ -915,17 +951,17 @@
                 {/if}
 
     <section class="bg-white rounded-lg shadow p-6">
-        <h2 class="text-lg font-bold text-emerald-800 mb-4 border-b pb-2">Histórico de Procedimentos Cancelados</h2>
+        <h2 class="text-lg font-bold text-emerald-800 mb-4 border-b pb-2">Histórico de Faltas e Cancelamentos</h2>
 
         {#if agendamentos}
             {@const agendamentosComCancelados = agendamentos.map(ag => ({
                 ...ag,
-                itensCancelados: especialidades.filter(e => e.agendamentoId === ag.id && e.status === 'CANCELADO')
+                itensCancelados: (especialidades as unknown as EspecialidadeItem[]).filter(e => e.agendamentoId === ag.id && (e.status === 'CANCELADO' || e.status === 'FALTOU'))
             })).filter(ag => ag.itensCancelados.length > 0)}
 
             {#if agendamentosComCancelados.length === 0}
                 <div class="text-center py-8 bg-gray-50 rounded-md">
-                    <p class="text-gray-500">Nenhum procedimento cancelado encontrado.</p>
+                    <p class="text-gray-500">Nenhuma falta ou cancelamento encontrado.</p>
                 </div>
             {:else}
                 <div class="space-y-4">
@@ -953,14 +989,38 @@
                                     </div>
                                 {/if}
 
-                                <h4 class="text-sm font-semibold text-gray-700 mb-2">Itens Cancelados:</h4>
-                                <ul class="space-y-2">
+                                <h4 class="text-sm font-semibold text-gray-700 mb-2">Itens:</h4>
+                                <ul class="space-y-3">
                                     {#each ag.itensCancelados as item (item.id)}
-                                        <li class="flex justify-between items-center text-sm">
-                                            <span class="text-gray-800">{getNomeEspecialidade(item.especialidadeSolicitada)}</span>
-                                            <span class="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-red-100 text-red-800">
-                                                CANCELADO
-                                            </span>
+                                        <li class="text-sm">
+                                            <div class="flex flex-wrap justify-between items-center gap-2">
+                                                <span class="text-gray-800">{getNomeEspecialidade(item.especialidadeSolicitada)}</span>
+                                                <span class="flex flex-wrap items-center gap-2">
+                                                    {#if item.devolvidoAFila}
+                                                        <span class="text-xs font-medium text-gray-700">Devolvido à fila</span>
+                                                    {:else if podeDevolverAFila}
+                                                        <button type="button" class="px-3 py-1 rounded border border-emerald-600 text-emerald-800 text-xs font-semibold hover:bg-emerald-50" onclick={() => devolverAFila(item.id)}>
+                                                            Devolver à fila
+                                                        </button>
+                                                    {/if}
+                                                    {#if item.status === 'FALTOU'}
+                                                        <span class="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-900">FALTOU</span>
+                                                    {:else}
+                                                        <span class="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-red-100 text-red-800">CANCELADO</span>
+                                                    {/if}
+                                                </span>
+                                            </div>
+                                            {#if item.atendimentoObservacao}
+                                                <p class="mt-1 text-gray-700">
+                                                    <span class="font-semibold">{item.status === 'FALTOU' ? 'Observação da falta' : 'Motivo do cancelamento'}:</span>
+                                                    {item.atendimentoObservacao}
+                                                </p>
+                                            {/if}
+                                            {#if item.atendimentoRegistradoEm}
+                                                <p class="mt-0.5 text-xs text-gray-600">
+                                                    Registrado por {item.atendimentoRegistradoPorNome ?? '—'} em {formatarRegistro(item.atendimentoRegistradoEm)}
+                                                </p>
+                                            {/if}
                                         </li>
                                     {/each}
                                 </ul>
