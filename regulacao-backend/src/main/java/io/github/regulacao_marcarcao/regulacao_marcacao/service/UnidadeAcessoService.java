@@ -1,5 +1,7 @@
 package io.github.regulacao_marcarcao.regulacao_marcacao.service;
 
+import java.util.List;
+
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
@@ -10,6 +12,7 @@ import org.springframework.transaction.annotation.Transactional;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.User;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.enums.Roles;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.UserRepository;
+import io.github.regulacao_marcarcao.regulacao_marcacao.repository.UsuarioUnidadeExecutanteRepository;
 import lombok.RequiredArgsConstructor;
 
 /**
@@ -36,6 +39,7 @@ import lombok.RequiredArgsConstructor;
 public class UnidadeAcessoService {
 
     private final UserRepository userRepository;
+    private final UsuarioUnidadeExecutanteRepository usuarioUnidadeExecutanteRepository;
 
     /**
      * Contexto de unidade do chamador. {@code id == null} significa acesso global
@@ -267,8 +271,8 @@ public class UnidadeAcessoService {
      * requisição): USER — o operador da unidade executante — ou ADMIN.
      *
      * É uma dimensão à parte do escopo por unidade: o executante atende pacientes
-     * vindos de qualquer unidade solicitante, então enxerga o município inteiro
-     * <b>só nessa tela</b>, tenha ou não unidade de lotação. Não altera
+     * vindos de qualquer unidade solicitante — o que ele vê é decidido pela
+     * executante ({@link #escopoDeAtendimentos}), não pela unidade solicitante. Não altera
      * {@link #contextoDe} nem {@link #escopoDeListagem}: na fila, na ficha, nos
      * relatórios e no agendamento o USER continua restrito como antes.
      */
@@ -299,6 +303,60 @@ public class UnidadeAcessoService {
         if (!executor) {
             throw new AccessDeniedException("Só o operador da unidade executante registra o atendimento.");
         }
+    }
+
+    /**
+     * Recorte da tela de Atendimentos por unidade executante (V110). MUNICIPAL = sem
+     * recorte; caso contrario, so os itens que pertencem a alguma das executantes
+     * informadas — lista vazia = NENHUMA (nao ve nada, ADR 0013), nunca municipal.
+     */
+    public record EscopoAtendimento(boolean municipal, List<Long> executanteIds) {
+        public static final EscopoAtendimento MUNICIPAL = new EscopoAtendimento(true, List.of());
+        public static final EscopoAtendimento NENHUMA = new EscopoAtendimento(false, List.of());
+
+        public EscopoAtendimento {
+            executanteIds = executanteIds == null ? List.of() : List.copyOf(executanteIds);
+        }
+
+        /** Restrito a estas executantes; lista vazia = nenhuma. */
+        public EscopoAtendimento(List<Long> executanteIds) {
+            this(false, executanteIds);
+        }
+
+        public boolean isMunicipal() {
+            return municipal;
+        }
+
+        public boolean isNenhuma() {
+            return !municipal && executanteIds.isEmpty();
+        }
+    }
+
+    /**
+     * O que o chamador enxerga na tela de Atendimentos (resumo, lista, relatório e
+     * agendas do menu). Complementa {@link #exigirOperadorDeAtendimentos}, que
+     * continua decidindo QUEM entra.
+     *
+     * <ul>
+     *   <li>USER (perfil ativo) — só os itens das executantes CONFIGURADAS dele:
+     *       a unidade de lotação, se for executante configurada, mais as da lista
+     *       de operadores. Sem nenhuma, NENHUMA — não vê nada (ADR 0013).</li>
+     *   <li>ADMIN — município inteiro.</li>
+     * </ul>
+     *
+     * Só recorta LEITURA: o desfecho por id não é restrito à executante nesta
+     * versão (decisão do ADR 0011, mantida no ADR 0013).
+     */
+    @Transactional(readOnly = true)
+    public EscopoAtendimento escopoDeAtendimentos(String cpf) {
+        if (cpf == null) {
+            return EscopoAtendimento.MUNICIPAL;
+        }
+        return userRepository.findByCpf(cpf)
+                .filter(user -> perfilEfetivo(user) == Roles.USER)
+                .map(user -> new EscopoAtendimento(
+                        usuarioUnidadeExecutanteRepository.findExecutantesConfiguradasDoUsuario(user.getId())))
+                .orElse(EscopoAtendimento.MUNICIPAL);
     }
 
     /**

@@ -4,6 +4,52 @@
 
 ### Novidades
 
+- **Telas de Unidade no sirg-design e tag de papel da unidade.** `/admin/unidades`, nova,
+  editar e a parametrização da executante passam ao **sirg-design** — o visual que mistura as
+  cores do SIRG com a estrutura IBM, agora com nome e fonte única (`SirgDesign.svelte`, nível
+  "mais SIRG" de `/atendimentos`). Formulários em largura total. Cada unidade mostra o seu
+  **papel**: "Unidade solicitante" enquanto não for executante configurada, "Unidade
+  executante" ou "Ambas" depois de parametrizada (tipo Só executante ou Solicitante e
+  executante), e "Parametrização incompleta" quando falta terminar. **Só exibição:** nenhum
+  tipo é alterado, sem mudança de API nem migration; confirmações e o botão "Parametrizar
+  executante" seguem iguais. As outras sete telas no visual misto não mudam. ADR 0012.
+
+- **Unidade executante parametrizada (Centro de Fisioterapia, laboratório, ambulatório do
+  hospital...).** Em **Unidades → Parametrizar executante**, o administrador diz o que cada
+  executante realiza (**grupos inteiros** e/ou **especialidades avulsas**), em quais **locais de
+  agendamento** ela atende e quais **operadores** (Usuário Padrão) a representam. O mesmo grupo
+  ou especialidade pode estar em **mais de uma** executante (ex.: dois laboratórios com os mesmos
+  exames); quem desempata é o local do agendamento. Os locais já cadastrados são ligados pela tela de Locais (coluna **Unidade executante**)
+  ou pela própria parametrização, que move o local se ele estiver em outra executante.
+
+  **O que muda para o operador.** O Usuário Padrão passa a ver em `/atendimentos`, Quantitativos,
+  Relatório de Atendimento e no menu "Agendas" **só** o que é das suas executantes
+  **configuradas** (ao menos um local e um grupo ou especialidade): a unidade em que ele está
+  **lotado** e as executantes em que foi marcado como operador. É dele o item com especialidade
+  da executante **e** local dela; sem local, só se nenhuma outra executante ativa tiver aquela
+  especialidade — o item sem local de especialidade compartilhada só aparece para o ADMIN. Os
+  agendamentos antigos aparecem por essa regra, sem migração de dados. **Usuário Padrão sem
+  executante configurada não vê nada** — a tela avisa "Seu usuário não está ligado a nenhuma
+  unidade executante configurada". O ADMIN continua vendo o município inteiro. ADR 0013.
+
+  **O que não muda.** O agendamento (`/agendar`), cota, teto e federação. O registro do
+  atendimento (confirmar, faltou, cancelar, coleta, desfazer) **não** é bloqueado para item de
+  outra executante nesta versão (ADR 0011). ADMIN e GESTOR não ganham filtro por executante.
+
+  **Também:** campo **Tipo** (Solicitante e executante / Só solicitante / Só executante) em
+  nova/editar Unidade; excluir um Grupo de Relatório ligado a uma executante é recusado.
+
+  **Novos:** `/api/unidades-executantes/**` (ADMIN), `GET /api/atendimentos/agendas`; migration
+  **V110** (uma coluna anulável em `local_agendamento` e três tabelas de associação, sem backfill)
+  e **V111** (índices únicos de grupo e especialidade passam a ser no par com a unidade, sem
+  alteração de dados); ADR 0011, substituído em parte pelo ADR 0013. `GET /api/local/agendamento`
+  ganhou `unidadeExecutanteId`/`unidadeExecutanteNome`; `GET /api/atendimentos/resumo` ganhou
+  `semExecutante`.
+  **Deploy:** backend antes do frontend, ou os dois juntos, **fora do horário de atendimento**:
+  logo depois do deploy todo Usuário Padrão vê `/atendimentos` vazio até o ADMIN parametrizar as
+  executantes (locais, grupos/especialidades) e conferir a lotação ou a lista de operadores. Ver
+  `INFRA.md`.
+
 - **Atendimentos: tela do Usuário Padrão, o operador da unidade executante (`/atendimentos`).**
   As agendas do Usuário Padrão filtravam pela unidade **solicitante** e ficavam vazias para quem
   é lotado no laboratório ou em outra unidade executante. A tela nova mostra o **município

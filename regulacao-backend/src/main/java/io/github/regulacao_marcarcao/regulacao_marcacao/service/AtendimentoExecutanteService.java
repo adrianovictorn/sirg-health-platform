@@ -16,6 +16,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import io.github.regulacao_marcarcao.regulacao_marcacao.dto.atendimento.AgendaGrupoViewDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.atendimento.AtendimentoCancelamentoDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.atendimento.AtendimentoColetaDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.atendimento.AtendimentoFaltaDTO;
@@ -24,23 +25,28 @@ import io.github.regulacao_marcarcao.regulacao_marcacao.dto.atendimento.Atendime
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.atendimento.AtendimentoResumoViewDTO.Contagem;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.atendimento.AtendimentoResumoViewDTO.Unidade;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.atendimento.AtendimentoViewDTO;
+import io.github.regulacao_marcarcao.regulacao_marcacao.entity.GrupoRelatorio;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.SolicitacaoEspecialidade;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.enums.ItemCategoria;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.enums.StatusDaMarcacao;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.AtendimentoExecutanteRepository;
+import io.github.regulacao_marcarcao.regulacao_marcacao.repository.GrupoRelatorioRepository;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.SolicitacaoEspecialidadeRepository;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.UnidadeRepository;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.UserRepository;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.AtendimentoPacienteProjection;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.AtendimentoProjection;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.AtendimentoResumoProjection;
+import io.github.regulacao_marcarcao.regulacao_marcacao.service.UnidadeAcessoService.EscopoAtendimento;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 
 /**
  * Tela de Atendimentos do operador da unidade executante (Usuario Padrao): os
- * quantitativos e a lista nominal do dia, do municipio inteiro, e o lancamento do
- * desfecho de cada atendimento. A leitura vale para USER e ADMIN; o desfecho, so
+ * quantitativos e a lista nominal do dia — do municipio inteiro para o ADMIN, so
+ * das unidades executantes do operador (lotacao ou lista, ADR 0013) para o USER,
+ * que sem nenhuma nao ve nada —, e o
+ * lancamento do desfecho de cada atendimento. A leitura vale para USER e ADMIN; o desfecho, so
  * para o USER. Nada aqui toca em cota ou teto.
  */
 @Service
@@ -53,16 +59,19 @@ public class AtendimentoExecutanteService {
     private static final int TAMANHO_DO_CPF = 11;
     private static final int TAMANHO_DO_CNS = 15;
     static final int TAMANHO_MAXIMO_OBSERVACAO = 500;
+    private static final List<Long> SEM_EXECUTANTE = List.of(-1L);
 
     private final AtendimentoExecutanteRepository repository;
     private final SolicitacaoEspecialidadeRepository itemRepository;
     private final UserRepository userRepository;
     private final UnidadeRepository unidadeRepository;
     private final UnidadeAcessoService unidadeAcessoService;
+    private final GrupoRelatorioRepository grupoRelatorioRepository;
 
     @Transactional(readOnly = true)
     public AtendimentoResumoViewDTO resumir(LocalDate data, String grupo, String callerCpf) {
         unidadeAcessoService.exigirOperadorDeAtendimentos(callerCpf);
+        EscopoAtendimento escopo = unidadeAcessoService.escopoDeAtendimentos(callerCpf);
         LocalDate dia = data != null ? data : LocalDate.now(FUSO);
 
         // Todas as unidades ativas aparecem, mesmo sem atendimento no dia.
@@ -71,7 +80,8 @@ public class AtendimentoExecutanteService {
                 .forEach(u -> unidades.put(u.getId(), new Unidade(u.getId(), u.getNome(), Contagem.ZERO)));
 
         Contagem totais = Contagem.ZERO;
-        for (AtendimentoResumoProjection linha : repository.resumirPorUnidade(dia, grupoOuNulo(grupo))) {
+        for (AtendimentoResumoProjection linha : repository.resumirPorUnidade(dia, grupoOuNulo(grupo),
+                !escopo.isMunicipal(), idsDoFiltro(escopo))) {
             Contagem contagem = Contagem.from(linha);
             if (linha.getTotalGeral() != null && linha.getTotalGeral() == 1) {
                 totais = contagem;
@@ -86,7 +96,7 @@ public class AtendimentoExecutanteService {
         List<Unidade> ordenadas = new ArrayList<>(unidades.values());
         ordenadas.sort(Comparator.comparing((Unidade u) -> u.id() == null)
                 .thenComparing(Unidade::nome, String.CASE_INSENSITIVE_ORDER));
-        return new AtendimentoResumoViewDTO(dia, totais, ordenadas);
+        return new AtendimentoResumoViewDTO(dia, totais, ordenadas, escopo.isNenhuma());
     }
 
     /**
@@ -98,6 +108,7 @@ public class AtendimentoExecutanteService {
     public Page<AtendimentoPacienteViewDTO> listar(LocalDate data, String grupo, Long unidadeId, boolean semUnidade,
             String status, String termo, int page, int size, String callerCpf) {
         unidadeAcessoService.exigirOperadorDeAtendimentos(callerCpf);
+        EscopoAtendimento escopo = unidadeAcessoService.escopoDeAtendimentos(callerCpf);
         LocalDate dia = data != null ? data : LocalDate.now(FUSO);
         int tamanho = Math.min(Math.max(size, 1), TAMANHO_MAXIMO_PAGINA);
 
@@ -127,7 +138,8 @@ public class AtendimentoExecutanteService {
         String grupoFiltro = grupoOuNulo(grupo);
         Pageable pageable = PageRequest.of(Math.max(page, 0), tamanho);
         Page<AtendimentoPacienteProjection> pacientes = repository.listarPacientes(dia, grupoFiltro, unidadeId,
-                semUnidade, statusValido(status), busca, buscaDigitos, pageable);
+                semUnidade, statusValido(status), busca, buscaDigitos, !escopo.isMunicipal(), idsDoFiltro(escopo),
+                pageable);
         // O IN da segunda consulta nunca pode ir vazio. Pagina alem da ultima vem vazia
         // mas com o total real: preserva-lo deixa a tela voltar para as paginas validas.
         if (pacientes.isEmpty()) {
@@ -136,12 +148,42 @@ public class AtendimentoExecutanteService {
 
         List<Long> ids = pacientes.getContent().stream().map(AtendimentoPacienteProjection::getSolicitacaoId).toList();
         Map<Long, List<AtendimentoViewDTO>> itensPorPaciente = new HashMap<>();
-        for (AtendimentoProjection item : repository.listarItensDosPacientes(ids, dia, grupoFiltro)) {
+        for (AtendimentoProjection item : repository.listarItensDosPacientes(ids, dia, grupoFiltro,
+                !escopo.isMunicipal(), idsDoFiltro(escopo))) {
             itensPorPaciente.computeIfAbsent(item.getSolicitacaoId(), id -> new ArrayList<>())
                     .add(AtendimentoViewDTO.from(item));
         }
         return pacientes.map(p -> AtendimentoPacienteViewDTO.from(p,
                 itensPorPaciente.getOrDefault(p.getSolicitacaoId(), List.of())));
+    }
+
+    /**
+     * Agendas (Grupos de Relatorio) do menu e dos seletores da tela, ja no escopo do
+     * chamador. Visao municipal: grupos ativos direcionados ao hospital, o criterio
+     * que o menu aplicava no cliente. Operador restrito: os grupos das suas
+     * executantes, com ou sem a flag.
+     */
+    @Transactional(readOnly = true)
+    public List<AgendaGrupoViewDTO> listarAgendas(String callerCpf) {
+        unidadeAcessoService.exigirOperadorDeAtendimentos(callerCpf);
+        EscopoAtendimento escopo = unidadeAcessoService.escopoDeAtendimentos(callerCpf);
+        // Sem executante nao ha agenda — e o IN abaixo nunca pode ir vazio.
+        if (escopo.isNenhuma()) {
+            return List.of();
+        }
+        List<GrupoRelatorio> grupos = escopo.isMunicipal()
+                ? grupoRelatorioRepository.findByAtivoTrueAndDirecionadoHospitalTrueOrderByNomeAsc()
+                : grupoRelatorioRepository.findAgendasDasExecutantes(escopo.executanteIds());
+        return grupos.stream().map(AgendaGrupoViewDTO::from).toList();
+    }
+
+    /**
+     * Ids para o IN do recorte; nunca lista vazia. Na visao municipal a sentinela
+     * vai com o filtro desligado; sem executante (NENHUMA) vai com o filtro ligado
+     * e nenhuma unidade casa — zero linhas em todas as consultas.
+     */
+    static List<Long> idsDoFiltro(EscopoAtendimento escopo) {
+        return escopo.executanteIds().isEmpty() ? SEM_EXECUTANTE : escopo.executanteIds();
     }
 
     // ------------------------------------------------------------------

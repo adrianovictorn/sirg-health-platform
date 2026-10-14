@@ -83,6 +83,8 @@ class AtendimentoDesfechoIT {
     private CotaUnidade cotaHemograma;
     private User recepcao;
     private User executante;
+    // Le a lista na visao municipal: o USER sem executante configurada nao ve nada (ADR 0013).
+    private User leitorMunicipal;
     private LocalDate dia;
 
     @BeforeEach
@@ -101,6 +103,7 @@ class AtendimentoDesfechoIT {
         // lotado em outra unidade — a executante.
         recepcao = usuario(Roles.ADMIN_UNIDADE, unidade);
         executante = usuario(Roles.USER, outraUnidade);
+        leitorMunicipal = usuario(Roles.ADMIN, null);
     }
 
     @Test
@@ -225,7 +228,7 @@ class AtendimentoDesfechoIT {
         limpar();
         assertThat(item(id).getStatus()).isEqualTo(StatusDaMarcacao.CANCELADO);
 
-        var pagina = service.listar(dia, null, unidade.getId(), false, "CANCELADO", null, 0, 50, executante.getCpf());
+        var pagina = service.listar(dia, null, unidade.getId(), false, "CANCELADO", null, 0, 50, leitorMunicipal.getCpf());
         assertThat(pagina.getContent()).flatExtracting(AtendimentoPacienteViewDTO::itens)
                 .filteredOn(a -> a.id().equals(id)).singleElement()
                 .satisfies(a -> assertThat(a.podeDesfazer()).isFalse());
@@ -266,7 +269,7 @@ class AtendimentoDesfechoIT {
         service.registrarFalta(id, new AtendimentoFaltaDTO("nao veio"), executante.getCpf());
         limpar();
 
-        var pagina = service.listar(dia, null, unidade.getId(), false, "FALTOU", null, 0, 50, executante.getCpf());
+        var pagina = service.listar(dia, null, unidade.getId(), false, "FALTOU", null, 0, 50, leitorMunicipal.getCpf());
 
         assertThat(pagina.getContent()).flatExtracting(AtendimentoPacienteViewDTO::itens)
                 .filteredOn(a -> a.id().equals(id)).singleElement().satisfies(a -> {

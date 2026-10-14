@@ -211,7 +211,42 @@ Larguras de verificação do `ux-ui-designer`: 375px, 768px e 1280px ou mais.
 - Se uma diretriz externa (skill, referência de marca) contrariar este arquivo, este
   arquivo prevalece.
 
-## 10. Exceções documentadas
+## 10. Exceções documentadas: sirg-design
+
+**sirg-design** é o nome do visual próprio do SIRG que mistura as cores do SIRG (emerald) com
+a estrutura do Carbon/IBM (campos cinza com linha inferior, rótulo de 12 px acima, foco em
+contorno de 2 px, pilha de fonte IBM Plex). Ele tem três níveis, do mais IBM ao mais SIRG:
+
+| Nível | Onde | O que muda |
+| --- | --- | --- |
+| IBM pura | `/admin/cotas` (lista) | Raio zero, sem sombra, `--ibm-fundo #f4f4f4`; ainda não alinhada aos demais |
+| Misto (`nova`) | `/admin/cotas/nova`, `/editar`, `/unidade/cotas`, `/agendar` | Emerald só como acento; painéis `rounded-lg` com sombra leve, título emerald-800 |
+| **Mais SIRG** | `/atendimentos`, `/atendimentos/quantitativos` e as telas de Unidade | Emerald também nas superfícies: faixa de topo dos painéis, cabeçalho de tabela, hover, rótulo e botão secundário |
+
+**Fonte única (ADR 0012).** O nível "mais SIRG" existe como componente compartilhado em
+`src/lib/sirg-design/SirgDesign.svelte`: envolva o conteúdo da página, dentro de
+`<Content>`, com `<SirgDesign>`. Tokens `--sd-*` na raiz `.sirg-design` e classes `sd-*`
+(`sd-cabecalho`, `sd-painel`/`-topo`/`-corpo`, `sd-titulo`, `sd-nota`, `sd-rotulo`,
+`sd-campo`, `sd-ajuda`, `sd-check`, `sd-btn` com `--primario`/`--secundario`/`--neutro`/
+`--perigo`/`--compacto`, `sd-aviso`, `sd-erro`, `sd-vazio`, `sd-tabela`, `sd-contador`,
+`sd-selo` com `--ok`/`--neutro`/`--aviso`/`--erro`). As regras são
+`.sirg-design :global(.sd-*)` — **única exceção autorizada à regra "sem `:global`"**: a raiz
+leva o hash do componente, então o estilo só vale dentro da casca. Ajuste específico de uma
+tela vai no `<style>` escopado da própria página. Classe nova comum entra no
+`SirgDesign.svelte`, no mesmo padrão. Não reaproveite `ibm-*`/`at-*`/`cotas-ibm` fora das
+telas que já os têm.
+
+| Telas de Unidade (sirg-design pela casca) | Observação |
+| --- | --- |
+| `/admin/unidades` | Tabela `sd-tabela` com coluna **Papel**; status Ativa/Inativa em `sd-selo` |
+| `/admin/unidades/nova`, `/[id]/editar` | Formulário em painéis, largura total, sem `max-w`; editar mostra o papel salvo no cabeçalho |
+| `/admin/unidades/[id]/executante` | Parametrização: quatro painéis com contador, barra de ações fixa |
+
+**Tag de papel da unidade** (`src/lib/sirg-design/TagPapelUnidade.svelte`, regra em
+`src/lib/papelUnidade.js`), só exibição, sempre texto + marca: "Unidade solicitante"
+(cinza, círculo vazado), "Unidade executante" (contorno emerald, quadrado), "Ambas"
+(emerald, círculo cheio) e, quando há vínculo sem a executante estar configurada,
+"Parametrização incompleta" (âmbar, losango).
 
 **As telas de cotas, a tela de agendamento (`/agendar`) e a tela de atendimentos
 (`/atendimentos`) usam um visual próprio, que mistura o SIRG com o da IBM.** A decisão é do
@@ -278,9 +313,12 @@ Em cada uma, o que vale é o próprio `+page.svelte`:
 - `/atendimentos/quantitativos`: cabeçalho do dia com "Atualizado às…", cinco cartões de
   totais e tabela por unidade com rodapé "Município"; a unidade é link sublinhado para
   `/atendimentos` filtrado.
-- O CSS está **copiado** em cada tela (sete cópias, contando `/atendimentos/quantitativos`).
-  Extrair para um arquivo compartilhado é pedido à parte, quando o visual estiver estável.
+- O CSS está **copiado** em cada uma dessas sete telas (contando `/atendimentos/quantitativos`).
+  As cópias não são idênticas (três níveis; a mesma classe tem corpo diferente entre telas),
+  por isso não foram trocadas pela fonte única do sirg-design: migrar cada uma para
+  `<SirgDesign>` é pedido à parte, uma tela por vez, com verificação visual (ADR 0012).
 - `GrupoToggleButton` e `GrupoEspecialidadesPainel` aceitam `variante="ibm"`; o padrão
   continua o visual das seções 2 a 6 e é o que `dashboard/unidade` usa.
 
-Não copie este visual para outra tela sem uma decisão nova.
+Não copie este visual para outra tela sem uma decisão nova. Tela nova que adotar o
+sirg-design usa a casca `<SirgDesign>`, nunca uma cópia do CSS.

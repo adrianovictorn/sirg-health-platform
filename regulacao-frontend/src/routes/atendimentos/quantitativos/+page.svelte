@@ -2,9 +2,8 @@
     import { goto } from '$app/navigation';
     import { page } from '$app/state';
     import Content from '$lib/Content.svelte';
-    import { getApi } from '$lib/api.js';
     import { dataHojeBahia } from '$lib/agendaDiaConsolidada.js';
-    import { carregarResumoAtendimentos } from '$lib/atendimentosApi.js';
+    import { carregarAgendasAtendimento, carregarResumoAtendimentos } from '$lib/atendimentosApi.js';
     import { formatarData } from '$lib/datas.js';
     import { onMount } from 'svelte';
 
@@ -27,7 +26,7 @@
         cancelados: number;
     };
     type UnidadeResumo = { id: number | null; nome: string; contagem: Contagem };
-    type Resumo = { data: string; totais: Contagem; unidades: UnidadeResumo[] };
+    type Resumo = { data: string; totais: Contagem; unidades: UnidadeResumo[]; semExecutante: boolean };
 
     const INTERVALO_ATUALIZACAO_MS = 60_000;
     const ROTA = '/atendimentos/quantitativos';
@@ -116,16 +115,12 @@
         goto(codigo ? `${ROTA}?grupo=${encodeURIComponent(codigo)}` : ROTA, { keepFocus: true, noScroll: true });
     }
 
-    // Mesma fonte e mesmo criterio do menu "Agendas".
+    // Mesma fonte do menu "Agendas" (/api/atendimentos/agendas), ja no escopo de
+    // quem esta logado. Se falhar, o seletor so mostra o grupo da URL.
     async function carregarGrupos() {
         try {
-            const res = await getApi('grupo-relatorio/listar');
-            if (!res.ok) return;
-            const lista: { codigo: string; nome: string; ativo: boolean; direcionadoHospital: boolean }[] = await res.json();
-            grupos = lista
-                .filter((g) => g.direcionadoHospital && g.ativo)
-                .map((g) => ({ codigo: g.codigo, nome: g.nome }))
-                .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+            const lista: GrupoOpcao[] = await carregarAgendasAtendimento();
+            grupos = lista.map((g) => ({ codigo: g.codigo, nome: g.nome }));
         } catch {
             // Sem a lista, o seletor so mostra o grupo da URL.
         }
@@ -195,6 +190,10 @@
             <div class="at-erro" role="alert">
                 <span>{erro}</span>
                 <button type="button" class="ibm-btn ibm-btn--secundario" onclick={() => carregar(false)}>Tentar novamente</button>
+            </div>
+        {:else if resumo?.semExecutante}
+            <div class="ibm-aviso" role="status">
+                <span>Seu usuário não está ligado a nenhuma unidade executante configurada. Procure o administrador.</span>
             </div>
         {:else if resumo}
             {#if erro}

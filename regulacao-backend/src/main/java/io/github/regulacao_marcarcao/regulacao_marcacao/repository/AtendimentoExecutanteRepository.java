@@ -41,6 +41,43 @@ import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.At
  */
 public interface AtendimentoExecutanteRepository extends JpaRepository<SolicitacaoEspecialidade, Long> {
 
+    /**
+     * Recorte por unidade executante (V110), igual em todas as consultas. Com
+     * {@code porExecutante = false} (visao municipal) nao filtra nada e
+     * {@code executanteIds} vai com uma sentinela — o IN nunca pode ir vazio.
+     *
+     * Um item pertence a executante X quando a especialidade dele esta no conjunto
+     * efetivo de X (grupo inteiro ou avulsa) E o local do agendamento esta ligado a
+     * X. Agendamento sem local pertence so pela especialidade, e so quando X e a
+     * UNICA executante (ativa, EXECUTANTE/AMBOS) com aquela especialidade — grupo e
+     * avulsa podem ser compartilhados (V111, ADR 0013); sem local, o item de
+     * especialidade compartilhada nao e de nenhuma executante (so visao municipal).
+     * A conferencia e por executante (nunca especialidade de A com local de B).
+     * Item sem especialidade vinculada nao pertence a nenhuma executante.
+     */
+    String FILTRO_EXECUTANTE = """
+              AND (:porExecutante = false OR EXISTS (
+                SELECT 1 FROM unidade ux
+                WHERE ux.id IN (:executanteIds)
+                  AND ((ag.local_agendamento_id IS NULL
+                          AND NOT EXISTS (SELECT 1 FROM unidade_executante_especialidade xe2
+                                          JOIN unidade u2 ON u2.id = xe2.unidade_id
+                                          WHERE xe2.especialidade_id = se.especialidade_id
+                                            AND xe2.unidade_id <> ux.id
+                                            AND u2.ativo = true AND u2.tipo IN ('EXECUTANTE', 'AMBOS'))
+                          AND NOT EXISTS (SELECT 1 FROM unidade_executante_grupo xg2
+                                          JOIN unidade u2 ON u2.id = xg2.unidade_id
+                                          WHERE xg2.grupo_relatorio_id = e.grupo_relatorio_id
+                                            AND xg2.unidade_id <> ux.id
+                                            AND u2.ativo = true AND u2.tipo IN ('EXECUTANTE', 'AMBOS')))
+                       OR EXISTS (SELECT 1 FROM local_agendamento lx
+                                  WHERE lx.id = ag.local_agendamento_id AND lx.unidade_executante_id = ux.id))
+                  AND (EXISTS (SELECT 1 FROM unidade_executante_especialidade xe
+                               WHERE xe.unidade_id = ux.id AND xe.especialidade_id = se.especialidade_id)
+                    OR EXISTS (SELECT 1 FROM unidade_executante_grupo xg
+                               WHERE xg.unidade_id = ux.id AND xg.grupo_relatorio_id = e.grupo_relatorio_id))))
+            """;
+
     @Query(value = """
             SELECT
                 s.unidade_id AS unidadeId,
@@ -60,9 +97,12 @@ public interface AtendimentoExecutanteRepository extends JpaRepository<Solicitac
             LEFT JOIN grupo_relatorio gr ON gr.id = e.grupo_relatorio_id
             WHERE ag.data_agendada = :data
               AND (CAST(:grupo AS text) IS NULL OR gr.codigo = CAST(:grupo AS text))
+            """ + FILTRO_EXECUTANTE + """
             GROUP BY GROUPING SETS ((s.unidade_id), ())
             """, nativeQuery = true)
-    List<AtendimentoResumoProjection> resumirPorUnidade(@Param("data") LocalDate data, @Param("grupo") String grupo);
+    List<AtendimentoResumoProjection> resumirPorUnidade(@Param("data") LocalDate data, @Param("grupo") String grupo,
+            @Param("porExecutante") boolean porExecutante,
+            @Param("executanteIds") Collection<Long> executanteIds);
 
     /**
      * Pagina de fichas com ao menos um item no dia (e na agenda) que atenda aos
@@ -95,6 +135,7 @@ public interface AtendimentoExecutanteRepository extends JpaRepository<Solicitac
                 OR (CAST(:termoDigitos AS text) IS NOT NULL
                     AND (regexp_replace(s.cpf_paciente, '[^0-9]', '', 'g') = CAST(:termoDigitos AS text)
                       OR regexp_replace(s.cns, '[^0-9]', '', 'g') = CAST(:termoDigitos AS text))))
+            """ + FILTRO_EXECUTANTE + """
             GROUP BY s.id, s.nome_paciente, s.cpf_paciente, s.cns, s.datanascimento, u.nome
             ORDER BY s.nome_paciente, s.id
             """,
@@ -116,7 +157,7 @@ public interface AtendimentoExecutanteRepository extends JpaRepository<Solicitac
                 OR (CAST(:termoDigitos AS text) IS NOT NULL
                     AND (regexp_replace(s.cpf_paciente, '[^0-9]', '', 'g') = CAST(:termoDigitos AS text)
                       OR regexp_replace(s.cns, '[^0-9]', '', 'g') = CAST(:termoDigitos AS text))))
-            """, nativeQuery = true)
+            """ + FILTRO_EXECUTANTE, nativeQuery = true)
     Page<AtendimentoPacienteProjection> listarPacientes(
             @Param("data") LocalDate data,
             @Param("grupo") String grupo,
@@ -125,6 +166,8 @@ public interface AtendimentoExecutanteRepository extends JpaRepository<Solicitac
             @Param("status") String status,
             @Param("termo") String termo,
             @Param("termoDigitos") String termoDigitos,
+            @Param("porExecutante") boolean porExecutante,
+            @Param("executanteIds") Collection<Long> executanteIds,
             Pageable pageable);
 
     /**
@@ -153,12 +196,15 @@ public interface AtendimentoExecutanteRepository extends JpaRepository<Solicitac
             WHERE se.solicitacao_id IN (:ids)
               AND ag.data_agendada = :data
               AND (CAST(:grupo AS text) IS NULL OR gr.codigo = CAST(:grupo AS text))
+            """ + FILTRO_EXECUTANTE + """
             ORDER BY se.solicitacao_id, se.id
             """, nativeQuery = true)
     List<AtendimentoProjection> listarItensDosPacientes(
             @Param("ids") Collection<Long> ids,
             @Param("data") LocalDate data,
-            @Param("grupo") String grupo);
+            @Param("grupo") String grupo,
+            @Param("porExecutante") boolean porExecutante,
+            @Param("executanteIds") Collection<Long> executanteIds);
 
     /**
      * Relatorio de Atendimento: itens COM desfecho (Confirmado, Faltou, Cancelado)
@@ -189,10 +235,13 @@ public interface AtendimentoExecutanteRepository extends JpaRepository<Solicitac
             WHERE ag.data_agendada BETWEEN :inicio AND :fim
               AND se.status IN ('REALIZADO', 'FALTOU', 'CANCELADO')
               AND (CAST(:grupo AS text) IS NULL OR gr.codigo = CAST(:grupo AS text))
+            """ + FILTRO_EXECUTANTE + """
             ORDER BY ag.data_agendada, u.nome NULLS LAST, s.nome_paciente, se.id
             """, nativeQuery = true)
     List<AtendimentoRelatorioProjection> listarRelatorio(
             @Param("inicio") LocalDate inicio,
             @Param("fim") LocalDate fim,
-            @Param("grupo") String grupo);
+            @Param("grupo") String grupo,
+            @Param("porExecutante") boolean porExecutante,
+            @Param("executanteIds") Collection<Long> executanteIds);
 }

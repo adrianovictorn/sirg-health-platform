@@ -84,6 +84,8 @@ public class LocalAgendamentoService {
         return limpo.isEmpty() ? null : limpo;
     }
 
+    // Transacional: o DTO le cidade e unidade executante (V110), ambas LAZY.
+    @Transactional
     public List<LocalAgendamentoListDTO> listarAgendamentoListDTOs(Long cidadeId){
         List<LocalAgendamento> localAgendamentoExistente = cidadeId != null
             ? localAgendamentoRepository.findByCidade_Id(cidadeId)

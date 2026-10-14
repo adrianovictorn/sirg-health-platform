@@ -5,10 +5,18 @@
   import Content from '$lib/Content.svelte';
   import { toast } from 'svelte-sonner';
   import { cnesPertenceAOutraUnidade, divergeDosDadosAtuais, mesclarCamposCnes } from '$lib/unidadeCnes.js';
+  import SirgDesign from '$lib/sirg-design/SirgDesign.svelte';
 
   let grupos = $state([]);
   let buscandoCnes = $state(false);
   let salvando = $state(false);
+
+  // V86: SOLICITANTE pede e recebe cota; EXECUTANTE realiza; AMBOS faz os dois.
+  const TIPOS_UNIDADE = [
+    { valor: 'AMBOS', rotulo: 'Solicitante e executante' },
+    { valor: 'SOLICITANTE', rotulo: 'Só solicitante' },
+    { valor: 'EXECUTANTE', rotulo: 'Só executante' }
+  ];
 
   let form = $state({
     nome: '',
@@ -17,6 +25,7 @@
     telefone: '',
     endereco: '',
     grupoRelatorioId: null,
+    tipo: 'AMBOS',
     razaoSocial: '',
     nomeFantasia: '',
     cnpj: '',
@@ -98,116 +107,137 @@
 </script>
 
 <Content titleH1="Nova Unidade" page="/admin/unidades">
-  <main class="p-6">
-    <div class="bg-white border border-gray-200 rounded-xl p-6 space-y-4 max-w-6xl">
-      <div>
-        <label class="block text-xs text-gray-500 mb-1">CNES</label>
-        <div class="flex gap-2">
-          <input
-            bind:value={form.cnes}
-            class="flex-1 bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-          />
-          <button
-            type="button"
-            onclick={buscarPorCnes}
-            disabled={buscandoCnes}
-            class="px-3 py-2 rounded-lg bg-sky-50 text-sky-700 hover:bg-sky-100 text-xs font-medium transition-colors disabled:opacity-50 whitespace-nowrap"
-          >
-            {buscandoCnes ? 'Buscando...' : 'Buscar CNES'}
-          </button>
+  <SirgDesign>
+    <div class="space-y-6 p-4 md:p-6 lg:p-8">
+      <header class="sd-cabecalho">
+        <div class="min-w-0">
+          <h2 class="sd-titulo">Cadastro de nova unidade</h2>
+          <p class="sd-texto-apoio mt-1">
+            Preencha pela busca no CNES ou à mão. Campos com <span aria-hidden="true">*</span> são obrigatórios.
+          </p>
         </div>
-        <p class="text-xs text-gray-500 mt-1">
-          Busca os dados do estabelecimento na base do CNES e preenche os campos abaixo —
-          confira antes de salvar, nada é gravado automaticamente.
-        </p>
-      </div>
+      </header>
 
-      <div class="grid grid-cols-2 gap-3">
-        <div>
-          <label class="block text-xs text-gray-500 mb-1">Nome *</label>
-          <input bind:value={form.nome} class="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+      <section aria-labelledby="sec-identificacao" class="sd-painel">
+        <div class="sd-painel-topo">
+          <h3 id="sec-identificacao" class="sd-titulo">Identificação</h3>
         </div>
-        <div>
-          <label class="block text-xs text-gray-500 mb-1">Código</label>
-          <input bind:value={form.codigo} class="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+        <div class="sd-painel-corpo grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
+          <div class="sd-campo-grupo md:col-span-2">
+            <label for="unidadeCnes" class="sd-rotulo">CNES</label>
+            <div class="flex gap-2">
+              <input id="unidadeCnes" bind:value={form.cnes} inputmode="numeric" autocomplete="off"
+                aria-describedby="unidadeCnesAjuda" class="sd-campo min-w-0 flex-1" />
+              <button type="button" onclick={buscarPorCnes} disabled={buscandoCnes} aria-busy={buscandoCnes}
+                class="sd-btn sd-btn--secundario">
+                {buscandoCnes ? 'Buscando…' : 'Buscar CNES'}
+              </button>
+            </div>
+            <p id="unidadeCnesAjuda" class="sd-ajuda">
+              Preenche os campos com os dados do CNES. Confira antes de salvar: nada é gravado automaticamente.
+            </p>
+          </div>
+          <div class="sd-campo-grupo md:col-span-2">
+            <label for="unidadeNome" class="sd-rotulo">Nome <span aria-hidden="true">*</span></label>
+            <input id="unidadeNome" bind:value={form.nome} aria-required="true" class="sd-campo" />
+          </div>
+          <div class="sd-campo-grupo md:col-span-2">
+            <label for="unidadeRazaoSocial" class="sd-rotulo">Razão social</label>
+            <input id="unidadeRazaoSocial" bind:value={form.razaoSocial} class="sd-campo" />
+          </div>
+          <div class="sd-campo-grupo md:col-span-2">
+            <label for="unidadeNomeFantasia" class="sd-rotulo">Nome fantasia</label>
+            <input id="unidadeNomeFantasia" bind:value={form.nomeFantasia} class="sd-campo" />
+          </div>
+          <div class="sd-campo-grupo">
+            <label for="unidadeCodigo" class="sd-rotulo">Código</label>
+            <input id="unidadeCodigo" bind:value={form.codigo} class="sd-campo" />
+          </div>
+          <div class="sd-campo-grupo">
+            <label for="unidadeCnpj" class="sd-rotulo">CNPJ</label>
+            <input id="unidadeCnpj" bind:value={form.cnpj} class="sd-campo" />
+          </div>
         </div>
-      </div>
+      </section>
 
-      <div class="grid grid-cols-2 gap-3">
-        <div>
-          <label class="block text-xs text-gray-500 mb-1">Telefone</label>
-          <input bind:value={form.telefone} class="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+      <section aria-labelledby="sec-contato" class="sd-painel">
+        <div class="sd-painel-topo">
+          <h3 id="sec-contato" class="sd-titulo">Endereço e contato</h3>
         </div>
-        <div>
-          <label class="block text-xs text-gray-500 mb-1">Email</label>
-          <input bind:value={form.email} class="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+        <div class="sd-painel-corpo grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
+          <div class="sd-campo-grupo md:col-span-2">
+            <label for="unidadeEndereco" class="sd-rotulo">Endereço</label>
+            <input id="unidadeEndereco" bind:value={form.endereco} class="sd-campo" />
+          </div>
+          <div class="sd-campo-grupo">
+            <label for="unidadeNumero" class="sd-rotulo">Número</label>
+            <input id="unidadeNumero" bind:value={form.numero} class="sd-campo" />
+          </div>
+          <div class="sd-campo-grupo">
+            <label for="unidadeBairro" class="sd-rotulo">Bairro</label>
+            <input id="unidadeBairro" bind:value={form.bairro} class="sd-campo" />
+          </div>
+          <div class="sd-campo-grupo">
+            <label for="unidadeCep" class="sd-rotulo">CEP</label>
+            <input id="unidadeCep" bind:value={form.cep} inputmode="numeric" class="sd-campo" />
+          </div>
+          <div class="sd-campo-grupo">
+            <label for="unidadeTelefone" class="sd-rotulo">Telefone</label>
+            <input id="unidadeTelefone" type="tel" bind:value={form.telefone} class="sd-campo" />
+          </div>
+          <div class="sd-campo-grupo md:col-span-2">
+            <label for="unidadeEmail" class="sd-rotulo">E-mail</label>
+            <input id="unidadeEmail" type="email" bind:value={form.email} class="sd-campo" />
+          </div>
         </div>
-      </div>
+      </section>
 
-      <div class="grid grid-cols-2 gap-3">
-        <div>
-          <label class="block text-xs text-gray-500 mb-1">Endereço</label>
-          <input bind:value={form.endereco} class="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+      <section aria-labelledby="sec-papel" class="sd-painel">
+        <div class="sd-painel-topo">
+          <h3 id="sec-papel" class="sd-titulo">Tipo e cota</h3>
         </div>
-        <div>
-          <label class="block text-xs text-gray-500 mb-1">Número</label>
-          <input bind:value={form.numero} class="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+        <div class="sd-painel-corpo grid grid-cols-1 gap-4 md:grid-cols-2">
+          <div class="sd-campo-grupo">
+            <label for="tipoUnidade" class="sd-rotulo">Tipo</label>
+            <select id="tipoUnidade" bind:value={form.tipo} aria-describedby="tipoUnidadeAjuda tipoUnidadePapel"
+              class="sd-campo">
+              {#each TIPOS_UNIDADE as t (t.valor)}
+                <option value={t.valor}>{t.rotulo}</option>
+              {/each}
+            </select>
+            <p id="tipoUnidadeAjuda" class="sd-ajuda">
+              Com “Só executante” ou “Solicitante e executante”, o que a unidade realiza é definido depois em
+              Unidades → Parametrizar executante.
+            </p>
+            <p id="tipoUnidadePapel" class="sd-ajuda">
+              O papel da unidade (solicitante, executante ou ambas) aparece depois de parametrizar a executante.
+            </p>
+          </div>
+          <div class="sd-campo-grupo">
+            <label for="grupoRelatorio" class="sd-rotulo">Grupo (cota coletiva)</label>
+            <select id="grupoRelatorio" bind:value={form.grupoRelatorioId} aria-describedby="grupoRelatorioAjuda"
+              class="sd-campo">
+              <option value={null}>— Sem grupo —</option>
+              {#each grupos as g (g.id)}
+                <option value={g.id}>{g.nome}</option>
+              {/each}
+            </select>
+            <p id="grupoRelatorioAjuda" class="sd-ajuda">
+              Com grupo definido, as cotas lançadas para ele viram um saldo compartilhado entre as
+              unidades membros, somando-se à cota própria desta unidade.
+            </p>
+          </div>
         </div>
-      </div>
+      </section>
 
-      <div class="grid grid-cols-2 gap-3">
-        <div>
-          <label class="block text-xs text-gray-500 mb-1">Bairro</label>
-          <input bind:value={form.bairro} class="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-emerald-500" />
-        </div>
-        <div>
-          <label class="block text-xs text-gray-500 mb-1">CEP</label>
-          <input bind:value={form.cep} class="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-emerald-500" />
-        </div>
-      </div>
-
-      <div class="grid grid-cols-2 gap-3">
-        <div>
-          <label class="block text-xs text-gray-500 mb-1">Razão Social</label>
-          <input bind:value={form.razaoSocial} class="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-emerald-500" />
-        </div>
-        <div>
-          <label class="block text-xs text-gray-500 mb-1">Nome Fantasia</label>
-          <input bind:value={form.nomeFantasia} class="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-emerald-500" />
-        </div>
-      </div>
-
-      <div class="grid grid-cols-2 gap-3">
-        <div>
-          <label class="block text-xs text-gray-500 mb-1">CNPJ</label>
-          <input bind:value={form.cnpj} class="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-emerald-500" />
-        </div>
-        <div>
-          <label for="grupoRelatorio" class="block text-xs text-gray-500 mb-1">Grupo (cota coletiva)</label>
-          <select id="grupoRelatorio" bind:value={form.grupoRelatorioId}
-            class="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-emerald-500">
-            <option value={null}>— Sem grupo —</option>
-            {#each grupos as g (g.id)}
-              <option value={g.id}>{g.nome}</option>
-            {/each}
-          </select>
-        </div>
-      </div>
-      <p class="text-xs text-gray-500 -mt-2">
-        Com grupo definido, as cotas lançadas para ele viram um saldo compartilhado entre as
-        unidades membros, somando-se à cota própria desta unidade.
-      </p>
-
-      <div class="flex justify-end gap-3 pt-2">
-        <button onclick={() => goto('/admin/unidades')}
-          class="px-4 py-2 rounded-lg bg-gray-100 text-gray-700 text-sm hover:bg-gray-200 transition-colors">
+      <div class="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+        <button type="button" onclick={() => goto('/admin/unidades')} class="sd-btn sd-btn--neutro">
           Cancelar
         </button>
-        <button onclick={salvar} disabled={salvando}
-          class="px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm hover:bg-emerald-500 transition-colors disabled:opacity-50">
-          {salvando ? 'Salvando...' : 'Salvar'}
+        <button type="button" onclick={salvar} disabled={salvando} aria-busy={salvando} class="sd-btn sd-btn--primario">
+          {salvando ? 'Salvando…' : 'Salvar unidade'}
         </button>
       </div>
     </div>
-  </main>
+  </SirgDesign>
 </Content>

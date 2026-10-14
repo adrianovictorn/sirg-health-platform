@@ -4,6 +4,7 @@
   import UserMenu from '$lib/UserMenu.svelte';
     import { Pencil, Trash } from 'lucide-svelte';
   import { onMount } from 'svelte';
+  import { listarUnidadesExecutantes, vincularLocalAExecutante } from '$lib/unidadesExecutantesApi.js';
 
   interface Cidade {
     id: number;
@@ -21,6 +22,13 @@
     cidadeNome: string | null;
     enumValue?: string | null;
     cnes?: string | null;
+    unidadeExecutanteId?: number | null;
+    unidadeExecutanteNome?: string | null;
+  }
+
+  interface Executante {
+    unidadeId: number;
+    unidadeNome: string;
   }
 
   interface LocalDraft {
@@ -75,6 +83,10 @@
   let isLoading = $state(false);
   let erro = $state('');
   let mensagem = $state('');
+  // Unidades executantes (V110) para a acao "Vincular". Nulo = quem esta logado nao
+  // parametriza executantes (so ADMIN): a coluna aparece, sem a acao.
+  let executantes = $state<Executante[] | null>(null);
+  let vinculandoId = $state<number | null>(null);
   
   const cidadesFiltradas = $derived(
     termoBuscaCidade.trim()
@@ -159,6 +171,41 @@
       locais = await res.json();
     } catch (e: any) {
       erro = e.message ?? 'Erro ao carregar locais.';
+    }
+  }
+
+  async function carregarExecutantes() {
+    try {
+      executantes = await listarUnidadesExecutantes();
+    } catch {
+      executantes = null;
+    }
+  }
+
+  // Liga o local a uma executante (ou desliga, com vazio). Ja ligado a outra e movido.
+  async function vincularExecutante(loc: LocalAgendamento, valor: string) {
+    const unidadeId = valor ? Number(valor) : null;
+    if (unidadeId === (loc.unidadeExecutanteId ?? null)) return;
+    // V110: se for o último local da executante, ela deixa de estar configurada e
+    // os operadores vinculados a ela (pela lista ou pela lotação) deixam de ver os atendimentos desta executante.
+    const aviso = `Se este for o último local de ${loc.unidadeExecutanteNome}, os operadores vinculados a ela (pela lista ou pela lotação) deixam de ver os atendimentos desta executante.`;
+    const pergunta = unidadeId != null
+      ? `Este local está ligado a ${loc.unidadeExecutanteNome}. ${aviso} Mover para a nova unidade executante?`
+      : `Desvincular este local de ${loc.unidadeExecutanteNome}? ${aviso}`;
+    if (loc.unidadeExecutanteId != null && !confirm(pergunta)) {
+      await carregarLocaisAgendamento();
+      return;
+    }
+    vinculandoId = loc.id;
+    erro = '';
+    try {
+      await vincularLocalAExecutante(loc.id, unidadeId);
+      mensagem = unidadeId ? 'Local vinculado à unidade executante.' : 'Local desvinculado da unidade executante.';
+    } catch (e: any) {
+      erro = e.message ?? 'Erro ao vincular o local.';
+    } finally {
+      vinculandoId = null;
+      await carregarLocaisAgendamento();
     }
   }
 
@@ -273,7 +320,7 @@
 
   onMount(async () => {
     isLoading = true;
-    await Promise.all([carregarCidades(), carregarLocaisAgendamento()]);
+    await Promise.all([carregarCidades(), carregarLocaisAgendamento(), carregarExecutantes()]);
     isLoading = false;
   });
 </script>
@@ -491,7 +538,7 @@
           {:else if locaisFiltrados.length === 0}
             <p class="text-sm text-gray-500">Nenhum local cadastrado até o momento.</p>
           {:else}
-            <div class="overflow-hidden rounded-lg border border-gray-200">
+            <div class="overflow-x-auto rounded-lg border border-gray-200">
               <table class="min-w-full divide-y divide-gray-200 text-sm">
                 <thead class="bg-gray-50">
                   <tr>
@@ -500,6 +547,7 @@
                     <th class="px-4 py-2 text-left font-medium text-gray-600">Endereço</th>
                     <th class="px-4 py-2 text-left font-medium text-gray-600">Número</th>
                     <th class="px-4 py-2 text-left font-medium text-gray-600">Cidade</th>
+                    <th class="px-4 py-2 text-left font-medium text-gray-600">Unidade executante</th>
                     <th class="px-4 py-2 text-left font-medium ">Ações</th>
                   </tr>
                 </thead>
@@ -555,6 +603,25 @@
                           </select>
                         {:else}
                             {loc.cidadeNome || '—'}
+                        {/if}
+                      </td>
+                      <td class="px-4 py-2 text-gray-600">
+                        {#if executantes}
+                          <select
+                            value={loc.unidadeExecutanteId != null ? String(loc.unidadeExecutanteId) : ''}
+                            disabled={vinculandoId === loc.id}
+                            on:change={(e) => vincularExecutante(loc, e.currentTarget.value)}
+                            aria-label={`Vincular ${loc.nomeLocal} à unidade executante`}
+                            aria-busy={vinculandoId === loc.id}
+                            class="border border-gray-300 rounded px-2 py-1 w-full min-w-48 focus:border-emerald-500 focus:ring-emerald-500 disabled:cursor-wait disabled:opacity-50"
+                          >
+                            <option value="">— Não vinculado —</option>
+                            {#each executantes as ex (ex.unidadeId)}
+                              <option value={String(ex.unidadeId)}>{ex.unidadeNome}</option>
+                            {/each}
+                          </select>
+                        {:else}
+                          {loc.unidadeExecutanteNome || '—'}
                         {/if}
                       </td>
                       <td>

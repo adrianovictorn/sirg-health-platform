@@ -41,10 +41,11 @@ import jakarta.persistence.EntityManager;
 /**
  * FLUXO REAL: tela de Atendimentos do operador da unidade executante.
  *
- * Valida que o Usuario Padrao (USER), com ou sem unidade de lotacao, enxerga o
- * municipio inteiro no resumo e na lista nominal — sem filtro obrigatorio por
- * unidade —, que os demais perfis levam acesso negado, que a solicitacao sem
- * unidade aparece na contagem e na lista, e que CPF/CNS saem mascarados.
+ * Valida a visao municipal (ADMIN) do resumo e da lista nominal — sem filtro
+ * obrigatorio por unidade —, que o USER sem executante configurada nao ve nada
+ * (ADR 0013; o recorte por executante esta em {@link AtendimentoExecutanteEscopoIT}),
+ * que os demais perfis levam acesso negado, que a solicitacao sem unidade aparece
+ * na contagem e na lista, e que CPF/CNS saem completos.
  *
  * A base pode ter dados reais: o dia do teste fica tres anos a frente, onde nao ha
  * agenda nenhuma, e e isso que permite afirmar os totais do municipio.
@@ -94,8 +95,8 @@ class AtendimentoExecutanteIT {
     }
 
     @Test
-    @DisplayName("Executante lotado no laboratorio ve os quantitativos de todas as unidades, sem filtrar")
-    void resumoDoMunicipioParaOExecutante() {
+    @DisplayName("ADMIN ve os quantitativos de todas as unidades; USER sem executante configurada ve tudo zerado")
+    void resumoDoMunicipioParaOAdmin() {
         agendar(unidadeA, hemograma, "Ana");
         SolicitacaoEspecialidade confirmado = agendar(unidadeA, hemograma, "Bruno");
         SolicitacaoEspecialidade faltou = agendar(unidadeB, cardiologia, "Carla");
@@ -105,8 +106,18 @@ class AtendimentoExecutanteIT {
         marcar(cancelado, StatusDaMarcacao.CANCELADO);
         limpar();
 
-        for (User u : List.of(executante, executanteSemLotacao, admin)) {
+        // ADR 0013: lotado em unidade que nao e executante configurada, ou sem lotacao, nao ve nada.
+        for (User u : List.of(executante, executanteSemLotacao)) {
             AtendimentoResumoViewDTO resumo = service.resumir(dia, null, u.getCpf());
+            assertThat(resumo.semExecutante()).as(u.getNome()).isTrue();
+            assertThat(resumo.totais().itens()).as(u.getNome()).isZero();
+            assertThat(service.listar(dia, null, null, false, null, null, 0, 10, u.getCpf()).getTotalElements())
+                    .as(u.getNome()).isZero();
+        }
+
+        {
+            AtendimentoResumoViewDTO resumo = service.resumir(dia, null, admin.getCpf());
+            assertThat(resumo.semExecutante()).isFalse();
 
             assertThat(resumo.data()).isEqualTo(dia);
             var a = unidadeDoResumo(resumo, unidadeA).contagem();
@@ -142,7 +153,7 @@ class AtendimentoExecutanteIT {
         agendar(unidadeB, cardiologia, "Bruno");
         limpar();
 
-        var pagina = service.listar(dia, null, null, false, null, null, 0, 1000, executante.getCpf());
+        var pagina = service.listar(dia, null, null, false, null, null, 0, 1000, admin.getCpf());
 
         assertThat(pagina.getSize()).isLessThanOrEqualTo(AtendimentoExecutanteService.TAMANHO_MAXIMO_PAGINA);
         assertThat(pagina.getTotalElements()).isEqualTo(2);
@@ -167,7 +178,7 @@ class AtendimentoExecutanteIT {
         assertThat(item.dataColeta()).isEqualTo(dia.minusDays(1));
         assertThat(pagina.getContent().get(1).itens().get(0).categoria()).isEqualTo("ESPECIALIDADE_MEDICA");
 
-        assertThat(service.listar(dia.plusDays(1), null, null, false, null, null, 0, 10, executante.getCpf()).getContent())
+        assertThat(service.listar(dia.plusDays(1), null, null, false, null, null, 0, 10, admin.getCpf()).getContent())
                 .isEmpty();
     }
 
@@ -181,7 +192,7 @@ class AtendimentoExecutanteIT {
         // Homonimo em outra ficha: bloco proprio, nunca fundido por nome.
         Solicitacao homonimo = agendarVarios(unidadeB, "Ana", dia, hemograma);
         limpar();
-        String cpf = executante.getCpf();
+        String cpf = admin.getCpf();
 
         var todos = service.listar(dia, null, null, false, null, null, 0, 10, cpf);
         assertThat(todos.getTotalElements()).isEqualTo(3);
@@ -224,7 +235,7 @@ class AtendimentoExecutanteIT {
         SolicitacaoEspecialidade exameDaAna = itemDe(ana, hemograma);
         marcar(exameDaAna, StatusDaMarcacao.FALTOU);
         limpar();
-        String cpf = executante.getCpf();
+        String cpf = admin.getCpf();
 
         var comFalta = service.listar(dia, null, null, false, "FALTOU", null, 0, 10, cpf);
         assertThat(comFalta.getTotalElements()).isEqualTo(1);
@@ -255,7 +266,7 @@ class AtendimentoExecutanteIT {
         String cpfDaAna = ana.getSolicitacao().getCpfPaciente();
         String cnsDoBruno = bruno.getSolicitacao().getCns();
         limpar();
-        String cpf = executante.getCpf();
+        String cpf = admin.getCpf();
 
         assertThat(itens(service.listar(dia, null, unidadeB.getId(), false, null, null, 0, 10, cpf)))
                 .containsExactly(bruno.getId());
@@ -309,7 +320,7 @@ class AtendimentoExecutanteIT {
         agendar(unidadeA, cardiologia, "Bruno"); // especialidade sem grupo
         agendar(unidadeB, cardiologia, "Carla");
         limpar();
-        String cpf = executante.getCpf();
+        String cpf = admin.getCpf();
         String codigo = laboratorioGrupo.getCodigo();
 
         AtendimentoResumoViewDTO resumo = service.resumir(dia, codigo, cpf);
@@ -349,7 +360,7 @@ class AtendimentoExecutanteIT {
         SolicitacaoEspecialidade orfa = agendar(null, hemograma, "Orfa");
         agendar(unidadeA, hemograma, "Ana");
         limpar();
-        String cpf = executante.getCpf();
+        String cpf = admin.getCpf();
 
         AtendimentoResumoViewDTO resumo = service.resumir(dia, null, cpf);
         assertThat(resumo.unidades()).anySatisfy(u -> {

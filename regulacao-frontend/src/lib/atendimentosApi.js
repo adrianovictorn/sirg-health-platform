@@ -28,7 +28,7 @@ function query(parametros) {
   return texto ? `?${texto}` : "";
 }
 
-/** Quantitativos do dia: o município inteiro e uma linha por unidade solicitante. `grupo` é o código do Grupo de Relatório (opcional). */
+/** Quantitativos do dia (no escopo do chamador; `semExecutante` = USER sem executante, ADR 0013) e uma linha por unidade solicitante. `grupo` é o código do Grupo de Relatório (opcional). */
 export async function carregarResumoAtendimentos({ data, grupo } = {}) {
   const res = await getApi(`atendimentos/resumo${query({ data, grupo })}`);
   await exigirOk(res, "Não foi possível carregar os quantitativos do dia.");
@@ -58,6 +58,18 @@ export async function listarAtendimentos({
     `atendimentos${query({ data, grupo, unidadeId, semUnidade, status, termo, page, size })}`,
   );
   await exigirOk(res, "Não foi possível carregar a lista de atendimentos.");
+  return res.json();
+}
+
+/**
+ * Agendas (Grupos de Relatório) da tela, já no escopo de quem está logado: o
+ * Usuário Padrão recebe só os grupos das suas executantes (lotação ou lista) e,
+ * sem nenhuma, lista vazia (ADR 0013); o ADMIN, os grupos ativos direcionados ao
+ * hospital. Lista de `{ codigo, nome }`, ordenada.
+ */
+export async function carregarAgendasAtendimento() {
+  const res = await getApi("atendimentos/agendas");
+  await exigirOk(res, "Não foi possível carregar as agendas.");
   return res.json();
 }
 

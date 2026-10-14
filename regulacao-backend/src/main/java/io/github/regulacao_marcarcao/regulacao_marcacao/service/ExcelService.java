@@ -420,7 +420,10 @@ public class ExcelService {
         }
         String grupoFiltro = grupo == null || grupo.isBlank() ? null : grupo.replaceAll("\\p{Cntrl}", " ").strip();
 
-        List<AtendimentoRelatorioProjection> rows = atendimentoRepository.listarRelatorio(inicio, fim, grupoFiltro);
+        // Mesmo recorte por executante da tela (V110): a planilha nao pode trazer mais que a lista.
+        UnidadeAcessoService.EscopoAtendimento escopo = unidadeAcessoService.escopoDeAtendimentos(callerCpf);
+        List<AtendimentoRelatorioProjection> rows = atendimentoRepository.listarRelatorio(inicio, fim, grupoFiltro,
+                !escopo.isMunicipal(), AtendimentoExecutanteService.idsDoFiltro(escopo));
 
         DateTimeFormatter fmt = DateTimeFormatter.ofPattern("dd/MM/yyyy");
         DateTimeFormatter fmtHora = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm").withZone(FUSO_ATENDIMENTOS);

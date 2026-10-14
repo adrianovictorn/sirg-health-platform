@@ -3,6 +3,7 @@ package io.github.regulacao_marcarcao.regulacao_marcacao.controller;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.time.LocalDate;
+import java.util.List;
 
 import org.springframework.core.io.InputStreamResource;
 import org.springframework.data.domain.Page;
@@ -20,6 +21,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import io.github.regulacao_marcarcao.regulacao_marcacao.dto.atendimento.AgendaGrupoViewDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.atendimento.AtendimentoCancelamentoDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.atendimento.AtendimentoColetaDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.atendimento.AtendimentoFaltaDTO;
@@ -65,6 +67,14 @@ public class AtendimentoExecutanteController {
         return ResponseEntity.ok()
                 .cacheControl(CacheControl.noStore())
                 .body(service.listar(data, grupo, unidadeId, semUnidade, status, termo, page, size, callerCpf));
+    }
+
+    /** Agendas (Grupos de Relatorio) do menu e dos seletores, ja no escopo do chamador (V110). */
+    @GetMapping("/agendas")
+    public ResponseEntity<List<AgendaGrupoViewDTO>> listarAgendas(Authentication authentication) {
+        return ResponseEntity.ok()
+                .cacheControl(CacheControl.noStore())
+                .body(service.listarAgendas(cpfDe(authentication)));
     }
 
     /**

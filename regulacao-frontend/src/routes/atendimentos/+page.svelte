@@ -2,7 +2,6 @@
     import { goto } from '$app/navigation';
     import { page } from '$app/state';
     import Content from '$lib/Content.svelte';
-    import { getApi } from '$lib/api.js';
     import { dataHojeBahia } from '$lib/agendaDiaConsolidada.js';
     import { hrefDaAgendaDoGrupo } from '$lib/menuConfig.js';
     import { user } from '$lib/stores/auth.js';
@@ -13,6 +12,7 @@
         STATUS_DO_FILTRO,
         baixarRelatorioAtendimentos,
         cancelarAtendimento,
+        carregarAgendasAtendimento,
         carregarResumoAtendimentos,
         confirmarAtendimentosEmLote,
         desfazerAtendimento,
@@ -38,7 +38,9 @@
     type GrupoOpcao = { codigo: string; nome: string };
 
     type UnidadeOpcao = { id: number | null; nome: string };
-    type Resumo = { data: string; unidades: UnidadeOpcao[] };
+    // semExecutante: USER sem executante configurada (ADR 0013) — a lista vem vazia
+    // porque ele nao ve nada, nao porque o dia esta vazio.
+    type Resumo = { data: string; unidades: UnidadeOpcao[]; semExecutante: boolean };
     type Atendimento = {
         id: number;
         solicitacaoId: number;
@@ -391,17 +393,12 @@
         goto(codigo ? hrefDaAgendaDoGrupo(codigo) : '/atendimentos', { keepFocus: true, noScroll: true });
     }
 
-    // Mesma fonte e mesmo criterio do menu "Agendas": grupos ativos direcionados ao
-    // hospital. Se falhar, o seletor so mostra o grupo da URL — a tela segue util.
+    // Mesma fonte do menu "Agendas" (/api/atendimentos/agendas), ja no escopo de
+    // quem esta logado. Se falhar, o seletor so mostra o grupo da URL.
     async function carregarGrupos() {
         try {
-            const res = await getApi('grupo-relatorio/listar');
-            if (!res.ok) return;
-            const lista: { codigo: string; nome: string; ativo: boolean; direcionadoHospital: boolean }[] = await res.json();
-            grupos = lista
-                .filter((g) => g.direcionadoHospital && g.ativo)
-                .map((g) => ({ codigo: g.codigo, nome: g.nome }))
-                .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+            const lista: GrupoOpcao[] = await carregarAgendasAtendimento();
+            grupos = lista.map((g) => ({ codigo: g.codigo, nome: g.nome }));
         } catch {
             // Sem a lista, o filtro por grupo continua funcionando pelo menu.
         }
@@ -549,6 +546,10 @@
                         <span>{erroItens}</span>
                         <button type="button" class="ibm-btn ibm-btn--secundario" onclick={() => carregarItens(pagina)}>Tentar novamente</button>
                     </div>
+                {:else if pacientes.length === 0 && resumo?.semExecutante}
+                    <p class="at-vazio" role="status">
+                        Seu usuário não está ligado a nenhuma unidade executante configurada. Procure o administrador.
+                    </p>
                 {:else if pacientes.length === 0}
                     <p class="at-vazio">
                         {temFiltro

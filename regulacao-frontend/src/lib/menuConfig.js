@@ -95,7 +95,7 @@ const DASHBOARD_HREF_POR_ROLE = {
   ENFERMEIRO: "/dashboard/unidade",
   MEDICO: "/dashboard/unidade",
   // Usuário Padrão é o operador da unidade executante: o trabalho do dia dele
-  // é a tela de Atendimentos (município inteiro), não a agenda por unidade.
+  // é a tela de Atendimentos (só as executantes dele, ADR 0013), não a agenda por unidade.
   USER: "/atendimentos",
 };
 
@@ -223,8 +223,10 @@ export const MENU_SECTIONS = [
         key: "agendas",
         label: "Agendas",
         icon: ICONS.calendar,
-        // Grupo DINÂMICO: os itens não são fixos aqui — vêm dos Grupos de Relatório
-        // marcados como "direcionado ao hospital" (grupo_relatorio.direcionado_hospital).
+        // Grupo DINÂMICO: os itens não são fixos aqui — vêm de /api/atendimentos/agendas:
+        // os Grupos de Relatório marcados como "direcionado ao hospital"
+        // (grupo_relatorio.direcionado_hospital) ou, para o operador vinculado a
+        // unidades executantes (V110), os grupos parametrizados nelas.
         // Antes esta lista era fixa (Cardiologista, Doppler, ..., USG) e ficava fora de
         // sincronia com o cadastro: bastava criar/renomear um grupo para o menu mentir.
         // Agora, marcar o grupo em /cadastrar/grupo-relatorio é o que o coloca no menu.
@@ -237,7 +239,7 @@ export const MENU_SECTIONS = [
         // já nega esse acesso; aqui é só para não oferecer um link que dá 403.
         //
         // Cada agenda abre a tela de Atendimentos já filtrada pelo grupo (ver
-        // `hrefDaAgendaDoGrupo`), com o município inteiro. As telas antigas
+        // `hrefDaAgendaDoGrupo`), no escopo das executantes dele. As telas antigas
         // /agendas/{grupo} filtram pela unidade SOLICITANTE e ficavam vazias para
         // quem é lotado numa unidade executante; continuam existindo, sem link.
         dynamic: "agendasHospital",
@@ -491,6 +493,24 @@ export const CHEVRON_DOWN = "M19 9l-7 7-7-7";
 
 export function resolveHref(item, role) {
   return (item.hrefByRole && item.hrefByRole[role]) || item.href;
+}
+
+/**
+ * Fontes dos grupos dinâmicos que a role enxerga (ex.: `["agendasHospital"]`).
+ * Serve ao RoleBasedMenu para só buscar no backend o que a role vai exibir —
+ * a regra continua sendo a de `roles` no próprio grupo, sem role literal no componente.
+ */
+export function fontesDinamicasDaRole(role) {
+  if (!role) return [];
+  return MENU_SECTIONS.flatMap((section) => section.items)
+    .filter(
+      (item) =>
+        item.type === "group" &&
+        item.dynamic &&
+        Array.isArray(item.roles) &&
+        item.roles.includes(role),
+    )
+    .map((item) => item.dynamic);
 }
 
 function isLinkVisible(link, role) {

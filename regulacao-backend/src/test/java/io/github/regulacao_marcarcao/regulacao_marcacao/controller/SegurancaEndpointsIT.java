@@ -160,6 +160,34 @@ class SegurancaEndpointsIT {
     }
 
     @Test
+    @DisplayName("Parametrizacao de unidade executante: so ADMIN le ou altera; agendas de Atendimentos so USER e ADMIN")
+    void unidadeExecutanteSoParaAdmin() throws Exception {
+        List<org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder> rotas = List.of(
+                get("/api/unidades-executantes"),
+                get("/api/unidades-executantes/operadores"),
+                get("/api/unidades-executantes/1"),
+                put("/api/unidades-executantes/1").contentType(MediaType.APPLICATION_JSON).content("{}"),
+                patch("/api/unidades-executantes/locais/1").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"unidadeId\":null}"));
+
+        for (var rota : rotas) {
+            assertThat(statusDe(rota)).as("sem login").isIn(401, 403);
+        }
+        for (Roles role : List.of(Roles.GESTOR, Roles.ADMIN_UNIDADE, Roles.USER, Roles.RECEPCAO, Roles.PACIENTE)) {
+            RequestPostProcessor usuario = como(role);
+            for (var rota : rotas) {
+                assertThat(statusDe(rota.with(usuario))).as(role.name()).isEqualTo(403);
+            }
+        }
+        mockMvc.perform(get("/api/unidades-executantes").with(como(Roles.ADMIN))).andExpect(status().isOk());
+
+        for (Roles role : List.of(Roles.GESTOR, Roles.ADMIN_UNIDADE, Roles.RECEPCAO, Roles.PACIENTE)) {
+            assertThat(statusDe(get("/api/atendimentos/agendas").with(como(role)))).as(role.name()).isEqualTo(403);
+        }
+        mockMvc.perform(get("/api/atendimentos/agendas").with(como(Roles.USER))).andExpect(status().isOk());
+    }
+
+    @Test
     @DisplayName("Painel do WhatsApp: so ADMIN le, liga o envio ou dispara mensagem")
     void painelDoWhatsAppSoParaAdmin() throws Exception {
         List<org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder> rotas = List.of(

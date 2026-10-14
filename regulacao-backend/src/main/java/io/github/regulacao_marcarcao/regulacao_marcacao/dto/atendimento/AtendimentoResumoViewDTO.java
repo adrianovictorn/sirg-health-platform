@@ -9,11 +9,14 @@ import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.At
  * Quantitativos de atendimento de um dia: o municipio inteiro em {@code totais} e
  * uma linha por unidade solicitante. Unidade de id nulo e o balde "Sem unidade".
  * So contagens — nenhum dado de paciente e nenhum valor em reais.
+ * {@code semExecutante} = USER sem nenhuma executante configurada (lotacao ou lista
+ * de operadores): tudo zerado porque ele nao ve nada, nao porque o dia esta vazio.
  */
 public record AtendimentoResumoViewDTO(
         LocalDate data,
         Contagem totais,
-        List<Unidade> unidades) {
+        List<Unidade> unidades,
+        boolean semExecutante) {
 
     public record Contagem(long pacientes, long itens, long agendados, long confirmados, long faltas,
             long cancelados) {

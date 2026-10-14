@@ -117,7 +117,8 @@ class AtendimentoRelatorioIT {
         String cnsDaAna = confirmado.getSolicitacao().getCns();
         limpar();
 
-        List<List<String>> linhas = lerLinhas(dia, dia.plusDays(1), executante);
+        // Visao municipal (ADMIN); o USER sem executante configurada nao ve nada (ADR 0013).
+        List<List<String>> linhas = lerLinhas(dia, dia.plusDays(1), admin);
 
         assertThat(linhas).hasSize(4);
         assertThat(linhas).extracting(l -> l.get(1))
@@ -148,9 +149,10 @@ class AtendimentoRelatorioIT {
         assertThat(carla.get(7)).isEqualTo("Cancelado");
         assertThat(carla.get(9)).isEqualTo("aparelho quebrado");
 
-        // ADMIN tambem gera; periodo sem nada devolve planilha valida, so com o aviso.
-        assertThat(lerLinhas(dia, dia.plusDays(1), admin)).hasSize(4);
-        assertThat(lerLinhas(dia.plusDays(20), dia.plusDays(21), executante)).singleElement()
+        // USER sem executante gera planilha valida, so com o aviso; periodo sem nada tambem.
+        assertThat(lerLinhas(dia, dia.plusDays(1), executante)).singleElement()
+                .satisfies(l -> assertThat(l.get(0)).startsWith("Nenhum atendimento"));
+        assertThat(lerLinhas(dia.plusDays(20), dia.plusDays(21), admin)).singleElement()
                 .satisfies(l -> assertThat(l.get(0)).startsWith("Nenhum atendimento"));
     }
 

@@ -117,6 +117,24 @@ aviso de remarcação de pacientes do seu município; a migração em si não é
 de data de cota fora do pico: um agendamento que leu as cotas antes do bloqueio e consome depois
 do commit pode, numa janela de milissegundos, usar uma vaga na data antiga.
 
+### Deploy da unidade executante (V110, V111)
+
+As duas migrations só criam estrutura (V110) e trocam índices (V111), sem tocar dado. O que exige
+cuidado é o comportamento: **o Usuário Padrão só vê em `/atendimentos` o que é das suas
+executantes configuradas** (lotação ou lista de operadores) e, sem nenhuma, **não vê nada**
+(ADR 0013). Como nenhuma executante vem parametrizada, logo depois do deploy todo Usuário Padrão
+da instância fica com a tela vazia.
+
+1. Antes do deploy, levante quem usa `/atendimentos`: usuários ativos com o perfil USER e a
+   unidade de lotação de cada um (`usuarios.unidade_id`; perfis múltiplos estão na tabela da V85).
+2. Faça o deploy **fora do horário de atendimento**.
+3. Logo em seguida, o ADMIN parametriza em **Unidades → Parametrizar executante** cada executante
+   em uso: locais de agendamento, grupos/especialidades e, para quem não está lotado nela, a lista
+   de operadores.
+4. Confira com um Usuário Padrão de cada executante que a tela mostra os pacientes do dia. A
+   mensagem "Seu usuário não está ligado a nenhuma unidade executante configurada" indica lotação
+   ou parametrização faltando — não um dia sem paciente.
+
 ### Deploy seletivo
 
 Via `workflow_dispatch` é possível escolher `ambos`, `conceicao` ou `saofelipe`.
