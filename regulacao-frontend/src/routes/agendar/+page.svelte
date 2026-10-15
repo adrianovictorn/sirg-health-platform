@@ -171,7 +171,7 @@
 
   /** Cota que efetivamente será usada para o exame — a única com profissional, ou a escolhida entre várias. */
   function cotaResolvida(codigo: string): CotaAplicavel | null {
-    const comProfissional = cotasComProfissional(codigo);
+    const comProfissional = cotasEspecificas(codigo);
     if (comProfissional.length === 1) return comProfissional[0];
     if (comProfissional.length > 1) {
       const escolhidaId = cotaEscolhidaPorExame[codigo.toUpperCase()];
@@ -307,9 +307,15 @@
       params.append('unidadeId', String(solicitacaoDetalhe.unidadeId));
       params.append('especialidadeId', String(especialidadeId));
       params.append('data', dataAgendada);
-      const profissionalId = cotaResolvida(codigo)?.profissionalId;
+      const cotaDoExame = cotaResolvida(codigo);
+      const profissionalId = cotaDoExame?.profissionalId;
       if (profissionalId != null) {
         params.append('profissionalId', String(profissionalId));
+      }
+      // V112: cotas irmãs do mesmo dia (mesmo profissional, ou só local/horário) —
+      // o saldo da data isola pela cota resolvida, não só pelo profissional.
+      if (cotaDoExame != null) {
+        params.append('cotaId', String(cotaDoExame.id));
       }
 
       const res = await getApi(`cotas/saldo-data?${params.toString()}`);
@@ -364,8 +370,14 @@
     }
   }
 
-  function cotasComProfissional(codigo: string): CotaAplicavel[] {
-    return (cotasAplicaveisPorEspecialidade[codigo.toUpperCase()] ?? []).filter((c) => c.profissionalId != null);
+  /**
+   * Cotas "específicas" (V112): têm profissional, local OU horário. Cotas irmãs
+   * do mesmo dia diferem num desses campos; a cota geral (sem nenhum) não entra.
+   */
+  function cotasEspecificas(codigo: string): CotaAplicavel[] {
+    return (cotasAplicaveisPorEspecialidade[codigo.toUpperCase()] ?? []).filter(
+      (c) => c.profissionalId != null || c.localAgendamentoId != null || c.horaInicial != null
+    );
   }
 
   /**
@@ -378,7 +390,7 @@
    * única (sem escolha) ou nenhuma.
    */
   function cotaReferenciaLocal(codigo: string): CotaAplicavel | null {
-    if (cotasComProfissional(codigo).length > 0) {
+    if (cotasEspecificas(codigo).length > 0) {
       return cotaResolvida(codigo);
     }
     const todas = cotasAplicaveisPorEspecialidade[codigo.toUpperCase()] ?? [];
@@ -844,11 +856,11 @@
     const profissionaisSelecionados: Record<string, number> = {};
     for (const codigo of examesSelecionados) {
       const chave = codigo.toUpperCase();
-      const comProfissional = cotasComProfissional(codigo);
+      const comProfissional = cotasEspecificas(codigo);
       if (comProfissional.length > 1) {
         const escolhida = cotaEscolhidaPorExame[chave];
         if (!escolhida) {
-          alert(`Escolha o profissional para ${getEspecialidadeLabel(codigo)} — há mais de uma cota compatível.`);
+          alert(`Escolha a cota de atendimento para ${getEspecialidadeLabel(codigo)} — há mais de uma cota compatível.`);
           return;
         }
         cotasSelecionadas[codigo] = escolhida;
@@ -995,7 +1007,7 @@
               }
             } catch { /* segue para o fallback abaixo */ }
             return profissionalExibidoParaExame(examesEnviados[0])?.nome
-              ?? cotasComProfissional(examesEnviados[0])[0]?.profissionalNome
+              ?? cotasEspecificas(examesEnviados[0])[0]?.profissionalNome
               ?? null;
           })();
 
@@ -1489,12 +1501,12 @@
                             </div>
 
                             <div class="space-y-4 min-w-0 ibm-coluna-divisor">
-                              {#if cotasComProfissional(codigo).length === 1}
-                                {@const cota = cotasComProfissional(codigo)[0]}
+                              {#if cotasEspecificas(codigo).length === 1}
+                                {@const cota = cotasEspecificas(codigo)[0]}
                                 <div class="ag-exame-bloco">
                                   <p class="ag-exame-grupo">Atendimento</p>
                                   <div class="ag-atendimento">
-                                    <p><strong>Profissional:</strong> {cota.profissionalNome ?? 'não informado'}</p>
+                                    {#if cota.profissionalNome}<p><strong>Profissional:</strong> {cota.profissionalNome}</p>{/if}
                                     {#if cota.localAgendamentoNome}<p><strong>Local:</strong> {cota.localAgendamentoNome}</p>{/if}
                                     {#if cota.horarioDinamico}
                                       <p><strong>Horário:</strong> calculado automaticamente ao agendar (período {formatarHora(cota.horaInicial)} às {formatarHora(cota.horaFinal)})</p>
@@ -1503,18 +1515,19 @@
                                     {/if}
                                   </div>
                                 </div>
-                              {:else if cotasComProfissional(codigo).length > 1}
+                              {:else if cotasEspecificas(codigo).length > 1}
                                 <div class="ag-exame-bloco">
                                   <p class="ag-exame-grupo">Atendimento</p>
                                   <label for="cota-exame-{indice}" class="ibm-rotulo">
-                                    Mais de um profissional disponível — escolha um:
+                                    Mais de uma cota de atendimento disponível — escolha uma:
                                   </label>
                                   <select id="cota-exame-{indice}" bind:value={cotaEscolhidaPorExame[codigo.toUpperCase()]}
                                     class="ibm-campo w-full">
-                                    <option value={null}>Selecionar profissional...</option>
-                                    {#each cotasComProfissional(codigo) as cota (cota.id)}
+                                    <option value={null}>Selecionar cota...</option>
+                                    {#each cotasEspecificas(codigo) as cota (cota.id)}
                                       <option value={cota.id}>
-                                        {cota.profissionalNome}
+                                        {cota.profissionalNome ?? 'Sem profissional'}
+                                        {#if cota.localAgendamentoNome}{' '}— {cota.localAgendamentoNome}{/if}
                                         {#if cota.horaInicial}{' '}({formatarHora(cota.horaInicial)} às {formatarHora(cota.horaFinal)}){/if}
                                       </option>
                                     {/each}

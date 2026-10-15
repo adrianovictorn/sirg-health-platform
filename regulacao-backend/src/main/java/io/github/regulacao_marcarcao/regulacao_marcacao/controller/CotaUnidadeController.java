@@ -94,9 +94,10 @@ public class CotaUnidadeController {
             @RequestParam(required = false) Long especialidadeId,
             @RequestParam String periodo,
             @RequestParam(required = false) Long profissionalId,
+            @RequestParam(required = false) Long cotaId,
             Authentication authentication) {
         exigirAcesso(authentication, unidadeId);
-        return ResponseEntity.ok(cotaService.consultarSaldo(unidadeId, especialidadeId, periodo, profissionalId));
+        return ResponseEntity.ok(cotaService.consultarSaldo(unidadeId, especialidadeId, periodo, profissionalId, cotaId));
     }
 
     /** Cotas aplicaveis (com profissional/horario/local, quando houver) para a unidade montar o "espelho" ao agendar. */
@@ -116,9 +117,10 @@ public class CotaUnidadeController {
             @RequestParam(required = false) Long especialidadeId,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate data,
             @RequestParam(required = false) Long profissionalId,
+            @RequestParam(required = false) Long cotaId,
             Authentication authentication) {
         exigirAcesso(authentication, unidadeId);
-        return ResponseEntity.ok(cotaService.consultarSaldoPorData(unidadeId, especialidadeId, data, profissionalId));
+        return ResponseEntity.ok(cotaService.consultarSaldoPorData(unidadeId, especialidadeId, data, profissionalId, cotaId));
     }
 
     @PutMapping("/{id}")
