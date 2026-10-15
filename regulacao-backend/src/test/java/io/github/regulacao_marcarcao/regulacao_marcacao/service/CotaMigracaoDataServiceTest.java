@@ -367,6 +367,43 @@ class CotaMigracaoDataServiceTest {
         assertThat(auditoria.getValue().getCotaResultanteId()).isEqualTo(DESTINO_ID);
     }
 
+    @Test
+    @DisplayName("V112: cotas de locais diferentes na data de destino NAO sao unificadas")
+    void locaisDiferentesNaoUnificam() {
+        io.github.regulacao_marcarcao.regulacao_marcacao.entity.LocalAgendamento l1 =
+                new io.github.regulacao_marcarcao.regulacao_marcacao.entity.LocalAgendamento();
+        l1.setId(3L);
+        io.github.regulacao_marcarcao.regulacao_marcacao.entity.LocalAgendamento l2 =
+                new io.github.regulacao_marcarcao.regulacao_marcacao.entity.LocalAgendamento();
+        l2.setId(4L);
+        cota.setLocalAgendamento(l1);
+
+        CotaUnidade irma = novaCota(DESTINO_ID, PARA);
+        irma.setLocalAgendamento(l2);
+        when(cotaRepository.findByUnidadeId(UNIDADE_ID)).thenReturn(List.of(cota, irma));
+
+        CotaMigracaoDataViewDTO resultado = service.migrar(COTA_ID, para(PARA), "111");
+
+        assertThat(resultado.unificada()).isFalse();
+        verify(cotaRepository, never()).absorver(anyLong(), anyInt(), anyInt());
+    }
+
+    @Test
+    @DisplayName("V112: migrar cota especifica para data com cota geral e recusado com 409")
+    void migrarEspecificaParaDataComGeralE409() {
+        io.github.regulacao_marcarcao.regulacao_marcacao.entity.LocalAgendamento l1 =
+                new io.github.regulacao_marcarcao.regulacao_marcacao.entity.LocalAgendamento();
+        l1.setId(3L);
+        cota.setLocalAgendamento(l1);
+
+        CotaUnidade geral = novaCota(DESTINO_ID, PARA);
+        when(cotaRepository.findByUnidadeId(UNIDADE_ID)).thenReturn(List.of(cota, geral));
+
+        assertThatThrownBy(() -> service.migrar(COTA_ID, para(PARA), "111"))
+                .isInstanceOf(IllegalStateException.class);
+        verify(cotaRepository, never()).absorver(anyLong(), anyInt(), anyInt());
+    }
+
     // ------------------------------------------------------------------
     // Previa
     // ------------------------------------------------------------------

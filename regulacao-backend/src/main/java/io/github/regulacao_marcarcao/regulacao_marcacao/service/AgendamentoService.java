@@ -299,8 +299,13 @@ public class AgendamentoService {
                 CotaUnidade cotaAnterior = especialidadeParaAgendar.getCotaUnidade();
                 java.time.LocalTime horaAnterior = especialidadeParaAgendar.getHoraAgendada();
 
+                // V112: com cotas irmas (mesma data), casa por local e hora do agendamento.
+                java.time.LocalTime horaParaCasamento = dto.horariosSelecionados() != null
+                        ? dto.horariosSelecionados().get(nomeExame)
+                        : null;
                 CotaUnidade cotaUsada = cotaUnidadeService.resolverCotaParaAgendamento(
-                        unidadeId, especialidadeId, dto.dataAgendada(), cotaEscolhidaId);
+                        unidadeId, especialidadeId, dto.dataAgendada(), cotaEscolhidaId,
+                        dto.localAgendamentoId(), horaParaCasamento);
 
                 // V100: pool isolado por profissional — com cota resolvida, consome
                 // SOMENTE ela; sem cota resolvida (nenhum profissional aplicavel),
@@ -474,8 +479,12 @@ public class AgendamentoService {
                 Long cotaEscolhidaId = dto.cotasSelecionadas() != null
                         ? dto.cotasSelecionadas().get(nomeExame)
                         : null;
+                java.time.LocalTime horaParaCasamento = dto.horariosSelecionados() != null
+                        ? dto.horariosSelecionados().get(nomeExame)
+                        : null;
                 CotaUnidadeService.SimulacaoConsumo simulacao = cotaUnidadeService.simularConsumo(
-                        unidadeId, especialidadeId, dto.dataAgendada(), cotaEscolhidaId, cotaReservada);
+                        unidadeId, especialidadeId, dto.dataAgendada(), cotaEscolhidaId, cotaReservada,
+                        dto.localAgendamentoId(), horaParaCasamento);
                 if (!simulacao.viavel()) {
                     itens.add(simulacao.corrigivel()
                             ? ItemVerificadoDTO.corrigivel(nomeExame, nome, simulacao.motivo())

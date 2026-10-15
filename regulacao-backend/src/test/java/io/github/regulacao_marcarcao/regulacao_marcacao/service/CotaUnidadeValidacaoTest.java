@@ -952,4 +952,237 @@ class CotaUnidadeValidacaoTest {
 
         assertThat(service.calcularHorarioSlot(cota, 1)).isNull();
     }
+
+    // ==================================================================
+    // V112 — cotas irmas: local e faixa de horario entram na chave
+    // ==================================================================
+
+    private CotaUnidade cotaDataExistente(Profissional prof, LocalAgendamento local,
+            java.time.LocalTime ini, java.time.LocalTime fim) {
+        Especialidade hemograma = new Especialidade();
+        hemograma.setId(HEMOGRAMA_ID);
+        hemograma.setNome("Hemograma");
+
+        CotaUnidade c = new CotaUnidade();
+        c.setId(1L);
+        c.setUnidade(unidade);
+        c.setEspecialidade(hemograma);
+        c.setTipoPeriodo(TipoPeriodoCota.DATA);
+        c.setDataEspecifica(LocalDate.of(2026, 6, 1));
+        c.setQuantidadeTotal(5);
+        c.setQuantidadeUtilizada(0);
+        c.setAtivo(true);
+        c.setProfissionalExecutante(prof);
+        c.setLocalAgendamento(local);
+        c.setHoraInicial(ini);
+        c.setHoraFinal(fim);
+        return c;
+    }
+
+    private Profissional profissional(long id) {
+        Profissional p = new Profissional();
+        p.setId(id);
+        p.setNome("Dr. " + id);
+        when(profissionalRepository.findById(id)).thenReturn(Optional.of(p));
+        return p;
+    }
+
+    private LocalAgendamento local(long id) {
+        LocalAgendamento l = new LocalAgendamento();
+        l.setId(id);
+        l.setNomeLocal("Local " + id);
+        when(localAgendamentoRepository.findById(id)).thenReturn(Optional.of(l));
+        return l;
+    }
+
+    @Test
+    @DisplayName("V112: mesmo profissional com faixa de horario diferente e aceito")
+    void mesmoProfissionalHorarioDiferenteEAceito() {
+        Profissional dr = profissional(7L);
+        when(cotaRepository.findByUnidadeId(UNIDADE_ID)).thenReturn(List.of(
+                cotaDataExistente(dr, null, java.time.LocalTime.of(8, 0), java.time.LocalTime.of(12, 0))));
+
+        var dto = dtoComEspelho(7L, null, false, null,
+                java.time.LocalTime.of(14, 0), java.time.LocalTime.of(18, 0), LocalDate.of(2026, 6, 1));
+
+        assertThatCode(() -> service.criar(dto)).doesNotThrowAnyException();
+    }
+
+    @Test
+    @DisplayName("V112: faixas sobrepostas (nao identicas) com mesmo profissional sao aceitas")
+    void faixasSobrepostasSaoAceitas() {
+        Profissional dr = profissional(7L);
+        when(cotaRepository.findByUnidadeId(UNIDADE_ID)).thenReturn(List.of(
+                cotaDataExistente(dr, null, java.time.LocalTime.of(8, 0), java.time.LocalTime.of(12, 0))));
+
+        var dto = dtoComEspelho(7L, null, false, null,
+                java.time.LocalTime.of(10, 0), java.time.LocalTime.of(14, 0), LocalDate.of(2026, 6, 1));
+
+        assertThatCode(() -> service.criar(dto)).doesNotThrowAnyException();
+    }
+
+    @Test
+    @DisplayName("V112: faixa de horario identica (mesmo profissional/local) continua recusada com 400")
+    void faixaIdenticaERecusada() {
+        Profissional dr = profissional(7L);
+        when(cotaRepository.findByUnidadeId(UNIDADE_ID)).thenReturn(List.of(
+                cotaDataExistente(dr, null, java.time.LocalTime.of(8, 0), java.time.LocalTime.of(12, 0))));
+
+        var dto = dtoComEspelho(7L, null, false, null,
+                java.time.LocalTime.of(8, 0), java.time.LocalTime.of(12, 0), LocalDate.of(2026, 6, 1));
+
+        assertThatThrownBy(() -> service.criar(dto))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Ja existe cota");
+    }
+
+    @Test
+    @DisplayName("V112: mesmo profissional com local diferente e aceito")
+    void mesmoProfissionalLocalDiferenteEAceito() {
+        Profissional dr = profissional(7L);
+        LocalAgendamento l1 = new LocalAgendamento();
+        l1.setId(3L);
+        local(4L);
+        when(cotaRepository.findByUnidadeId(UNIDADE_ID)).thenReturn(List.of(cotaDataExistente(dr, l1, null, null)));
+
+        var dto = dtoComEspelho(7L, 4L, false, null, null, null, LocalDate.of(2026, 6, 1));
+
+        assertThatCode(() -> service.criar(dto)).doesNotThrowAnyException();
+    }
+
+    @Test
+    @DisplayName("V112: cotas so com local diferente (sem profissional) sao aceitas")
+    void soLocalDiferenteSemProfissionalEAceito() {
+        LocalAgendamento l1 = new LocalAgendamento();
+        l1.setId(3L);
+        local(4L);
+        when(cotaRepository.findByUnidadeId(UNIDADE_ID)).thenReturn(List.of(cotaDataExistente(null, l1, null, null)));
+
+        var dto = dtoComEspelho(null, 4L, false, null, null, null, LocalDate.of(2026, 6, 1));
+
+        assertThatCode(() -> service.criar(dto)).doesNotThrowAnyException();
+    }
+
+    @Test
+    @DisplayName("V112: cota especifica nao convive com cota geral na mesma data (409)")
+    void especificaComGeralExistenteE409() {
+        profissional(7L);
+        when(cotaRepository.findByUnidadeId(UNIDADE_ID)).thenReturn(List.of(
+                cotaDataExistente(null, null, null, null)));
+
+        var dto = dtoComEspelho(7L, null, false, null,
+                java.time.LocalTime.of(8, 0), java.time.LocalTime.of(12, 0), LocalDate.of(2026, 6, 1));
+
+        assertThatThrownBy(() -> service.criar(dto))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("cota geral");
+    }
+
+    @Test
+    @DisplayName("V112: cota geral nao convive com cota especifica na mesma data (409)")
+    void geralComEspecificaExistenteE409() {
+        Profissional dr = profissional(7L);
+        when(cotaRepository.findByUnidadeId(UNIDADE_ID)).thenReturn(List.of(
+                cotaDataExistente(dr, null, java.time.LocalTime.of(8, 0), java.time.LocalTime.of(12, 0))));
+
+        var dto = dtoComEspelho(null, null, false, null, null, null, LocalDate.of(2026, 6, 1));
+
+        assertThatThrownBy(() -> service.criar(dto))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("cotas especificas");
+    }
+
+    @Test
+    @DisplayName("V112: editar so a quantidade de cota que ja convive com outra de classe diferente e aceito")
+    void editarSoQuantidadeNaoRevalidaClasse() {
+        Profissional dr = profissional(7L);
+        CotaUnidade geral = cotaDataExistente(null, null, null, null);
+        CotaUnidade especifica = cotaDataExistente(dr, null,
+                java.time.LocalTime.of(8, 0), java.time.LocalTime.of(12, 0));
+        especifica.setId(2L);
+        when(cotaRepository.findById(2L)).thenReturn(Optional.of(especifica));
+        when(cotaRepository.findByUnidadeId(UNIDADE_ID)).thenReturn(List.of(geral, especifica));
+
+        var dto = new CotaUnidadeUpdateDTO(UNIDADE_ID, null, HEMOGRAMA_ID, null, TipoPeriodoCota.DATA, null,
+                LocalDate.of(2026, 6, 1), 9, true, 7L, null, false, null,
+                java.time.LocalTime.of(8, 0), java.time.LocalTime.of(12, 0), null);
+
+        assertThatCode(() -> service.atualizar(2L, dto)).doesNotThrowAnyException();
+    }
+
+    @Test
+    @DisplayName("V112: cota so-local legada convivendo com cota com profissional nao exige escolha (comportamento anterior)")
+    void resolverCotaComProfissionalIgnoraSoLocalLegada() {
+        Profissional dr = profissional(7L);
+        LocalAgendamento l1 = new LocalAgendamento();
+        l1.setId(3L);
+        CotaUnidade soLocal = cotaDataExistente(null, l1, null, null);
+        soLocal.setId(11L);
+        CotaUnidade comProf = cotaDataExistente(dr, null, null, null);
+        comProf.setId(12L);
+        when(cotaRepository.buscarCotasAplicaveis(any(), any(), any(), any(), any(), any()))
+                .thenReturn(List.of(soLocal, comProf));
+
+        CotaUnidade resolvida = service.resolverCotaParaAgendamento(
+                UNIDADE_ID, HEMOGRAMA_ID, LocalDate.of(2026, 6, 1), null, null, null);
+
+        assertThat(resolvida.getId()).isEqualTo(12L);
+    }
+
+    @Test
+    @DisplayName("V112: com duas cotas irmas, o local do agendamento escolhe a cota")
+    void resolverCasaPorLocal() {
+        LocalAgendamento l1 = new LocalAgendamento();
+        l1.setId(3L);
+        LocalAgendamento l2 = new LocalAgendamento();
+        l2.setId(4L);
+        CotaUnidade c1 = cotaDataExistente(null, l1, null, null);
+        c1.setId(11L);
+        CotaUnidade c2 = cotaDataExistente(null, l2, null, null);
+        c2.setId(12L);
+        when(cotaRepository.buscarCotasAplicaveis(any(), any(), any(), any(), any(), any()))
+                .thenReturn(List.of(c1, c2));
+
+        CotaUnidade resolvida = service.resolverCotaParaAgendamento(
+                UNIDADE_ID, HEMOGRAMA_ID, LocalDate.of(2026, 6, 1), null, 4L, null);
+
+        assertThat(resolvida.getId()).isEqualTo(12L);
+    }
+
+    @Test
+    @DisplayName("V112: com cotas irmas e nenhum local casando, o agendamento e recusado com 409")
+    void resolverSemCasamentoE409() {
+        LocalAgendamento l1 = new LocalAgendamento();
+        l1.setId(3L);
+        LocalAgendamento l2 = new LocalAgendamento();
+        l2.setId(4L);
+        CotaUnidade c1 = cotaDataExistente(null, l1, null, null);
+        c1.setId(11L);
+        CotaUnidade c2 = cotaDataExistente(null, l2, null, null);
+        c2.setId(12L);
+        when(cotaRepository.buscarCotasAplicaveis(any(), any(), any(), any(), any(), any()))
+                .thenReturn(List.of(c1, c2));
+
+        assertThatThrownBy(() -> service.resolverCotaParaAgendamento(
+                UNIDADE_ID, HEMOGRAMA_ID, LocalDate.of(2026, 6, 1), null, 99L, null))
+                .isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    @DisplayName("V112: a hora do item escolhe a cota cuja faixa a contem")
+    void resolverCasaPorHora() {
+        CotaUnidade manha = cotaDataExistente(null, null,
+                java.time.LocalTime.of(8, 0), java.time.LocalTime.of(12, 0));
+        manha.setId(11L);
+        CotaUnidade tarde = cotaDataExistente(null, null,
+                java.time.LocalTime.of(14, 0), java.time.LocalTime.of(18, 0));
+        tarde.setId(12L);
+        when(cotaRepository.buscarCotasAplicaveis(any(), any(), any(), any(), any(), any()))
+                .thenReturn(List.of(manha, tarde));
+
+        CotaUnidade resolvida = service.resolverCotaParaAgendamento(
+                UNIDADE_ID, HEMOGRAMA_ID, LocalDate.of(2026, 6, 1), null, null, java.time.LocalTime.of(15, 0));
+
+        assertThat(resolvida.getId()).isEqualTo(12L);
+    }
 }

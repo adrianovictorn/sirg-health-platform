@@ -542,4 +542,34 @@ class CotaUnidadeIntegracaoIT {
                 .as("segunda cota MENSAL do mesmo escopo/periodo, com profissional diferente, deveria ser aceita")
                 .doesNotThrowAnyException();
     }
+
+    /**
+     * V112: local e faixa de horario entram nos indices uk_cota_data/uk_cota_mensal.
+     * Mesmo profissional, mesmo escopo e mesma data, com faixas de horario diferentes,
+     * sao aceitos pelo banco; a faixa identica continua recusada.
+     */
+    @Test
+    @DisplayName("BANCO REAL (V112): mesmo profissional/data com faixas de horario diferentes sao aceitas; identica e recusada")
+    void cotasIrmasDeFaixasDiferentesNoMesmoDiaSaoAceitas() {
+        Profissional dr = novoProfissional("Dr. Irmas");
+        java.time.LocalDate dia = java.time.LocalDate.now().plusDays(10);
+
+        CotaUnidadeCreateDTO manha = new CotaUnidadeCreateDTO(
+                unidade.getId(), null, cardiologia.getId(), null,
+                TipoPeriodoCota.DATA, null, dia, 5,
+                dr.getId(), null, false, null,
+                java.time.LocalTime.of(8, 0), java.time.LocalTime.of(12, 0), null);
+        CotaUnidadeCreateDTO tarde = new CotaUnidadeCreateDTO(
+                unidade.getId(), null, cardiologia.getId(), null,
+                TipoPeriodoCota.DATA, null, dia, 5,
+                dr.getId(), null, false, null,
+                java.time.LocalTime.of(14, 0), java.time.LocalTime.of(18, 0), null);
+
+        assertThatCode(() -> service.criar(manha)).doesNotThrowAnyException();
+        assertThatCode(() -> service.criar(tarde))
+                .as("mesma data/profissional, faixa de horario diferente, deveria ser aceita")
+                .doesNotThrowAnyException();
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.criar(manha))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
 }

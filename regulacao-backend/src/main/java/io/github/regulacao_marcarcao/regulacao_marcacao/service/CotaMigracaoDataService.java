@@ -88,7 +88,8 @@ public class CotaMigracaoDataService {
 
     /** Escalares da cota, copiados antes de qualquer bulk update (que desanexa as entidades). */
     private record Cota(Long id, Long unidadeId, Long grupoUnidadesId, Long especialidadeId,
-            Long grupoEspecialidadesId, Long profissionalId, int total, int utilizada, LocalDate data) {
+            Long grupoEspecialidadesId, Long profissionalId, Long localId, java.time.LocalTime horaInicial,
+            java.time.LocalTime horaFinal, int total, int utilizada, LocalDate data) {
 
         static Cota de(CotaUnidade c) {
             return new Cota(c.getId(),
@@ -97,6 +98,8 @@ public class CotaMigracaoDataService {
                     c.getEspecialidade() != null ? c.getEspecialidade().getId() : null,
                     c.getGrupoEspecialidades() != null ? c.getGrupoEspecialidades().getId() : null,
                     c.getProfissionalExecutante() != null ? c.getProfissionalExecutante().getId() : null,
+                    c.getLocalAgendamento() != null ? c.getLocalAgendamento().getId() : null,
+                    c.getHoraInicial(), c.getHoraFinal(),
                     c.getQuantidadeTotal(), c.getQuantidadeUtilizada(), c.getDataEspecifica());
         }
     }
@@ -290,18 +293,39 @@ public class CotaMigracaoDataService {
                 ? cotaRepository.findByUnidadeId(c.unidadeId())
                 : cotaRepository.findByGrupoUnidadesId(c.grupoUnidadesId());
 
-        CotaUnidade destino = doTitular.stream()
+        List<CotaUnidade> mesmaChaveBase = doTitular.stream()
                 .filter(o -> !o.getId().equals(c.id()))
                 .filter(o -> o.getTipoPeriodo() == TipoPeriodoCota.DATA && novaData.equals(o.getDataEspecifica()))
                 .filter(o -> Objects.equals(c.especialidadeId(),
                         o.getEspecialidade() != null ? o.getEspecialidade().getId() : null))
                 .filter(o -> Objects.equals(c.grupoEspecialidadesId(),
                         o.getGrupoEspecialidades() != null ? o.getGrupoEspecialidades().getId() : null))
+                .toList();
+
+        // V112: local e faixa de horario entram na chave — cotas irmas (outro local/horario)
+        // nao sao unificadas por engano.
+        CotaUnidade destino = mesmaChaveBase.stream()
                 .filter(o -> Objects.equals(c.profissionalId(),
                         o.getProfissionalExecutante() != null ? o.getProfissionalExecutante().getId() : null))
+                .filter(o -> Objects.equals(c.localId(),
+                        o.getLocalAgendamento() != null ? o.getLocalAgendamento().getId() : null))
+                .filter(o -> Objects.equals(c.horaInicial(), o.getHoraInicial())
+                        && Objects.equals(c.horaFinal(), o.getHoraFinal()))
                 .findFirst()
                 .orElse(null);
         if (destino == null) {
+            // V112: geral x especifica nao convivem na mesma data (regra do cadastro).
+            boolean origemEspecifica = c.profissionalId() != null || c.localId() != null
+                    || c.horaInicial() != null;
+            boolean classeOposta = mesmaChaveBase.stream()
+                    .anyMatch(o -> CotaUnidadeService.ehEspecifica(o) != origemEspecifica);
+            if (classeOposta) {
+                throw new IllegalStateException(origemEspecifica
+                        ? "Na data de destino ja existe cota geral (sem profissional, local e horario); "
+                                + "ela nao pode conviver com uma cota especifica."
+                        : "Na data de destino ja existem cotas especificas (com profissional, local ou "
+                                + "horario); uma cota geral nao pode conviver com elas.");
+            }
             return null;
         }
         if (destino.getOrigem() == OrigemCotaEnum.AGENDA) {
@@ -376,6 +400,9 @@ public class CotaMigracaoDataService {
                 && Objects.equals(a.especialidadeId(), b.especialidadeId())
                 && Objects.equals(a.grupoEspecialidadesId(), b.grupoEspecialidadesId())
                 && Objects.equals(a.profissionalId(), b.profissionalId())
+                && Objects.equals(a.localId(), b.localId())
+                && Objects.equals(a.horaInicial(), b.horaInicial())
+                && Objects.equals(a.horaFinal(), b.horaFinal())
                 && Objects.equals(a.data(), b.data());
     }
 
