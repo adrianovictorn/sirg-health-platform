@@ -384,7 +384,7 @@ class AtendimentoDesfechoIT {
     }
 
     @Test
-    @DisplayName("Depois de devolvido: nao devolve de novo, o executante nao desfaz, e o item novo agenda consumindo outra vaga")
+    @DisplayName("Depois de devolvido: nao devolve de novo, o executante nao desfaz, e o item novo agenda (na mesma cota, sem nova vaga)")
     void depoisDeDevolvido() {
         Long id = agendar(hemograma);
         service.cancelar(id, new AtendimentoCancelamentoDTO("aparelho quebrado"), executante.getCpf());
@@ -407,7 +407,9 @@ class AtendimentoDesfechoIT {
         assertThat(antigo.getDevolvidoComo().getStatus()).isEqualTo(StatusDaMarcacao.AGENDADO);
         assertThat(antigo.getDevolvidoComo().getAgendamentoSolicitacao().getId())
                 .isNotEqualTo(antigo.getAgendamentoSolicitacao().getId());
-        assertThat(utilizada(cotaHemograma)).isEqualTo(2);
+        // V113: a cota e por solicitacao — reagendado na mesma cota (mensal), o item
+        // novo nao consome: a vaga do atendimento perdido ja e desta solicitacao.
+        assertThat(utilizada(cotaHemograma)).isEqualTo(1);
     }
 
     @Test

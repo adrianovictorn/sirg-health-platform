@@ -109,6 +109,18 @@ public interface SolicitacaoEspecialidadeRepository extends JpaRepository<Solici
     @Query("SELECT se FROM SolicitacaoEspecialidade se WHERE se.id = :id")
     Optional<SolicitacaoEspecialidade> findByIdParaAtualizar(@Param("id") Long id);
 
+    /**
+     * Horarios ja dados a solicitacao numa cota, na data (V113): na cota de horario
+     * dinamico o paciente que ja ocupa a vaga nao avanca o contador, e o item novo
+     * herda o horario dele em vez de cair no slot de outro paciente.
+     */
+    @Query("SELECT se.horaAgendada FROM SolicitacaoEspecialidade se "
+            + "WHERE se.solicitacao.id = :solicitacaoId AND se.cotaUnidade.id = :cotaId "
+            + "AND se.agendamentoSolicitacao.dataAgendada = :data AND se.horaAgendada IS NOT NULL "
+            + "ORDER BY se.id")
+    List<java.time.LocalTime> horariosDaSolicitacaoNaCota(@Param("solicitacaoId") Long solicitacaoId,
+            @Param("cotaId") Long cotaId, @Param("data") LocalDate data);
+
     /** True se algum item do agendamento ja foi devolvido a fila (tem item novo pendente ligado a ele). */
     boolean existsByAgendamentoSolicitacaoIdAndDevolvidoComoIsNotNull(Long agendamentoId);
 

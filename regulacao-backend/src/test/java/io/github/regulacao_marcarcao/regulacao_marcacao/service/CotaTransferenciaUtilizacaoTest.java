@@ -34,9 +34,11 @@ import io.github.regulacao_marcarcao.regulacao_marcacao.entity.Especialidade;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.Profissional;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.Unidade;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.enums.TipoPeriodoCota;
+import io.github.regulacao_marcarcao.regulacao_marcacao.repository.CotaConsumidoresRepository;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.CotaUnidadeRepository;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.EspecialidadeRepository;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.UnidadeRepository;
+import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.ItemAgendadoSolicitacaoProjection;
 import io.github.regulacao_marcarcao.regulacao_marcacao.service.CotaUnidadeService.TransferenciaItem;
 
 /**
@@ -57,6 +59,7 @@ class CotaTransferenciaUtilizacaoTest {
     @Mock private CotaUnidadeRepository cotaRepository;
     @Mock private UnidadeRepository unidadeRepository;
     @Mock private EspecialidadeRepository especialidadeRepository;
+    @Mock private CotaConsumidoresRepository consumidoresRepository;
 
     @InjectMocks private CotaUnidadeService service;
 
@@ -133,6 +136,47 @@ class CotaTransferenciaUtilizacaoTest {
 
         verify(cotaRepository, times(2)).devolverVaga(1L);
         verify(cotaRepository, times(2)).consumirVaga(2L);
+    }
+
+    @Test
+    @DisplayName("V113: dois itens da mesma solicitacao contam uma vaga so (devolve 1, consome 1)")
+    void itensDaMesmaSolicitacaoContamUmaVaga() {
+        CotaUnidade maio = cota(1L, TipoPeriodoCota.MENSAL, false);
+        CotaUnidade junho = cota(2L, TipoPeriodoCota.MENSAL, false);
+        junho.setPeriodo("2026-06");
+        aplicaveis(ORIGEM, maio);
+        aplicaveis(OUTRO_MES, junho);
+
+        service.transferirUtilizacao(List.of(
+                new TransferenciaItem(UNIDADE, ESPECIALIDADE, ORIGEM, OUTRO_MES, null, 50L, 500L),
+                new TransferenciaItem(UNIDADE, ESPECIALIDADE, ORIGEM, OUTRO_MES, null, 50L, 500L)), Set.of(99L));
+
+        verify(cotaRepository, times(1)).devolverVaga(1L);
+        verify(cotaRepository, times(1)).consumirVaga(2L);
+    }
+
+    @Test
+    @DisplayName("V113: cota que a solicitacao continua ocupando por outro agendamento nao e devolvida nem consumida")
+    void cotaOcupadaPorOutroAgendamentoNaoMexe() {
+        CotaUnidade maio = cota(1L, TipoPeriodoCota.MENSAL, false);
+        CotaUnidade junho = cota(2L, TipoPeriodoCota.MENSAL, false);
+        junho.setPeriodo("2026-06");
+        aplicaveis(ORIGEM, maio);
+        aplicaveis(OUTRO_MES, junho);
+        // A solicitacao 50 tem outro agendamento (600), que nao migra, em junho.
+        ItemAgendadoSolicitacaoProjection outro = org.mockito.Mockito.mock(ItemAgendadoSolicitacaoProjection.class);
+        lenient().when(outro.getItemId()).thenReturn(7L);
+        lenient().when(outro.getAgendamentoId()).thenReturn(600L);
+        lenient().when(outro.getEspecialidadeId()).thenReturn(ESPECIALIDADE);
+        lenient().when(outro.getCotaUnidadeId()).thenReturn(null); // o mock devolveria 0L
+        lenient().when(outro.getDataAgendada()).thenReturn(OUTRO_MES);
+        lenient().when(consumidoresRepository.itensAgendadosDaSolicitacao(50L)).thenReturn(List.of(outro));
+
+        service.transferirUtilizacao(List.of(
+                new TransferenciaItem(UNIDADE, ESPECIALIDADE, ORIGEM, OUTRO_MES, null, 50L, 500L)), Set.of(99L));
+
+        verify(cotaRepository).devolverVaga(1L);
+        verify(cotaRepository, never()).consumirVaga(anyLong());
     }
 
     @Test

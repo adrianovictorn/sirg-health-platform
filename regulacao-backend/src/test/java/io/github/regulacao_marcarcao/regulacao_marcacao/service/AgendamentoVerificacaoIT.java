@@ -139,8 +139,8 @@ class AgendamentoVerificacaoIT {
     }
 
     @Test
-    @DisplayName("dois itens disputando a ultima vaga da cota de grupo: so o primeiro entra")
-    void doisItensDisputandoAMesmaCota() {
+    @DisplayName("V113: dois itens da mesma solicitacao na ultima vaga da cota de grupo: ambos entram (1 vaga por paciente)")
+    void doisItensDaMesmaSolicitacaoNaUltimaVaga() {
         GrupoRelatorio lab = grupo("LAB");
         Especialidade a = especialidade("A", lab, 0);
         Especialidade b = especialidade("B", lab, 0);
@@ -149,16 +149,13 @@ class AgendamentoVerificacaoIT {
 
         AgendamentoVerificacaoDTO resultado = verificar(s, operador, a, b);
 
-        assertThat(resultado.itens()).extracting(ItemVerificadoDTO::podeAgendar).containsExactly(true, false);
-        assertThat(resultado.itens().get(1).motivo()).contains("outro item do mesmo lote");
+        assertThat(resultado.itens()).allMatch(ItemVerificadoDTO::podeAgendar);
 
-        // Paridade: o primeiro entra e, com a vaga tomada, o segundo e barrado.
+        // Paridade: o primeiro ocupa a vaga e o segundo, da mesma solicitacao, entra sem consumir.
         assertThatCode(() -> agendar(s, operador, a)).doesNotThrowAnyException();
         entityManager.flush();
         entityManager.clear();
-        assertThatThrownBy(() -> agendar(s, operador, b))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("Cota esgotada");
+        assertThatCode(() -> agendar(s, operador, b)).doesNotThrowAnyException();
     }
 
     @Test

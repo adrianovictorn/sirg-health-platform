@@ -531,8 +531,23 @@ parciais. Em vez disso há **um índice por tipo de período** sobre a chave int
 ### 3.15.1 Regra de consumo de cota
 
 A cota limita **o agendamento** (não o cadastro da solicitação): o consumo acontece em
-`AgendamentoService.criarAgendamentoParaMultiplosExames`, uma vaga por especialidade
-agendada, na unidade da solicitação e na data do agendamento.
+`AgendamentoService.criarAgendamentoParaMultiplosExames`, na unidade da solicitação e na
+data do agendamento.
+
+**Uma vaga por solicitação (paciente), não por item (V113).** Uma solicitação ocupa no
+máximo **uma vaga de cada cota** que incide sobre ela, quantos exames/especialidades forem
+agendados nessa cota — num lote só ou em agendamentos separados (cota MENSAL: uma vaga no
+mês). Duas solicitações do mesmo paciente são duas vagas. Quais cotas a solicitação já
+ocupa é **derivado** dos itens agendados dela
+(`CotaUnidadeService.cotasOcupadasPelaSolicitacao`): pela FK `cota_unidade_id` quando o
+item tem cota fixada (e o agendamento cai no período da cota), senão pelas cotas gerais
+aplicáveis. Itens CANCELADO/FALTOU/REALIZADO continuam ocupando. O estorno
+(`estornarCotasDesocupadas`, usado ao excluir agendamento e ao remover da ficha um item
+AGENDADO) devolve a vaga só quando sai o **último** item da solicitação naquela cota.
+Agendar e estornar travam a linha da solicitação (`SolicitacaoRepository.findByIdParaAtualizar`)
+para dois POSTs simultâneos da mesma ficha não consumirem duas vagas. O **teto financeiro
+continua por item** (cada exame tem seu preço). Na cota de horário dinâmico, os itens da
+mesma solicitação no mesmo lote recebem o mesmo horário.
 
 **Quais cotas incidem.** Todas as combinações de titular × escopo que se aplicam ao caso
 e estão ativas, em ambos os tipos de período:
