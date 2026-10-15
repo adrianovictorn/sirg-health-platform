@@ -142,9 +142,12 @@ public class CotaMigracaoDataService {
         int federadas = (int) itens.stream()
                 .filter(i -> externo(i, localId)).map(ItemMigracaoProjection::getSolicitacaoId).distinct().count();
 
+        // V113: a cota conta solicitacoes, nao itens.
+        long solicitacoesConsumidoras = consumidores.stream()
+                .map(ConsumidorCotaProjection::getSolicitacaoId).distinct().count();
         return new CotaMigracaoDataPreviaDTO(
                 agendamentoIds.size(), itens.size(), agendados, realizados, canceladosOuFaltosos,
-                c.utilizada(), consumidores.size() != c.utilizada(),
+                c.utilizada(), solicitacoesConsumidoras != c.utilizada(),
                 destino != null, destino != null ? destino.total() : null, destino != null ? destino.utilizada() : null,
                 federadas);
     }
@@ -173,11 +176,14 @@ public class CotaMigracaoDataService {
         }
         ordem.sort(null);
         CotaUnidade cota = null;
+        CotaUnidade destinoTravado = null;
         for (Long id : ordem) {
             CotaUnidade travada = cotaRepository.findByIdParaMigracao(id).orElseThrow(() ->
                     new IllegalStateException("A cota foi alterada por outro usuario. Recarregue e tente de novo."));
             if (id.equals(cotaId)) {
                 cota = travada;
+            } else {
+                destinoTravado = travada;
             }
         }
 
@@ -209,6 +215,11 @@ public class CotaMigracaoDataService {
         // 7. Capacidade global da especialidade na data nova (mesma regra de AgendamentoService).
         validarCapacidadeGlobal(itens, novaData);
 
+        // 7.1 V113: a cota e consumida por solicitacao. Na unificacao, a solicitacao que ja
+        // ocupa as duas cotas passa a ocupar uma so — nao soma duas vezes. Lido aqui, antes
+        // do absorver (que limpa o contexto de persistencia).
+        int solicitacoesEmComum = destinoTravado != null ? solicitacoesEmComum(cota, destinoTravado) : 0;
+
         // 8. Move a cota.
         if (destino == null) {
             cota.setDataEspecifica(novaData);
@@ -218,7 +229,8 @@ public class CotaMigracaoDataService {
                 throw new IllegalStateException("Ja existe cota cadastrada para esse titular, escopo e periodo.");
             }
         } else {
-            cotaRepository.absorver(destino.id(), c.total(), c.utilizada());
+            cotaRepository.absorver(destino.id(), c.total(),
+                    c.utilizada() - Math.min(c.utilizada(), solicitacoesEmComum));
             solicitacaoEspecialidadeRepository.repontarCota(c.id(), destino.id());
             cotaRepository.deleteById(c.id());
         }
@@ -231,7 +243,8 @@ public class CotaMigracaoDataService {
         }
         List<TransferenciaItem> transferencias = itens.stream()
                 .map(i -> new TransferenciaItem(i.getUnidadeId(), i.getEspecialidadeId(),
-                        i.getDataAgendada(), novaData, i.getCotaUnidadeId()))
+                        i.getDataAgendada(), novaData, i.getCotaUnidadeId(),
+                        i.getSolicitacaoId(), i.getAgendamentoId()))
                 .toList();
         cotaUnidadeService.transferirUtilizacao(transferencias, viajantes);
 
@@ -265,6 +278,17 @@ public class CotaMigracaoDataService {
     // ------------------------------------------------------------------
     // Auxiliares
     // ------------------------------------------------------------------
+
+    /** Quantas solicitacoes consomem as duas cotas (V113: cada uma ocupa 1 vaga em cada). */
+    private int solicitacoesEmComum(CotaUnidade origem, CotaUnidade destino) {
+        Set<Long> daOrigem = new HashSet<>();
+        cotaUnidadeService.consumidoresDe(origem).forEach(k -> daOrigem.add(k.getSolicitacaoId()));
+        Set<Long> doDestino = new HashSet<>();
+        cotaUnidadeService.consumidoresDe(destino).forEach(k -> doDestino.add(k.getSolicitacaoId()));
+        daOrigem.retainAll(doDestino);
+        daOrigem.remove(null);
+        return daOrigem.size();
+    }
 
     /** Recusas que valem para a previa e para a migracao (passos 2 e 3). */
     private void validarPedido(CotaUnidade cota, LocalDate novaData) {

@@ -10,6 +10,7 @@ import org.springframework.data.repository.query.Param;
 
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.CotaUnidade;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.ConsumidorCotaProjection;
+import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.ItemAgendadoSolicitacaoProjection;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.ItemMigracaoProjection;
 
 /**
@@ -34,7 +35,8 @@ public interface CotaConsumidoresRepository extends Repository<CotaUnidade, Long
      * em OUTRA data.
      */
     @Query(value = """
-            SELECT se.id AS itemId, se.agendamento_id AS agendamentoId, ag.data_agendada AS dataAgendada
+            SELECT se.id AS itemId, se.agendamento_id AS agendamentoId, ag.data_agendada AS dataAgendada,
+                   se.solicitacao_id AS solicitacaoId
             FROM solicitacao_especialidade se
             JOIN agendamento_solicitacao ag ON ag.id = se.agendamento_id
             WHERE se.cota_unidade_id = :cotaId
@@ -52,7 +54,8 @@ public interface CotaConsumidoresRepository extends Repository<CotaUnidade, Long
      * o mes inteiro para MENSAL).
      */
     @Query(value = """
-            SELECT se.id AS itemId, se.agendamento_id AS agendamentoId, ag.data_agendada AS dataAgendada
+            SELECT se.id AS itemId, se.agendamento_id AS agendamentoId, ag.data_agendada AS dataAgendada,
+                   se.solicitacao_id AS solicitacaoId
             FROM solicitacao_especialidade se
             JOIN agendamento_solicitacao ag ON ag.id = se.agendamento_id
             JOIN solicitacao s ON s.id = se.solicitacao_id
@@ -74,6 +77,23 @@ public interface CotaConsumidoresRepository extends Repository<CotaUnidade, Long
             @Param("grupoEspecialidadesId") Long grupoEspecialidadesId,
             @Param("dataDe") LocalDate dataDe,
             @Param("dataAte") LocalDate dataAte);
+
+    /**
+     * Itens agendados de uma solicitacao (V113): de onde se deriva quais cotas ela
+     * ja ocupa. Inclui CANCELADO/FALTOU/REALIZADO — mudar o status nao devolve a vaga.
+     */
+    @Query(value = """
+            SELECT se.id                AS itemId,
+                   se.agendamento_id    AS agendamentoId,
+                   se.especialidade_id  AS especialidadeId,
+                   se.cota_unidade_id   AS cotaUnidadeId,
+                   ag.data_agendada     AS dataAgendada
+            FROM solicitacao_especialidade se
+            JOIN agendamento_solicitacao ag ON ag.id = se.agendamento_id
+            WHERE se.solicitacao_id = :solicitacaoId
+            ORDER BY se.id
+            """, nativeQuery = true)
+    List<ItemAgendadoSolicitacaoProjection> itensAgendadosDaSolicitacao(@Param("solicitacaoId") Long solicitacaoId);
 
     /** TODOS os itens dos agendamentos — o agendamento migra inteiro, com todos os exames. */
     @Query(value = """

@@ -76,6 +76,7 @@ public class SolicitacaoService {
     private final UnidadeAcessoService unidadeAcessoService;
     private final FilaEsperaService filaEsperaService;
     private final TetoFinanceiroService tetoFinanceiroService;
+    private final CotaUnidadeService cotaUnidadeService;
 
     // Delega ao UnidadeAcessoService, que concentra a regra de segregação por unidade
     // (inclusive o perfil ADMIN_UNIDADE, restrito à própria unidade de lotação).
@@ -592,7 +593,8 @@ public class SolicitacaoService {
      * de cota e o teto do atendimento perdido, e segue nos relatorios. Por isso
      * este metodo nao chama cota nem teto e nao publica evento. O item novo entra
      * na fila com a data de cadastro do antigo — o paciente nao perde a posicao —
-     * e e agendado depois pelo fluxo normal, consumindo vaga e teto novos.
+     * e e agendado depois pelo fluxo normal, debitando teto novo. Cota (V113): e
+     * por solicitacao — so consome vaga nova se cair numa cota que ela ainda nao ocupa.
      */
     @Transactional
     public SolicitacaoViewDTO devolverItemAFila(Long itemId, String callerCpf) {
@@ -654,9 +656,27 @@ public class SolicitacaoService {
         // antes de sumir — depois da exclusao nao ha mais como saber o que estornar.
         // So AGENDADO: falta (CANCELADO) e procedimento REALIZADO mantem o teto e o
         // valor gravados no item, e remove-los nao pode devolver saldo a unidade.
-        if (se.getStatus() == StatusDaMarcacao.AGENDADO
-                && se.getTetoFinanceiro() != null && se.getValorUnitarioAgendado() != null) {
-            tetoFinanceiroService.estornar(se.getTetoFinanceiro().getId(), se.getValorUnitarioAgendado());
+        // Cota (V113): mesma regra — so AGENDADO. A cota e consumida por solicitacao:
+        // a vaga volta so se este for o ultimo item dela naquela cota. Ids lidos antes
+        // de qualquer estorno (o devolverVaga limpa o contexto de persistencia).
+        boolean estornaCota = se.getStatus() == StatusDaMarcacao.AGENDADO
+                && se.getAgendamentoSolicitacao() != null
+                && se.getSolicitacao() != null && se.getSolicitacao().getUnidade() != null;
+        Long solicitacaoId = se.getSolicitacao() != null ? se.getSolicitacao().getId() : null;
+        Long unidadeId = estornaCota ? se.getSolicitacao().getUnidade().getId() : null;
+        // Trava a solicitacao ANTES do teto: mesma ordem do agendamento (solicitacao,
+        // cota, teto) — a ordem inversa abriria deadlock com um agendamento concorrente.
+        if (estornaCota) {
+            solicitacaoRepository.findByIdParaAtualizar(solicitacaoId);
+        }
+        Long tetoId = se.getTetoFinanceiro() != null ? se.getTetoFinanceiro().getId() : null;
+        java.math.BigDecimal valorAgendado = se.getValorUnitarioAgendado();
+        boolean estornaTeto = se.getStatus() == StatusDaMarcacao.AGENDADO && tetoId != null && valorAgendado != null;
+        if (estornaCota) {
+            cotaUnidadeService.estornarCotasDesocupadas(solicitacaoId, unidadeId, Set.of(), Set.of(id));
+        }
+        if (estornaTeto) {
+            tetoFinanceiroService.estornar(tetoId, valorAgendado);
         }
         especialidadeRepository.deleteById(id);
     }

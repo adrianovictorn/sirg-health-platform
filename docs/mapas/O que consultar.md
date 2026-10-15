@@ -38,10 +38,11 @@ O motor de saldo é a regra mais sensível do sistema, e está em produção tes
 [[05 - Fluxos do Sistema]] §5.3 e §5.3b | O fluxo de consumo e o de estorno, em texto |
 `entity/CotaUnidade.java` | `@Version` — *optimistic locking*. Duas marcações simultâneas na mesma cota não podem passar as duas |
 
-Três coisas que o código não grita:
+Quatro coisas que o código não grita:
 
+- **A cota conta solicitações (pacientes), não itens (V113).** Uma solicitação ocupa uma vaga de cada cota que incide, quantos exames forem agendados nela. Quem consome passa o conjunto `cotasOcupadasPelaSolicitacao` para `incrementarUtilizacao`; quem estorna usa `estornarCotasDesocupadas` (devolve só quando sai o último item da solicitação na cota). Ver o ADR [[0014-cota-consumida-por-solicitacao]].
 - **Só cota com profissional tem FK no item** (`solicitacao_especialidade.cota_unidade_id`). Cota sem profissional consome sem registrar qual cota foi; quem precisa saber "quais agendamentos consomem esta cota" reconstrói por incidência (titular, escopo, data) em `CotaConsumidoresRepository` — e isso inclui agendamentos de ADMIN/GESTOR, que não consomem.
-- **Mudança de status não estorna cota.** CANCELADO e FALTOU continuam ocupando a vaga; só excluir o agendamento devolve.
+- **Mudança de status não estorna cota.** CANCELADO e FALTOU continuam ocupando a vaga; só excluir o agendamento (ou remover da ficha um item AGENDADO, V113) devolve.
 - **Mudar a data de uma cota com agendamentos passa por `CotaMigracaoDataService`**, nunca por `PUT /api/cotas/{id}` (que devolve 409). Não mexa na data de `cota_unidade` por fora: os agendamentos ficariam na data antiga e os contadores das outras cotas errados. Ver §3.15e e o ADR [[0008-migracao-de-agendamentos-ao-mudar-data-da-cota]].
 
 Cota esgotada é `IllegalStateException` → **409** via `GlobalExceptionHandler`, e a tela lê o campo `message`. Devolver 500 aqui equivale a esconder o motivo do bloqueio do operador.

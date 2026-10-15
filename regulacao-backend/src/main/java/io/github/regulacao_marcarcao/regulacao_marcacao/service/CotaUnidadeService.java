@@ -4,8 +4,10 @@ import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.YearMonth;
 import java.time.format.DateTimeFormatter;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -37,6 +39,7 @@ import io.github.regulacao_marcarcao.regulacao_marcacao.repository.LocalAgendame
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.ProfissionalRepository;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.UnidadeRepository;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.ConsumidorCotaProjection;
+import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.ItemAgendadoSolicitacaoProjection;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 
@@ -630,10 +633,25 @@ public class CotaUnidadeService {
      */
     @Transactional
     public void incrementarUtilizacao(Long unidadeId, Long especialidadeId, LocalDate dataAtual, Long cotaFixadaId) {
+        incrementarUtilizacao(unidadeId, especialidadeId, dataAtual, cotaFixadaId, new HashSet<>());
+    }
+
+    /**
+     * V113: a cota e consumida por SOLICITACAO, nao por item. {@code jaOcupadas}
+     * sao as cotas que a solicitacao ja ocupa (ver {@link #cotasOcupadasPelaSolicitacao}):
+     * essas nao consomem de novo nem exigem saldo. Cada cota consumida aqui entra
+     * no conjunto, e o proximo item da mesma solicitacao passa por ela sem consumir.
+     */
+    @Transactional
+    public void incrementarUtilizacao(Long unidadeId, Long especialidadeId, LocalDate dataAtual, Long cotaFixadaId,
+            Set<Long> jaOcupadas) {
         if (unidadeId == null || dataAtual == null) {
             return;
         }
         for (CotaUnidade cota : cotasParaConsumo(cotasAplicaveis(unidadeId, especialidadeId, dataAtual), cotaFixadaId)) {
+            if (jaOcupadas.contains(cota.getId())) {
+                continue;
+            }
             if (cotaRepository.consumirVaga(cota.getId()) == 0) {
                 // Nenhuma linha atualizada: saldo esgotado.
                 //
@@ -646,14 +664,85 @@ public class CotaUnidadeService {
                 CotaUnidade atual = cotaRepository.findById(cota.getId()).orElse(cota);
                 throw new IllegalStateException(mensagemEsgotada(atual));
             }
+            jaOcupadas.add(cota.getId());
         }
+    }
+
+    /**
+     * Cotas que a solicitacao ja ocupa (V113), derivadas dos itens dela que estao
+     * agendados — com o mesmo isolamento de {@link #cotasParaConsumo}:
+     * <ul>
+     *   <li>item com cota fixada (FK): essa cota, se o agendamento cai no periodo
+     *       atual dela (a FK pode ser velha — mesma regra de {@link #consumidoresDe});</li>
+     *   <li>item sem cota fixada: as cotas aplicaveis sem profissional.</li>
+     * </ul>
+     * Itens CANCELADO/FALTOU/REALIZADO continuam ocupando: mudar o status nao
+     * devolve vaga. Itens agendados por ADMIN/GESTOR (que nao consomem) tambem
+     * entram — a mesma imprecisao que {@link #consumidoresDe} ja aceita.
+     *
+     * @param excluirAgendamentoIds agendamentos a desconsiderar (o que esta sendo excluido/migrado)
+     * @param excluirItemIds        itens a desconsiderar (o que esta sendo removido da ficha)
+     * @return conjunto mutavel
+     */
+    @Transactional(readOnly = true)
+    public Set<Long> cotasOcupadasPelaSolicitacao(Long solicitacaoId, Long unidadeId,
+            Collection<Long> excluirAgendamentoIds, Collection<Long> excluirItemIds) {
+        Set<Long> ocupadas = new HashSet<>();
+        if (solicitacaoId == null || unidadeId == null) {
+            return ocupadas;
+        }
+        Map<String, List<CotaUnidade>> memo = new HashMap<>();
+        for (ItemAgendadoSolicitacaoProjection item : consumidoresRepository.itensAgendadosDaSolicitacao(solicitacaoId)) {
+            if (excluirAgendamentoIds.contains(item.getAgendamentoId()) || excluirItemIds.contains(item.getItemId())) {
+                continue;
+            }
+            if (item.getCotaUnidadeId() != null) {
+                cotaRepository.findById(item.getCotaUnidadeId())
+                        .filter(c -> cobreAData(c, item.getDataAgendada()))
+                        .ifPresent(c -> ocupadas.add(c.getId()));
+            } else {
+                for (CotaUnidade c : cotasParaConsumo(
+                        aplicaveisMemo(memo, unidadeId, item.getEspecialidadeId(), item.getDataAgendada()), null)) {
+                    ocupadas.add(c.getId());
+                }
+            }
+        }
+        return ocupadas;
+    }
+
+    /**
+     * Devolve a vaga das cotas que a solicitacao deixa de ocupar quando os
+     * agendamentos/itens informados saem (V113). Enquanto restar outro item dela
+     * na mesma cota, a vaga continua ocupada; sai o ultimo, volta 1 vaga.
+     * Toda a leitura acontece antes do primeiro {@code devolverVaga} (que limpa o
+     * contexto de persistencia).
+     */
+    @Transactional
+    public void estornarCotasDesocupadas(Long solicitacaoId, Long unidadeId,
+            Collection<Long> agendamentoIdsQueSaem, Collection<Long> itemIdsQueSaem) {
+        Set<Long> desocupadas = cotasOcupadasPelaSolicitacao(solicitacaoId, unidadeId, Set.of(), Set.of());
+        desocupadas.removeAll(cotasOcupadasPelaSolicitacao(solicitacaoId, unidadeId,
+                agendamentoIdsQueSaem, itemIdsQueSaem));
+        for (Long cotaId : desocupadas) {
+            cotaRepository.devolverVaga(cotaId);
+        }
+    }
+
+    private static boolean cobreAData(CotaUnidade cota, LocalDate data) {
+        if (data == null) {
+            return false;
+        }
+        if (cota.getTipoPeriodo() == TipoPeriodoCota.MENSAL) {
+            return cota.getPeriodo() != null && YearMonth.parse(cota.getPeriodo()).equals(YearMonth.from(data));
+        }
+        return data.equals(cota.getDataEspecifica());
     }
 
     /**
      * Resultado de {@link #simularConsumo}. {@code corrigivel}: a recusa vem de
      * um dado da requisicao (cota escolhida, profissional nao escolhido), e nao
      * de falta de vaga. {@code cotasAReservar}: ids das cotas que o consumo real
-     * debitaria — o chamador soma 1 em cada uma ao aceitar o item.
+     * debitaria — o chamador as junta as ja ocupadas pela solicitacao ao aceitar o item.
      */
     public record SimulacaoConsumo(boolean viavel, boolean corrigivel, String motivo, CotaUnidade cotaUsada,
             List<Long> cotasAReservar) {
@@ -665,24 +754,24 @@ public class CotaUnidadeService {
      * agendamento em lote. Mesmas cotas, mesma regra de isolamento por
      * profissional; a unica diferenca e que o saldo e lido em vez de debitado.
      *
-     * <p>{@code reservadoNoLote}: vagas ja contadas para itens anteriores do
-     * mesmo lote, por id de cota. Sem isso, dois itens que disputam a ultima
-     * vaga de uma cota de grupo pareceriam ambos viaveis. Este metodo nao altera
-     * o mapa.
+     * <p>{@code jaOcupadas} (V113): cotas que a solicitacao ja ocupa — por
+     * agendamentos anteriores ou por itens ja aceitos do mesmo lote. Essas nao
+     * exigem saldo: a cota e consumida por solicitacao, nao por item. Este metodo
+     * nao altera o conjunto.
      *
      * <p>Devolve o resultado em vez de lancar: uma excecao que atravessa o proxy
      * transacional marcaria a transacao do chamador como rollback-only.
      */
     @Transactional(readOnly = true)
     public SimulacaoConsumo simularConsumo(Long unidadeId, Long especialidadeId, LocalDate data,
-            Long cotaEscolhidaId, Map<Long, Integer> reservadoNoLote) {
-        return simularConsumo(unidadeId, especialidadeId, data, cotaEscolhidaId, reservadoNoLote, null, null);
+            Long cotaEscolhidaId, Set<Long> jaOcupadas) {
+        return simularConsumo(unidadeId, especialidadeId, data, cotaEscolhidaId, jaOcupadas, null, null);
     }
 
-    /** V112: igual a {@link #simularConsumo(Long, Long, LocalDate, Long, Map)}, casando a cota por local e hora. */
+    /** V112: igual a {@link #simularConsumo(Long, Long, LocalDate, Long, Set)}, casando a cota por local e hora. */
     @Transactional(readOnly = true)
     public SimulacaoConsumo simularConsumo(Long unidadeId, Long especialidadeId, LocalDate data,
-            Long cotaEscolhidaId, Map<Long, Integer> reservadoNoLote,
+            Long cotaEscolhidaId, Set<Long> jaOcupadas,
             Long localAgendamentoId, java.time.LocalTime hora) {
         if (unidadeId == null || data == null) {
             return new SimulacaoConsumo(true, false, null, null, List.of());
@@ -698,20 +787,18 @@ public class CotaUnidadeService {
 
         List<CotaUnidade> aConsumir = cotasParaConsumo(cotasAplicaveis(unidadeId, especialidadeId, data),
                 cotaUsada != null ? cotaUsada.getId() : null);
+        List<Long> aReservar = new java.util.ArrayList<>();
         for (CotaUnidade cota : aConsumir) {
+            if (jaOcupadas != null && jaOcupadas.contains(cota.getId())) {
+                continue;
+            }
             // Mesmo criterio do WHERE de consumirVaga: ativa e com saldo.
             if (!cota.isAtivo() || cota.getQuantidadeUtilizada() >= cota.getQuantidadeTotal()) {
                 return new SimulacaoConsumo(false, false, mensagemEsgotada(cota), cotaUsada, List.of());
             }
-            int reservado = reservadoNoLote != null ? reservadoNoLote.getOrDefault(cota.getId(), 0) : 0;
-            if (cota.getQuantidadeUtilizada() + reservado >= cota.getQuantidadeTotal()) {
-                return new SimulacaoConsumo(false, false,
-                        "Cota sem vaga para mais um item deste agendamento — a ultima vaga ja foi "
-                                + "usada por outro item do mesmo lote.",
-                        cotaUsada, List.of());
-            }
+            aReservar.add(cota.getId());
         }
-        return new SimulacaoConsumo(true, false, null, cotaUsada, aConsumir.stream().map(CotaUnidade::getId).toList());
+        return new SimulacaoConsumo(true, false, null, cotaUsada, aReservar);
     }
 
     /**
@@ -743,9 +830,19 @@ public class CotaUnidadeService {
         }
     }
 
-    /** Um item cujo agendamento muda de data na migracao de cota. */
+    /**
+     * Um item cujo agendamento muda de data na migracao de cota. V113: {@code
+     * solicitacaoId} agrupa os itens — a cota e consumida por solicitacao. Sem
+     * ele, o item conta sozinho.
+     */
     public record TransferenciaItem(Long unidadeId, Long especialidadeId,
-            LocalDate dataOrigem, LocalDate dataDestino, Long cotaFixadaId) {
+            LocalDate dataOrigem, LocalDate dataDestino, Long cotaFixadaId,
+            Long solicitacaoId, Long agendamentoId) {
+
+        public TransferenciaItem(Long unidadeId, Long especialidadeId,
+                LocalDate dataOrigem, LocalDate dataDestino, Long cotaFixadaId) {
+            this(unidadeId, especialidadeId, dataOrigem, dataDestino, cotaFixadaId, null, null);
+        }
     }
 
     /**
@@ -764,6 +861,10 @@ public class CotaUnidadeService {
      *       gerais so da data nova.</li>
      * </ul>
      *
+     * <p>V113: a conta e por solicitacao — uma vaga por cota, quantos itens dela
+     * migrarem — e ignora as cotas que a solicitacao continua ocupando por
+     * agendamentos que nao migram (nem devolve, nem consome de novo).
+     *
      * <p>Toda a LEITURA acontece antes de qualquer bulk update ({@code devolverVaga} e
      * {@code consumirVaga} limpam o contexto de persistencia); so entao vem a escrita,
      * com todas as devolucoes antes dos consumos. Cota esgotada na data nova aborta
@@ -774,8 +875,18 @@ public class CotaUnidadeService {
         Map<String, List<CotaUnidade>> memo = new HashMap<>();
         Map<Long, Integer> aDevolver = new LinkedHashMap<>();
         Map<Long, Integer> aConsumir = new LinkedHashMap<>();
+        // Por "dono" da vaga: a solicitacao, ou o proprio item quando ela nao veio.
+        Map<String, Set<Long>> origemPorDono = new LinkedHashMap<>();
+        Map<String, Set<Long>> destinoPorDono = new LinkedHashMap<>();
+        Map<String, TransferenciaItem> exemploPorDono = new HashMap<>();
+        Set<Long> agendamentosQueMigram = new HashSet<>();
+        itens.stream().map(TransferenciaItem::agendamentoId).filter(Objects::nonNull)
+                .forEach(agendamentosQueMigram::add);
 
+        int indice = 0;
         for (TransferenciaItem item : itens) {
+            String dono = item.solicitacaoId() != null ? "s" + item.solicitacaoId() : "i" + indice;
+            indice++;
             if (item.unidadeId() == null || item.dataOrigem() == null || item.dataDestino() == null) {
                 continue;
             }
@@ -798,8 +909,23 @@ public class CotaUnidadeService {
                     aplicaveisMemo(memo, item.unidadeId(), item.especialidadeId(), item.dataOrigem()), cotasQueViajam);
             Set<Long> destino = idsSemProfissional(
                     aplicaveisMemo(memo, item.unidadeId(), item.especialidadeId(), item.dataDestino()), cotasQueViajam);
-            origem.stream().filter(id -> !destino.contains(id)).forEach(id -> aDevolver.merge(id, 1, Integer::sum));
-            destino.stream().filter(id -> !origem.contains(id)).forEach(id -> aConsumir.merge(id, 1, Integer::sum));
+            origemPorDono.computeIfAbsent(dono, d -> new LinkedHashSet<>()).addAll(origem);
+            destinoPorDono.computeIfAbsent(dono, d -> new LinkedHashSet<>()).addAll(destino);
+            exemploPorDono.putIfAbsent(dono, item);
+        }
+
+        for (Map.Entry<String, Set<Long>> entrada : origemPorDono.entrySet()) {
+            Set<Long> origem = entrada.getValue();
+            Set<Long> destino = destinoPorDono.get(entrada.getKey());
+            TransferenciaItem exemplo = exemploPorDono.get(entrada.getKey());
+            Set<Long> continuaOcupando = exemplo.solicitacaoId() != null
+                    ? cotasOcupadasPelaSolicitacao(exemplo.solicitacaoId(), exemplo.unidadeId(),
+                            agendamentosQueMigram, Set.of())
+                    : Set.of();
+            origem.stream().filter(id -> !destino.contains(id) && !continuaOcupando.contains(id))
+                    .forEach(id -> aDevolver.merge(id, 1, Integer::sum));
+            destino.stream().filter(id -> !origem.contains(id) && !continuaOcupando.contains(id))
+                    .forEach(id -> aConsumir.merge(id, 1, Integer::sum));
         }
 
         aDevolver.forEach((id, vezes) -> {

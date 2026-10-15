@@ -7,4 +7,6 @@ public interface ConsumidorCotaProjection {
     Long getItemId();
     Long getAgendamentoId();
     LocalDate getDataAgendada();
+    /** V113: a cota e consumida por solicitacao — e ela que conta para o saldo. */
+    Long getSolicitacaoId();
 }

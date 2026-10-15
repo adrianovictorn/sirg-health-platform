@@ -2,6 +2,22 @@
 
 ## [Não publicado]
 
+### Correções
+
+- **Cota passa a contar pacientes, não exames (V113).** Agendar vários exames do mesmo
+  paciente de uma vez parava no limite da cota ("Nem todos os itens podem ser agendados —
+  a última vaga já foi usada por outro item do mesmo lote"): uma cota de 10 vagas de
+  laboratório aceitava 10 **exames**, e um paciente com 19 exames ficava com 9 na fila.
+  Agora cada **solicitação** ocupa uma vaga de cada cota que incide sobre ela, quantos
+  exames forem agendados nela — no mesmo lote ou depois, na mesma data (ou no mesmo mês, na
+  cota mensal). A vaga volta quando sai o último exame do paciente naquela cota (excluir o
+  agendamento ou remover da ficha um item agendado — este último antes não devolvia vaga
+  nenhuma). Mudar o status continua sem devolver. O teto financeiro segue por exame.
+  A migração **V113** recalcula o "usado" das cotas vigentes (data ou mês a partir de
+  hoje) para o número de pacientes distintos, só reduzindo — libera as vagas presas pela
+  regra antiga. Conferência antes/depois em `db/preflight/preflight_v113.sql`. Sem
+  mudança de API. ADR 0014.
+
 ### Novidades
 
 - **Telas de Unidade no sirg-design e tag de papel da unidade.** `/admin/unidades`, nova,

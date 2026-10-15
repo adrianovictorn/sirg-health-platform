@@ -2,11 +2,13 @@ package io.github.regulacao_marcarcao.regulacao_marcacao.repository;
 
 
 import java.util.List;
+import java.util.Optional;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -19,11 +21,22 @@ import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.Pe
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.StatusCountProjection;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.UrgenciaEmergenciaPacienteProjection;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.projection.UnidadePendentesProjection;
+import jakarta.persistence.LockModeType;
 
 
 public interface SolicitacaoRepository extends JpaRepository<Solicitacao, Long>, JpaSpecificationExecutor<Solicitacao> {
 
     boolean existsByCpfPaciente(String cpf);
+
+    /**
+     * Carrega a solicitacao com bloqueio pessimista de escrita (V113). A cota e
+     * consumida por solicitacao: agendar e excluir agendamento da mesma ficha
+     * precisam ser serializados, senao dois POSTs simultaneos leriam "ainda nao
+     * ocupa esta cota" e consumiriam duas vagas.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT s FROM Solicitacao s WHERE s.id = :id")
+    Optional<Solicitacao> findByIdParaAtualizar(@Param("id") Long id);
 
     @Query(value = "SELECT * FROM solicitacao s WHERE regexp_replace(s.cpf_paciente, '[^0-9]', '', 'g') = :cpf", nativeQuery = true)
     List<Solicitacao> findByCpfPacienteSemPonto(@Param("cpf") String cpf);

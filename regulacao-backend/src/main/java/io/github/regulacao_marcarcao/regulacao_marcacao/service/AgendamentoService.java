@@ -4,9 +4,11 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 import org.springframework.data.domain.Page;
@@ -178,7 +180,9 @@ public class AgendamentoService {
 
     @Transactional
     public AgendamentoSolicitacaoSimpleViewDTO criarAgendamentoParaMultiplosExames(Long solicitacaoId, MultiAgendamentoCreateDTO dto, String callerCpf) {
-        Solicitacao solicitacao = solicitacaoRepository.findById(solicitacaoId)
+        // Com lock (V113): a cota e consumida por solicitacao, e dois agendamentos
+        // simultaneos da mesma ficha nao podem ambos achar que ela ainda nao ocupa a cota.
+        Solicitacao solicitacao = solicitacaoRepository.findByIdParaAtualizar(solicitacaoId)
                 .orElseThrow(() -> new EntityNotFoundException("Solicitação não encontrada com o ID: " + solicitacaoId));
 
         // Valida capacidade de cada especialidade selecionada para a data de agendamento
@@ -260,6 +264,13 @@ public class AgendamentoService {
         solicitacao.getEspecialidades()
                 .forEach(e -> org.hibernate.Hibernate.initialize(e.getEspecialidadeSolicitada()));
 
+        // V113: cota consumida por solicitacao — as cotas que ela ja ocupa (agendamentos
+        // anteriores) nao consomem de novo, e cada cota consumida no laco entra no conjunto.
+        Set<Long> cotasOcupadas = !adminGlobal && unidadeId != null
+                ? cotaUnidadeService.cotasOcupadasPelaSolicitacao(solicitacaoId, unidadeId, Set.of(), Set.of())
+                : new HashSet<>();
+        Map<Long, java.time.LocalTime> horaCalculadaPorCota = new HashMap<>();
+
         for (String nomeExame : dto.examesSelecionados()) {
             SolicitacaoEspecialidade especialidadeParaAgendar = solicitacao.getEspecialidades().stream()
                     .filter(e -> {
@@ -311,11 +322,29 @@ public class AgendamentoService {
                 // SOMENTE ela; sem cota resolvida (nenhum profissional aplicavel),
                 // consome só as cotas gerais (sem profissional).
                 cotaUnidadeService.incrementarUtilizacao(unidadeId, especialidadeId, dto.dataAgendada(),
-                        cotaUsada != null ? cotaUsada.getId() : null);
+                        cotaUsada != null ? cotaUsada.getId() : null, cotasOcupadas);
 
                 especialidadeParaAgendar.setCotaUnidade(cotaUsada);
-                especialidadeParaAgendar.setHoraAgendada(
-                        resolverHoraAgendada(cotaUsada, cotaAnterior, horaAnterior, dto, nomeExame));
+                // V113: na cota dinamica o slot sai do contador, que so sobe no 1o item
+                // da solicitacao — os demais itens na mesma cota (deste lote ou de um
+                // agendamento anterior) herdam o horario dele (e o mesmo paciente), em
+                // vez do slot de outro paciente.
+                boolean calcularia = cotaUsada != null && cotaUsada.isHorarioDinamico()
+                        && horaParaCasamento == null
+                        && !(horaAnterior != null && cotaAnterior != null && cotaAnterior.getId().equals(cotaUsada.getId()));
+                if (calcularia && !horaCalculadaPorCota.containsKey(cotaUsada.getId())) {
+                    solicitacaoEspecialidadeRepository
+                            .horariosDaSolicitacaoNaCota(solicitacaoId, cotaUsada.getId(), dto.dataAgendada())
+                            .stream().findFirst()
+                            .ifPresent(h -> horaCalculadaPorCota.put(cotaUsada.getId(), h));
+                }
+                java.time.LocalTime hora = calcularia && horaCalculadaPorCota.containsKey(cotaUsada.getId())
+                        ? horaCalculadaPorCota.get(cotaUsada.getId())
+                        : resolverHoraAgendada(cotaUsada, cotaAnterior, horaAnterior, dto, nomeExame);
+                if (calcularia) {
+                    horaCalculadaPorCota.putIfAbsent(cotaUsada.getId(), hora);
+                }
+                especialidadeParaAgendar.setHoraAgendada(hora);
 
                 // Profissional executante (V100): override do operador para este
                 // agendamento — nunca grava nada em cotaUsada (o "espelho" da cota
@@ -428,7 +457,10 @@ public class AgendamentoService {
 
         // Acumulados do proprio lote: o que os itens ja aceitos ocupariam.
         Map<String, Long> aceitosPorCodigo = new HashMap<>();
-        Map<Long, Integer> cotaReservada = new HashMap<>();
+        // V113: cotas que a solicitacao ja ocupa, mais as que os itens aceitos do lote ocupariam.
+        Set<Long> cotasOcupadas = !adminGlobal && unidadeId != null
+                ? cotaUnidadeService.cotasOcupadasPelaSolicitacao(solicitacaoId, unidadeId, Set.of(), Set.of())
+                : new HashSet<>();
         Map<Long, BigDecimal> totalPorTeto = new LinkedHashMap<>();
         List<SolicitacaoEspecialidade> itensJaUsados = new ArrayList<>();
         List<ItemVerificadoDTO> itens = new ArrayList<>();
@@ -483,7 +515,7 @@ public class AgendamentoService {
                         ? dto.horariosSelecionados().get(nomeExame)
                         : null;
                 CotaUnidadeService.SimulacaoConsumo simulacao = cotaUnidadeService.simularConsumo(
-                        unidadeId, especialidadeId, dto.dataAgendada(), cotaEscolhidaId, cotaReservada,
+                        unidadeId, especialidadeId, dto.dataAgendada(), cotaEscolhidaId, cotasOcupadas,
                         dto.localAgendamentoId(), horaParaCasamento);
                 if (!simulacao.viavel()) {
                     itens.add(simulacao.corrigivel()
@@ -518,7 +550,7 @@ public class AgendamentoService {
             // Item aceito: passa a ocupar capacidade, cota e teto para os proximos.
             itensJaUsados.add(item);
             aceitosPorCodigo.merge(codigo, 1L, Long::sum);
-            cotasAReservar.forEach(cotaId -> cotaReservada.merge(cotaId, 1, Integer::sum));
+            cotasOcupadas.addAll(cotasAReservar);
             EspecialidadeCustoProjection custo = custoPorCodigo.get(codigo);
             if (custo != null && custo.getValorUnitario() != null) {
                 tetoFinanceiroService.buscarTetoAplicavel(unidadeId, custo.getGrupoId(), dto.dataAgendada())
@@ -775,11 +807,13 @@ public class AgendamentoService {
      * Estorna a cota consumida por um agendamento que está sendo cancelado,
      * excluído ou remanejado.
      *
-     * O estorno espelha exatamente o consumo feito em
-     * {@link #criarAgendamentoParaMultiplosExames}: uma vaga por especialidade
-     * agendada, na unidade da solicitação e na data em que o agendamento estava
-     * marcado. Sem isto o saldo nunca volta e a unidade fica bloqueada por vagas
-     * que não correspondem a atendimento nenhum.
+     * V113: a cota é consumida por solicitação, então o estorno devolve uma vaga
+     * de cada cota que a solicitação deixa de ocupar sem este agendamento — se
+     * outro agendamento dela continua na mesma cota, a vaga fica. As cotas são as
+     * do consumo original (V100: a cota gravada no item, quando há; senão as
+     * gerais), na data em que o agendamento estava marcado. Sem isto o saldo
+     * nunca volta e a unidade fica bloqueada por vagas que não correspondem a
+     * atendimento nenhum.
      */
     private void estornarCotasDoAgendamento(AgendamentoSolicitacao agendamento) {
         Solicitacao solicitacao = agendamento.getSolicitacao();
@@ -787,25 +821,11 @@ public class AgendamentoService {
             return;
         }
         Long unidadeId = solicitacao.getUnidade().getId();
+        Long solicitacaoId = solicitacao.getId();
 
-        List<SolicitacaoEspecialidade> agendadas =
-                solicitacaoEspecialidadeRepository.findByAgendamentoSolicitacaoId(agendamento.getId());
-
-        for (SolicitacaoEspecialidade se : agendadas) {
-            // Extrai especialidadeId e cotaUsadaId NESTA iteracao, antes de chamar
-            // estornarUtilizacao: @Modifying(clearAutomatically = true) desanexa o
-            // contexto de persistencia, e os proxies LAZY das demais entradas da
-            // lista quebrariam se lidos depois (mesma armadilha ja documentada em
-            // incrementarUtilizacao).
-            Long especialidadeId = se.getEspecialidadeSolicitada() != null
-                    ? se.getEspecialidadeSolicitada().getId()
-                    : null;
-            // V100: estorna exatamente a cota usada no consumo original (gravada em
-            // SolicitacaoEspecialidade.cotaUnidade), preservando o isolamento por
-            // profissional — nunca recalcula do zero, que devolveria vaga errada.
-            Long cotaUsadaId = se.getCotaUnidade() != null ? se.getCotaUnidade().getId() : null;
-            cotaUnidadeService.estornarUtilizacao(unidadeId, especialidadeId, agendamento.getDataAgendada(), cotaUsadaId);
-        }
+        // Serializa com um agendamento concorrente da mesma ficha (ver criarAgendamentoParaMultiplosExames).
+        solicitacaoRepository.findByIdParaAtualizar(solicitacaoId);
+        cotaUnidadeService.estornarCotasDesocupadas(solicitacaoId, unidadeId, Set.of(agendamento.getId()), Set.of());
     }
 
     private void notificarAgendamentoExternoSeAplicavel(Solicitacao solicitacao, AgendamentoSolicitacao ag) {

@@ -366,7 +366,8 @@ class CotaMigracaoDataIT {
     void variosExamesVaoInteiros() {
         CotaUnidade geral = cotaData(null, d1, 5, null);
         Long ag = agendar(1, d1, cardiologia, glicose);
-        assertThat(recarregar(geral.getId()).getQuantidadeUtilizada()).isEqualTo(2);
+        // V113: dois exames da mesma solicitacao ocupam uma vaga so.
+        assertThat(recarregar(geral.getId()).getQuantidadeUtilizada()).isEqualTo(1);
 
         var resultado = migracaoService.migrar(geral.getId(), new CotaMigracaoDataCreateDTO(d2), admin.getCpf());
 
@@ -374,6 +375,29 @@ class CotaMigracaoDataIT {
         assertThat(resultado.itensMigrados()).isEqualTo(2);
         assertThat(agendamento(ag).getDataAgendada()).isEqualTo(d2);
         assertThat(itemRepository.findByAgendamentoSolicitacaoId(ag)).hasSize(2);
+    }
+
+    @Test
+    @DisplayName("V113: na unificacao, a solicitacao que ja ocupava as duas cotas conta uma vaga so")
+    void uniaoNaoContaDuasVezesAMesmaSolicitacao() {
+        CotaUnidade origem = cotaData(null, d1, 10, null);
+        CotaUnidade destino = cotaData(null, d2, 4, null);
+        Solicitacao s = solicitacao(1, cardiologia, glicose);
+        var dto = (java.util.function.BiFunction<Especialidade, LocalDate, MultiAgendamentoCreateDTO>) (e, data) ->
+                new MultiAgendamentoCreateDTO(List.of(e.getCodigo()), data, null, null, TurnoEnum.MANHA,
+                        "mesma solicitacao nas duas datas", null, null, null);
+        agendamentoService.criarAgendamentoParaMultiplosExames(s.getId(), dto.apply(cardiologia, d1), operador.getCpf());
+        agendamentoService.criarAgendamentoParaMultiplosExames(s.getId(), dto.apply(glicose, d2), operador.getCpf());
+        agendar(2, d1, cardiologia);
+        assertThat(recarregar(origem.getId()).getQuantidadeUtilizada()).isEqualTo(2);
+        assertThat(recarregar(destino.getId()).getQuantidadeUtilizada()).isEqualTo(1);
+
+        migracaoService.migrar(origem.getId(), new CotaMigracaoDataCreateDTO(d2), admin.getCpf());
+
+        CotaUnidade unida = recarregar(destino.getId());
+        assertThat(unida.getQuantidadeTotal()).isEqualTo(14);
+        // 1 (destino) + 2 (origem) - 1 (a solicitacao 1 ja estava no destino)
+        assertThat(unida.getQuantidadeUtilizada()).isEqualTo(2);
     }
 
     @Test
