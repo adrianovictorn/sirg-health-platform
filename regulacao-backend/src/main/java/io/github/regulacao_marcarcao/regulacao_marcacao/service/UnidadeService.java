@@ -3,14 +3,20 @@ package io.github.regulacao_marcarcao.regulacao_marcacao.service;
 import java.time.LocalDateTime;
 import java.util.List;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import io.github.regulacao_marcarcao.regulacao_marcacao.dto.PaginaDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.unidade.UnidadeCreateDTO;
+import io.github.regulacao_marcarcao.regulacao_marcacao.dto.unidade.UnidadeFiltroDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.unidade.UnidadeSimpleViewDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.unidade.UnidadeUpdateDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.unidade.UnidadeViewDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.Unidade;
+import io.github.regulacao_marcarcao.regulacao_marcacao.entity.UnidadeSpecification;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.enums.TipoUnidadeEnum;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.GrupoRelatorioRepository;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.UnidadeRepository;
@@ -152,6 +158,36 @@ public class UnidadeService {
     public UnidadeViewDTO buscarPorId(Long id) {
         return UnidadeViewDTO.from(unidadeRepository.findById(id)
                 .orElseThrow(() -> new EntityNotFoundException("Unidade não encontrada.")));
+    }
+
+    /** Listagem paginada de /admin/unidades: nome crescente, desempate por id. */
+    @Transactional(readOnly = true)
+    public PaginaDTO<UnidadeViewDTO> listarPagina(UnidadeFiltroDTO bruto, int page, int size) {
+        PaginaDTO.validarPagina(page);
+        int tamanho = PaginaDTO.limitarTamanho(size);
+
+        String q = bruto == null || bruto.q() == null || bruto.q().isBlank() ? null : bruto.q().trim();
+        String status = bruto == null || bruto.status() == null || bruto.status().isBlank() ? null
+                : bruto.status().trim();
+        if (status != null && !status.equals("ativa") && !status.equals("inativa")) {
+            throw new IllegalArgumentException("Valor inválido para status: " + status);
+        }
+        TipoUnidadeEnum tipo = null;
+        if (bruto != null && bruto.tipo() != null && !bruto.tipo().isBlank()) {
+            try {
+                tipo = TipoUnidadeEnum.valueOf(bruto.tipo().trim());
+            } catch (IllegalArgumentException e) {
+                throw new IllegalArgumentException("Valor inválido para tipo: " + bruto.tipo());
+            }
+        }
+        UnidadeFiltroDTO filtro = new UnidadeFiltroDTO(q, status, null,
+                bruto == null ? null : bruto.grupoRelatorioId());
+
+        Page<Unidade> pagina = unidadeRepository.findAll(
+                UnidadeSpecification.comFiltros(filtro, tipo),
+                PageRequest.of(page, tamanho, Sort.by("nome").ascending().and(Sort.by("id").ascending())));
+        return PaginaDTO.de(pagina.getContent().stream().map(UnidadeViewDTO::from).toList(), page, tamanho,
+                pagina.getTotalElements());
     }
 
     @Transactional(readOnly = true)

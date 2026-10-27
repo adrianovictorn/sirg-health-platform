@@ -219,7 +219,7 @@ contorno de 2 px, pilha de fonte IBM Plex). Ele tem três níveis, do mais IBM a
 
 | Nível | Onde | O que muda |
 | --- | --- | --- |
-| IBM pura | `/admin/cotas` (lista) | Raio zero, sem sombra, `--ibm-fundo #f4f4f4`; ainda não alinhada aos demais |
+| IBM pura | `/admin/cotas` (lista), `/admin/unidades` (lista), `/cadastrar/grupo-relatorio`, `/admin/profissionais` | Raio zero, sem sombra, `--ibm-fundo #f4f4f4`; CSS escopado na própria página (ADR 0015) |
 | Misto (`nova`) | `/admin/cotas/nova`, `/editar`, `/unidade/cotas`, `/agendar` | Emerald só como acento; painéis `rounded-lg` com sombra leve, título emerald-800 |
 | **Mais SIRG** | `/atendimentos`, `/atendimentos/quantitativos` e as telas de Unidade | Emerald também nas superfícies: faixa de topo dos painéis, cabeçalho de tabela, hover, rótulo e botão secundário |
 
@@ -236,9 +236,11 @@ tela vai no `<style>` escopado da própria página. Classe nova comum entra no
 `SirgDesign.svelte`, no mesmo padrão. Não reaproveite `ibm-*`/`at-*`/`cotas-ibm` fora das
 telas que já os têm.
 
+**Listas paginadas (ADR 0015).** As quatro listas administrativas com paginação e filtros no servidor usam o visual **IBM pura**, em CSS escopado na própria página (`.cotas-ibm` em `/admin/cotas`, `.tela-ibm` nas demais), e compartilham o rodapé `components/ListaPaginada/Paginacao.svelte` (lê `--ibm-*` com fallback, sem `:global`) e o estado `listaPaginada.svelte.js` (filtros e página na URL). Isto vale só para estas quatro telas; as demais seguem as seções 2 a 6.
+
 | Telas de Unidade (sirg-design pela casca) | Observação |
 | --- | --- |
-| `/admin/unidades` | Tabela `sd-tabela` com coluna **Papel**; status Ativa/Inativa em `sd-selo` |
+| `/admin/unidades` (lista) | **Saiu do sirg-design** (ADR 0015): IBM pura, com coluna **Papel**; as demais telas de Unidade seguem na casca |
 | `/admin/unidades/nova`, `/[id]/editar` | Formulário em painéis, largura total, sem `max-w`; editar mostra o papel salvo no cabeçalho |
 | `/admin/unidades/[id]/executante` | Parametrização: quatro painéis com contador, barra de ações fixa |
 

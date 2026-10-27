@@ -11,5 +11,7 @@ public interface RelatorioGrupoAgendadoProjection {
     String getUsfOrigem();      
     LocalDate getDataAgendada();
     String getTurno();         
-    String getEspecialidades(); 
+    String getEspecialidades();
+    /** Nomes dos profissionais executantes dos itens da linha; "Não informado" para item sem executante. */
+    String getProfissionalExecutante();
 }

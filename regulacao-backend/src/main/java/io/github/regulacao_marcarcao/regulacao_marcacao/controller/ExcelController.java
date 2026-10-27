@@ -1,5 +1,6 @@
 package io.github.regulacao_marcarcao.regulacao_marcacao.controller;
 
+import io.github.regulacao_marcarcao.regulacao_marcacao.dto.relatorio.PlanilhaAgendadosFiltroDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.service.ExcelService;
 import org.springframework.core.io.InputStreamResource;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -27,21 +28,34 @@ public class ExcelController {
         this.excelService = excelService;
     }
 
+    /**
+     * Planilha de agendados. {@code data} (dia unico) ou {@code dataInicio}/{@code dataFim}
+     * (periodo de ate 31 dias); {@code unidadeId} e a unidade solicitante. Os demais
+     * filtros sao opcionais: sem eles a planilha e a mesma de antes.
+     */
     @GetMapping("/planilha")
     public ResponseEntity<InputStreamResource> exportarPlanilha(
             @RequestParam(name = "grupo",required = true) String grupo,
-            @RequestParam( name =  "data", required = true) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate data,
+            @RequestParam( name =  "data", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate data,
+            @RequestParam(name = "dataInicio", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dataInicio,
+            @RequestParam(name = "dataFim", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dataFim,
             @RequestParam(name = "label", required = false) String label,
             @RequestParam(name = "unidadeId", required = false) Long unidadeId,
+            @RequestParam(name = "unidadeExecutanteId", required = false) Long unidadeExecutanteId,
+            @RequestParam(name = "profissionalExecutanteId", required = false) Long profissionalExecutanteId,
+            @RequestParam(name = "semExecutante", required = false, defaultValue = "false") boolean semExecutante,
             Authentication authentication
             ) throws IOException {
 
         String safeLabel = (label == null || label.isBlank()) ? grupo : label;
+        PlanilhaAgendadosFiltroDTO filtro = new PlanilhaAgendadosFiltroDTO(grupo, data, dataInicio, dataFim,
+                unidadeId, unidadeExecutanteId, profissionalExecutanteId, semExecutante);
 
-        ByteArrayInputStream bais = excelService.gerarPlanilhaAgendamentos(grupo, data, unidadeId, cpfDe(authentication));
+        ByteArrayInputStream bais = excelService.gerarPlanilhaAgendamentos(filtro, cpfDe(authentication));
 
         HttpHeaders headers = new HttpHeaders();
-        String filename = "planilha_" + safeLabel.replaceAll("\\s+", "_").toLowerCase() + "_" + data.toString() + ".xlsx";
+        String sufixoData = data != null ? data.toString() : dataInicio + "_a_" + dataFim;
+        String filename = "planilha_" + safeLabel.replaceAll("\\s+", "_").toLowerCase() + "_" + sufixoData + ".xlsx";
         headers.add("Content-Disposition", "inline; filename=" + filename);
 
         return ResponseEntity
@@ -88,15 +102,23 @@ public class ExcelController {
                 .body(new InputStreamResource(bais));
     }
 
+    /** Mesmos filtros de {@code /planilha}. */
     @GetMapping("/verificar-dados")
     public ResponseEntity<Map<String, Boolean>> verificarDados(
             @RequestParam(required = true, name = "grupo") String grupo,
-            @RequestParam(name = "data", required = true) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate data,
+            @RequestParam(name = "data", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate data,
+            @RequestParam(name = "dataInicio", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dataInicio,
+            @RequestParam(name = "dataFim", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dataFim,
             @RequestParam(required = false) String label,
             @RequestParam(name = "unidadeId", required = false) Long unidadeId,
+            @RequestParam(name = "unidadeExecutanteId", required = false) Long unidadeExecutanteId,
+            @RequestParam(name = "profissionalExecutanteId", required = false) Long profissionalExecutanteId,
+            @RequestParam(name = "semExecutante", required = false, defaultValue = "false") boolean semExecutante,
             Authentication authentication) {
-        
-        boolean dadosDisponiveis = excelService.haDadosParaRelatorio(grupo, data, unidadeId, cpfDe(authentication));
+
+        PlanilhaAgendadosFiltroDTO filtro = new PlanilhaAgendadosFiltroDTO(grupo, data, dataInicio, dataFim,
+                unidadeId, unidadeExecutanteId, profissionalExecutanteId, semExecutante);
+        boolean dadosDisponiveis = excelService.haDadosParaRelatorio(filtro, cpfDe(authentication));
         return ResponseEntity.ok(Map.of("dadosDisponiveis", dadosDisponiveis));
     }
 

@@ -1,6 +1,7 @@
 package io.github.regulacao_marcarcao.regulacao_marcacao.repository;
 
 import java.time.LocalDate;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -8,6 +9,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
@@ -16,7 +18,7 @@ import jakarta.persistence.LockModeType;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.CotaUnidade;
 
 @Repository
-public interface CotaUnidadeRepository extends JpaRepository<CotaUnidade, Long> {
+public interface CotaUnidadeRepository extends JpaRepository<CotaUnidade, Long>, JpaSpecificationExecutor<CotaUnidade> {
 
     List<CotaUnidade> findByUnidadeIdAndPeriodo(Long unidadeId, String periodo);
 
@@ -156,4 +158,41 @@ public interface CotaUnidadeRepository extends JpaRepository<CotaUnidade, Long> 
     @Query("UPDATE CotaUnidade c SET c.quantidadeTotal = c.quantidadeTotal + :total, "
             + "c.quantidadeUtilizada = c.quantidadeUtilizada + :utilizada WHERE c.id = :id")
     int absorver(@Param("id") Long id, @Param("total") int total, @Param("utilizada") int utilizada);
+
+    // -----------------------------------------------------------------------
+    // Listagem paginada de /admin/cotas (CotaListagemService)
+    // -----------------------------------------------------------------------
+
+    /**
+     * Cotas de uma página já com tudo que {@code CotaUnidadeViewDTO.from} toca,
+     * para não gerar N+1. A ordem NÃO é a da consulta: quem monta a página
+     * reordena pelos ids escolhidos.
+     */
+    @Query("SELECT DISTINCT c FROM CotaUnidade c "
+            + "LEFT JOIN FETCH c.unidade LEFT JOIN FETCH c.grupoUnidades "
+            + "LEFT JOIN FETCH c.especialidade LEFT JOIN FETCH c.grupoEspecialidades "
+            + "LEFT JOIN FETCH c.profissionalExecutante LEFT JOIN FETCH c.localAgendamento "
+            + "LEFT JOIN FETCH c.agendaOcorrencia ao LEFT JOIN FETCH ao.agenda "
+            + "WHERE c.id IN :ids")
+    List<CotaUnidade> buscarComRelacionamentos(@Param("ids") Collection<Long> ids);
+
+    /** Especialidades que alguma cota cobre, direta ou pelo grupo de especialidades. */
+    @Query("SELECT e.id, e.nome FROM Especialidade e WHERE e.id IN "
+            + "(SELECT c.especialidade.id FROM CotaUnidade c WHERE c.especialidade IS NOT NULL) "
+            + "OR e.grupoRelatorio.id IN "
+            + "(SELECT c.grupoEspecialidades.id FROM CotaUnidade c WHERE c.grupoEspecialidades IS NOT NULL)")
+    List<Object[]> opcoesEspecialidades();
+
+    /** Profissionais presentes em alguma cota (espelho de atendimento) ou na agenda da cota. */
+    @Query("SELECT p.id, p.nome FROM Profissional p WHERE p.id IN "
+            + "(SELECT c.profissionalExecutante.id FROM CotaUnidade c WHERE c.profissionalExecutante IS NOT NULL) "
+            + "OR p.id IN (SELECT ag.profissional.id FROM CotaUnidade c JOIN c.agendaOcorrencia ao "
+            + "JOIN ao.agenda ag)")
+    List<Object[]> opcoesProfissionais();
+
+    /** Executantes das agendas que geraram cotas. */
+    @Query("SELECT u.id, u.nome FROM Unidade u WHERE u.id IN "
+            + "(SELECT ag.estabelecimentoExecutante.id FROM CotaUnidade c JOIN c.agendaOcorrencia ao "
+            + "JOIN ao.agenda ag)")
+    List<Object[]> opcoesExecutantes();
 }

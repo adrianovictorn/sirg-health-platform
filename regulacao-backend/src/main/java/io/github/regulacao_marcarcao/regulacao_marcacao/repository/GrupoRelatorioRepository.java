@@ -4,12 +4,13 @@ import java.util.Collection;
 import java.util.List;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.GrupoRelatorio;
 
-public interface GrupoRelatorioRepository extends JpaRepository<GrupoRelatorio, Long> {
+public interface GrupoRelatorioRepository extends JpaRepository<GrupoRelatorio, Long>, JpaSpecificationExecutor<GrupoRelatorio> {
 
     /** Agendas da tela de Atendimentos na visao municipal (mesmo criterio que o menu aplicava no cliente). */
     List<GrupoRelatorio> findByAtivoTrueAndDirecionadoHospitalTrueOrderByNomeAsc();

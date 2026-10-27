@@ -12,9 +12,12 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import io.github.regulacao_marcarcao.regulacao_marcacao.dto.PaginaDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.unidade.UnidadeCreateDTO;
+import io.github.regulacao_marcarcao.regulacao_marcacao.dto.unidade.UnidadeFiltroDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.unidade.UnidadeSimpleViewDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.unidade.UnidadeUpdateDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.unidade.UnidadeViewDTO;
@@ -32,6 +35,16 @@ public class UnidadeController {
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<UnidadeViewDTO> criar(@RequestBody UnidadeCreateDTO dto) {
         return ResponseEntity.status(HttpStatus.CREATED).body(unidadeService.criar(dto));
+    }
+
+    /** Listagem paginada de /admin/unidades. {@code GET /api/unidades} continua devolvendo a lista completa. */
+    @GetMapping("/pagina")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<PaginaDTO<UnidadeViewDTO>> listarPagina(
+            UnidadeFiltroDTO filtro,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        return ResponseEntity.ok(unidadeService.listarPagina(filtro, page, size));
     }
 
     @GetMapping

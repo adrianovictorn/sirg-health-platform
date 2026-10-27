@@ -1681,7 +1681,7 @@ separados por vírgula. Valor inválido → 400.
 | Transportes | `/transportes` | CRUD |
 | Motoristas | `/motoristas` | CRUD |
 | CIDs | `/cids` | CRUD |
-| Grupos de Relatório | `/grupo-relatorio` | CRUD |
+| Grupos de Relatório | `/grupo-relatorio` | CRUD (cadastrar, atualizar, ativar/desativar e deletar só ADMIN; `GET /listar` autenticado) + `GET /pagina` (ADMIN) |
 | Municípios | `/municipios` | CRUD + registry |
 
 ---
@@ -1691,6 +1691,7 @@ separados por vírgula. Valor inválido → 400.
 | Método | Endpoint | Role Mínima | Descrição |
 |---|---|---|---|
 | GET | `/unidades` | Autenticado | Lista todas as unidades |
+| GET | `/unidades/pagina?q=&status=&tipo=&grupoRelatorioId=&page=&size=` | ADMIN | Listagem paginada de `/admin/unidades` (`PaginaDTO<UnidadeViewDTO>`). `q` busca em nome, código e CNES; `status` = `ativa`\|`inativa`; `tipo` = tipo declarado. Ordem: nome, id |
 | GET | `/unidades/ativas` | Autenticado | Lista unidades ativas (SimpleView) |
 | GET | `/unidades/{id}` | Autenticado | Busca por ID |
 | POST | `/unidades` | ADMIN | Cria unidade |
@@ -1703,7 +1704,9 @@ Parametrização da unidade executante (`/unidades-executantes/**`, só ADMIN): 
 
 | Método | Endpoint | Role Mínima | Descrição |
 |---|---|---|---|
-| GET | `/cotas` | ADMIN | Lista todas as cotas |
+| GET | `/cotas` | ADMIN | Lista todas as cotas (lista completa, formato inalterado) |
+| GET | `/cotas/pagina?...&page=&size=` | ADMIN | Listagem paginada de `/admin/cotas` (`CotaListaPaginaDTO`): filtros `unidadeId`, `especialidadeId`, `status` (`ativa`\|`inativa`), `saldo` (`com-saldo`\|`esgotada`), `origem` (`manual`\|`agenda`), `tipo` (`mensal`\|`data`), `profissionalId`, `executanteId`, `competencia` (`AAAA-MM`), `dataDe`, `dataAte`, `q`. A página conta **unidades** (titulares: unidade ou grupo de unidades), cada uma com todas as suas cotas filtradas e os totais do bloco; a agenda se desfaz por unidade. Ordem: unidades A–Z; dentro de cada uma, ativas antes de inativas, data de referência mais recente, maior id. `size` máx. 200; 400 para parâmetro inválido |
+| GET | `/cotas/opcoes-filtro` | ADMIN | Especialidades, profissionais e executantes que existem em alguma cota (`CotaOpcoesFiltroDTO`) |
 | GET | `/cotas/unidade/{unidadeId}` | Autenticado¹ | Cotas da unidade |
 | GET | `/cotas/grupo-unidades/{grupoUnidadesId}` | ADMIN, ADMIN_UNIDADE | Cotas cujo titular é o grupo de unidades |
 | GET | `/cotas/unidade/{id}/periodo/{periodo}` | Autenticado¹ | Cotas da unidade no período |
@@ -1724,7 +1727,7 @@ trocar o id na chamada direta não dá acesso a outra unidade.
 
 | Método | Endpoint | Role Mínima | Descrição |
 |---|---|---|---|
-| GET | `/profissionais/buscar` | Autenticado | Busca paginada (filtro por nome) |
+| GET | `/profissionais/buscar` | Autenticado | Busca paginada (`Page` do Spring). Filtros opcionais: `nome` (só nome), `q` (nome, conselho, registro, especialidade), `ativo`, `unidadeId`. Ordem: nome, id. O CPF não entra em filtro |
 | GET | `/profissionais/{id}` | Autenticado | Busca por ID |
 | GET | `/profissionais/unidade/{id}/ativos` | Autenticado | Profissionais ativos da unidade |
 | POST | `/profissionais` | RECEPCAO/ADMIN | Cria profissional |
@@ -2089,6 +2092,20 @@ Nenhuma migration.
 | `/relatorio/producao/listar`, `/relatorio/producao/excel` | Agendamentos criados no dia (JSON e Excel) |
 | `/exportar/planilha`, `/exportar/planilha-aguardando`, `/exportar/planilha-gel` | Planilhas Excel (Apache POI) de agendados por grupo e data, pendentes por grupo e GEL |
 | `/exportar/verificar-dados`, `/exportar/verificar-dados-aguardando` | Diz se há dados antes de baixar a planilha |
+
+**Filtros da planilha de agendados** (`/exportar/planilha` e `/exportar/verificar-dados`, mesmos parâmetros nos dois):
+
+| Parâmetro | Obrigatório | Descrição |
+|---|---|---|
+| `grupo` | sim | Código do Grupo de Relatório |
+| `data` | um dos dois | Data agendada (dia único) |
+| `dataInicio`, `dataFim` | um dos dois | Período da data agendada, pontas inclusivas, no máximo 31 dias. Fim antes do início, mais de 31 dias, data junto com período ou nenhum dos dois → 400 com `message` |
+| `unidadeId` | não | Unidade **solicitante** (`solicitacao.unidade_id`), resolvida por `UnidadeAcessoService.resolverUnidadeAlvo` (403 para quem pede outra unidade) |
+| `unidadeExecutanteId` | não | Unidade **executante**, mesma regra de `/atendimentos` (`AtendimentoExecutanteRepository.FILTRO_EXECUTANTE`, ADR 0013) |
+| `profissionalExecutanteId` | não | Profissional executante = o escolhido no item (`profissional_executante_id`), senão o da cota consumida (`cota_unidade.profissional_id`) |
+| `semExecutante` | não (default `false`) | Só itens sem profissional executante registrado. Excludente com `profissionalExecutanteId` |
+
+Os filtros só estreitam dentro do escopo de unidade do usuário. Só itens `AGENDADO` (a verificação também, desde esta versão). Linhas ordenadas por data agendada, turno e nome. A planilha tem a coluna **PROFISSIONAL EXECUTANTE** no fim (nomes dos executantes dos itens da linha; "Não informado" para item sem executante). Itens agendados por ADMIN/GESTOR e anteriores à V92/V100 não têm executante gravado e aparecem como "Não informado".
 | `/indicadores` | Indicadores por período |
 | `/fechamento-indicadores` | Fechamento diário de indicadores |
 

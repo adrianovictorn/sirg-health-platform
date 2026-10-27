@@ -113,7 +113,8 @@ class RelatorioUsfOrigemCaracterizacaoIT {
         solicitacaoEspecialidadeRepository.save(se);
 
         List<RelatorioGrupoAgendadoProjection> linhas =
-                solicitacaoEspecialidadeRepository.listarAgendadosPorGrupoEData(grupo.getCodigo(), LocalDate.now(), null);
+                solicitacaoEspecialidadeRepository.listarAgendados(grupo.getCodigo(), LocalDate.now(), LocalDate.now(),
+                        null, false, List.of(-1L), null, false);
 
         assertThat(linhas).hasSize(1);
         assertThat(linhas.get(0).getUsfOrigem()).isEqualTo(unidade.getNome());

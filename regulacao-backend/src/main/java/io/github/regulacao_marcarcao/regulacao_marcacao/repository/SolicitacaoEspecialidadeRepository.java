@@ -177,6 +177,21 @@ public interface SolicitacaoEspecialidadeRepository extends JpaRepository<Solici
     List<ContagemPainelPorDataLocalDTO> contarAgendamentosAgrupados();
 
 
+    /**
+     * Planilha de agendados de /relatorio: uma linha por paciente, data e turno, so
+     * itens AGENDADO do grupo, com a data agendada entre {@code inicio} e {@code fim}
+     * (data unica: inicio = fim). Todos os filtros alem de grupo e periodo sao
+     * opcionais e so estreitam o resultado:
+     * - {@code unidadeId}: unidade solicitante ({@code s.unidade_id}), ja resolvida pelo escopo de acesso;
+     * - {@code porExecutante}/{@code executanteIds}: unidade executante, mesma regra de
+     *   /atendimentos ({@link AtendimentoExecutanteRepository#FILTRO_EXECUTANTE}); o IN
+     *   nunca vai vazio (sentinela -1);
+     * - {@code profissionalId}: profissional executante;
+     * - {@code semExecutante}: so itens sem profissional executante registrado.
+     *
+     * Profissional executante = o escolhido no item, senao o da cota consumida
+     * (mesma regra da ficha do paciente). Os LEFT JOIN sao por PK e nao multiplicam linhas.
+     */
     @Query(value = """
             SELECT
                 s.id AS solicitacaoId,
@@ -187,17 +202,26 @@ public interface SolicitacaoEspecialidadeRepository extends JpaRepository<Solici
                 COALESCE(u.nome, s.usf_origem) as usfOrigem,
                 ag.data_agendada as dataAgendada,
                 ag.turno as turno,
-                STRING_AGG(DISTINCT e.nome, ', ' ORDER BY e.nome) as especialidades
+                STRING_AGG(DISTINCT e.nome, ', ' ORDER BY e.nome) as especialidades,
+                STRING_AGG(DISTINCT COALESCE(pe.nome, 'Não informado'), ', '
+                           ORDER BY COALESCE(pe.nome, 'Não informado')) as profissionalExecutante
             FROM solicitacao s
             JOIN solicitacao_especialidade se ON se.solicitacao_id = s.id
             JOIN especialidade e ON e.id = se.especialidade_id
             JOIN agendamento_solicitacao ag ON ag.id = se.agendamento_id
             JOIN grupo_relatorio gr ON gr.id = e.grupo_relatorio_id
             LEFT JOIN unidade u ON u.id = s.unidade_id
+            LEFT JOIN cota_unidade cu ON cu.id = se.cota_unidade_id
+            LEFT JOIN profissional pe ON pe.id = COALESCE(se.profissional_executante_id, cu.profissional_id)
             WHERE gr.codigo = :grupo
-                AND ag.data_agendada = :data
+                AND ag.data_agendada BETWEEN :inicio AND :fim
                 AND se.status = 'AGENDADO'
                 AND (CAST(:unidadeId AS bigint) IS NULL OR s.unidade_id = :unidadeId)
+                AND (CAST(:profissionalId AS bigint) IS NULL
+                     OR COALESCE(se.profissional_executante_id, cu.profissional_id) = :profissionalId)
+                AND (:semExecutante = false
+                     OR COALESCE(se.profissional_executante_id, cu.profissional_id) IS NULL)
+            """ + AtendimentoExecutanteRepository.FILTRO_EXECUTANTE + """
             GROUP BY
                 s.id,
                 s.nome_paciente,
@@ -208,24 +232,41 @@ public interface SolicitacaoEspecialidadeRepository extends JpaRepository<Solici
                 u.nome,
                 ag.data_agendada,
                 ag.turno
+            ORDER BY ag.data_agendada, ag.turno, s.nome_paciente
             """, nativeQuery = true)
-            List<RelatorioGrupoAgendadoProjection> listarAgendadosPorGrupoEData(@Param("grupo") String grupo, @Param("data") LocalDate data,
-                    @Param("unidadeId") Long unidadeId);
+    List<RelatorioGrupoAgendadoProjection> listarAgendados(@Param("grupo") String grupo,
+            @Param("inicio") LocalDate inicio, @Param("fim") LocalDate fim,
+            @Param("unidadeId") Long unidadeId,
+            @Param("porExecutante") boolean porExecutante,
+            @Param("executanteIds") Collection<Long> executanteIds,
+            @Param("profissionalId") Long profissionalId,
+            @Param("semExecutante") boolean semExecutante);
 
-            @Query(value = """
-                    SELECT 
-                        COUNT(DISTINCT s.id)
-                    FROM solicitacao s 
-                    JOIN solicitacao_especialidade se ON se.solicitacao_id = s.id
-                    JOIN especialidade e ON e.id = se.especialidade_id
-                    JOIN agendamento_solicitacao ag ON ag.id = se.agendamento_id
-                    JOIN grupo_relatorio gr ON gr.id = e.grupo_relatorio_id
-                    WHERE gr.codigo = :grupo and ag.data_agendada = :data
-                        AND (CAST(:unidadeId AS bigint) IS NULL OR s.unidade_id = :unidadeId)
-
-                    """, nativeQuery = true)
-            long countAgendadosPorGrupoEData(@Param("grupo") String grupo, @Param("data") LocalDate data,
-                    @Param("unidadeId") Long unidadeId);
+    /** Mesmos filtros de {@link #listarAgendados}: a verificacao e a planilha concordam. */
+    @Query(value = """
+            SELECT COUNT(DISTINCT s.id)
+            FROM solicitacao s
+            JOIN solicitacao_especialidade se ON se.solicitacao_id = s.id
+            JOIN especialidade e ON e.id = se.especialidade_id
+            JOIN agendamento_solicitacao ag ON ag.id = se.agendamento_id
+            JOIN grupo_relatorio gr ON gr.id = e.grupo_relatorio_id
+            LEFT JOIN cota_unidade cu ON cu.id = se.cota_unidade_id
+            WHERE gr.codigo = :grupo
+                AND ag.data_agendada BETWEEN :inicio AND :fim
+                AND se.status = 'AGENDADO'
+                AND (CAST(:unidadeId AS bigint) IS NULL OR s.unidade_id = :unidadeId)
+                AND (CAST(:profissionalId AS bigint) IS NULL
+                     OR COALESCE(se.profissional_executante_id, cu.profissional_id) = :profissionalId)
+                AND (:semExecutante = false
+                     OR COALESCE(se.profissional_executante_id, cu.profissional_id) IS NULL)
+            """ + AtendimentoExecutanteRepository.FILTRO_EXECUTANTE, nativeQuery = true)
+    long countAgendados(@Param("grupo") String grupo,
+            @Param("inicio") LocalDate inicio, @Param("fim") LocalDate fim,
+            @Param("unidadeId") Long unidadeId,
+            @Param("porExecutante") boolean porExecutante,
+            @Param("executanteIds") Collection<Long> executanteIds,
+            @Param("profissionalId") Long profissionalId,
+            @Param("semExecutante") boolean semExecutante);
 
 
             @Query(value = """

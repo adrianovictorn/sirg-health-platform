@@ -2,6 +2,7 @@ package io.github.regulacao_marcarcao.regulacao_marcacao.service;
 
 
 import io.github.regulacao_marcarcao.regulacao_marcacao.config.InstanceContext;
+import io.github.regulacao_marcarcao.regulacao_marcacao.dto.relatorio.PlanilhaAgendadosFiltroDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.AtendimentoExecutanteRepository;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.SolicitacaoEspecialidadeRepository;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.UserRepository;
@@ -231,13 +232,34 @@ public class ExcelService {
         return especialidadeRepository.countPendentesPorGrupo(grupo, unidadeId) > 0;        
     }
 
+    static final int PERIODO_MAXIMO_AGENDADOS_DIAS = 31;
+    private static final List<Long> SEM_EXECUTANTE = List.of(-1L);
+    static final String EXECUTANTE_NAO_INFORMADO = "Não informado";
+
+    private record PeriodoAgendados(LocalDate inicio, LocalDate fim) {}
+
+    /** Assinatura de antes dos filtros (grupo, dia e unidade solicitante). */
     public ByteArrayInputStream gerarPlanilhaAgendamentos(String grupo, LocalDate data, Long unidadeSolicitada, String callerCpf) throws IOException {
-        Long unidadeId = unidadeAcessoService.resolverUnidadeAlvo(callerCpf, unidadeSolicitada);
+        return gerarPlanilhaAgendamentos(PlanilhaAgendadosFiltroDTO.porData(grupo, data, unidadeSolicitada), callerCpf);
+    }
+
+    /**
+     * Planilha de agendados de /relatorio. Primeiro o escopo de acesso (403), depois a
+     * validacao dos filtros (400): os filtros so estreitam dentro da unidade resolvida.
+     * Sem linhas devolve um arquivo vazio, como antes.
+     */
+    public ByteArrayInputStream gerarPlanilhaAgendamentos(PlanilhaAgendadosFiltroDTO filtro, String callerCpf) throws IOException {
+        Long unidadeId = unidadeAcessoService.resolverUnidadeAlvo(callerCpf, filtro.unidadeId());
+        String grupo = filtro.grupo();
         if (grupo == null || grupo.isEmpty()) {
             return new ByteArrayInputStream(new ByteArrayOutputStream().toByteArray());
         }
-        List<RelatorioGrupoAgendadoProjection> rows = especialidadeRepository.listarAgendadosPorGrupoEData(grupo, data, unidadeId);
-        
+        PeriodoAgendados periodo = validarFiltroAgendados(filtro);
+        List<RelatorioGrupoAgendadoProjection> rows = especialidadeRepository.listarAgendados(grupo,
+                periodo.inicio(), periodo.fim(), unidadeId,
+                filtro.unidadeExecutanteId() != null, executanteIdsDo(filtro),
+                filtro.profissionalExecutanteId(), filtro.semExecutante());
+
        if (rows == null || rows.isEmpty()) {
         return new ByteArrayInputStream(new ByteArrayOutputStream().toByteArray());
        }
@@ -290,7 +312,7 @@ public class ExcelService {
         centerStyle.cloneStyleFrom(dataStyle);
         centerStyle.setAlignment(HorizontalAlignment.CENTER);
 
-        String[] headers = {"NOME", "CPF", "CNS", "NASCIMENTO", "USF/Unidade Origem", "ESPECIALIDADE/EXAME", "AGENDAMENTO", "TURNO"};
+        String[] headers = {"NOME", "CPF", "CNS", "NASCIMENTO", "USF/Unidade Origem", "ESPECIALIDADE/EXAME", "AGENDAMENTO", "TURNO", "PROFISSIONAL EXECUTANTE"};
         int numberOfColumns = headers.length;
 
 
@@ -366,6 +388,11 @@ public class ExcelService {
             Cell c7 = row.createCell(7);
             c7.setCellValue(safe(it.getTurno()));
             c7.setCellStyle(centerStyle);
+
+            Cell c8 = row.createCell(8);
+            String executante = it.getProfissionalExecutante();
+            c8.setCellValue(executante == null || executante.isBlank() ? EXECUTANTE_NAO_INFORMADO : executante);
+            c8.setCellStyle(dataStyle);
         }
 
         sheet.setColumnWidth(0, 40 * 256);
@@ -376,6 +403,7 @@ public class ExcelService {
         sheet.setColumnWidth(5, 45 * 256);
         sheet.setColumnWidth(6, 15 * 256);
         sheet.setColumnWidth(7, 12 * 256);
+        sheet.setColumnWidth(8, 30 * 256);
 
         Footer footer = sheet.getFooter();
         footer.setCenter("Direitos reservados a SIRG, desenvolvido por Adriano Victor N. Ribeiro e Filipe da Silva Ribeiro");
@@ -586,10 +614,58 @@ public class ExcelService {
         };
     }
 
+    /** Assinatura de antes dos filtros (grupo, dia e unidade solicitante). */
     public boolean haDadosParaRelatorio(String grupo, LocalDate data, Long unidadeSolicitada, String callerCpf) {
-        Long unidadeId = unidadeAcessoService.resolverUnidadeAlvo(callerCpf, unidadeSolicitada);
-        if (grupo == null || grupo.isBlank() || data == null) return false;
-        return especialidadeRepository.countAgendadosPorGrupoEData(grupo, data, unidadeId) > 0;
+        if (data == null) {
+            unidadeAcessoService.resolverUnidadeAlvo(callerCpf, unidadeSolicitada);
+            return false;
+        }
+        return haDadosParaRelatorio(PlanilhaAgendadosFiltroDTO.porData(grupo, data, unidadeSolicitada), callerCpf);
+    }
+
+    /** Mesmos filtros e mesma ordem de checagem da planilha: as duas concordam. */
+    public boolean haDadosParaRelatorio(PlanilhaAgendadosFiltroDTO filtro, String callerCpf) {
+        Long unidadeId = unidadeAcessoService.resolverUnidadeAlvo(callerCpf, filtro.unidadeId());
+        String grupo = filtro.grupo();
+        if (grupo == null || grupo.isBlank()) return false;
+        PeriodoAgendados periodo = validarFiltroAgendados(filtro);
+        return especialidadeRepository.countAgendados(grupo, periodo.inicio(), periodo.fim(), unidadeId,
+                filtro.unidadeExecutanteId() != null, executanteIdsDo(filtro),
+                filtro.profissionalExecutanteId(), filtro.semExecutante()) > 0;
+    }
+
+    /**
+     * Data unica OU periodo (pontas inclusivas, no maximo 31 dias); profissional e
+     * "sem executante" sao excludentes. Erro de filtro e 400 com mensagem legivel.
+     */
+    private static PeriodoAgendados validarFiltroAgendados(PlanilhaAgendadosFiltroDTO filtro) {
+        boolean temPeriodo = filtro.dataInicio() != null || filtro.dataFim() != null;
+        if (filtro.data() != null && temPeriodo) {
+            throw new IllegalArgumentException("Informe uma data ou um período, não os dois.");
+        }
+        if (filtro.profissionalExecutanteId() != null && filtro.semExecutante()) {
+            throw new IllegalArgumentException(
+                    "Escolha um profissional executante ou \"sem executante\", não os dois.");
+        }
+        if (filtro.data() != null) {
+            return new PeriodoAgendados(filtro.data(), filtro.data());
+        }
+        if (filtro.dataInicio() == null || filtro.dataFim() == null) {
+            throw new IllegalArgumentException("Informe a data ou o início e o fim do período.");
+        }
+        if (filtro.dataFim().isBefore(filtro.dataInicio())) {
+            throw new IllegalArgumentException("O fim do período não pode ser anterior ao início.");
+        }
+        if (ChronoUnit.DAYS.between(filtro.dataInicio(), filtro.dataFim()) >= PERIODO_MAXIMO_AGENDADOS_DIAS) {
+            throw new IllegalArgumentException(
+                    "O período do relatório é de no máximo " + PERIODO_MAXIMO_AGENDADOS_DIAS + " dias.");
+        }
+        return new PeriodoAgendados(filtro.dataInicio(), filtro.dataFim());
+    }
+
+    /** O IN do filtro de executante nunca pode ir vazio: sem executante, vai a sentinela. */
+    private static List<Long> executanteIdsDo(PlanilhaAgendadosFiltroDTO filtro) {
+        return filtro.unidadeExecutanteId() == null ? SEM_EXECUTANTE : List.of(filtro.unidadeExecutanteId());
     }
 
     public ByteArrayInputStream gerarPlanilhaGel(Long unidadeSolicitada, String callerCpf) throws IOException {

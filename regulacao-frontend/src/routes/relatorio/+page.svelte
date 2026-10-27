@@ -5,6 +5,9 @@
   import autoTable from 'jspdf-autotable';
   import RoleBasedMenu from "$lib/RoleBasedMenu.svelte";
   import UserMenu from "$lib/UserMenu.svelte";
+  import { user } from '$lib/stores/auth.js';
+
+  type Opcao = { id: number; nome: string };
 
   type Grupo = {
     codigo: string
@@ -22,8 +25,29 @@
     icon: string
   }
 
+  // "Hoje" no fuso do municipio: toISOString() daria o dia seguinte entre 21h e 0h.
+  function hojeNaBahia() {
+    return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bahia' }).format(new Date());
+  }
+
+  const PERIODO_MAXIMO_DIAS = 31;
+  const SEM_EXECUTANTE = 'SEM';
+
   // --- Estado do Componente ---
-  let dataSelecionada = $state(new Date().toISOString().split('T')[0]);
+  let dataSelecionada = $state(hojeNaBahia());
+
+  // Filtros da planilha de agendados (todos opcionais, exceto a data/periodo).
+  let modoData = $state<'dia' | 'periodo'>('dia');
+  let dataInicio = $state(hojeNaBahia());
+  let dataFim = $state(hojeNaBahia());
+  let unidadeSolicitanteId = $state('');
+  let unidadeExecutanteId = $state('');
+  let profissionalFiltro = $state(''); // '' = todos, SEM_EXECUTANTE ou o id
+  let unidades = $state<Opcao[]>([]);
+  let executantes = $state<Opcao[]>([]);
+  let profissionais = $state<Opcao[]>([]);
+  // ADMIN_UNIDADE so ve a propria unidade: o servidor ja forca a lotacao.
+  let restritoAUnidade = $derived($user?.role === 'ADMIN_UNIDADE');
   let loadingType = $state<string | null>(null);
   let allSolicitacoes = $state<any[]>([]);
   let grupos = $state<Grupo[]>([])
@@ -130,19 +154,89 @@
     
   }
   
+  async function carregarLista(url: string): Promise<Opcao[]> {
+    try {
+      const res = await getApi(url);
+      if (!res.ok) return [];
+      const data = await res.json();
+      const lista = Array.isArray(data) ? data : (data?.content ?? []);
+      return lista.map((x: any) => ({ id: x.id, nome: x.nome }));
+    } catch (e) {
+      console.warn(`Não foi possível carregar ${url}`, e);
+      return [];
+    }
+  }
+
+  // Combos dos filtros: falha em um deles nao impede gerar a planilha sem ele.
+  async function carregarFiltros() {
+    const [u, x, p] = await Promise.all([
+      carregarLista('unidades/ativas'),
+      carregarLista('unidades/executantes'),
+      // Sem ativo=true: profissional inativado ainda tem agendamentos no historico.
+      carregarLista('profissionais/buscar?page=0&size=1000'),
+    ]);
+    unidades = u;
+    executantes = x;
+    profissionais = p;
+  }
+
+  // ====== Filtros da planilha de agendados ======
+  function erroDoFiltro(): string | null {
+    if (modoData === 'dia') {
+      return dataSelecionada ? null : 'Por favor, selecione uma data.';
+    }
+    if (!dataInicio || !dataFim) return 'Informe o início e o fim do período.';
+    if (dataFim < dataInicio) return 'O fim do período não pode ser anterior ao início.';
+    const dias = (Date.parse(dataFim) - Date.parse(dataInicio)) / 86_400_000;
+    if (dias >= PERIODO_MAXIMO_DIAS) {
+      return `O período do relatório é de no máximo ${PERIODO_MAXIMO_DIAS} dias.`;
+    }
+    return null;
+  }
+
+  // Mesmos parametros na verificacao e no download: os dois tem de concordar.
+  function paramsDoFiltro(card: RelatorioCard) {
+    const p = new URLSearchParams({ grupo: card.grupo, label: card.label });
+    if (modoData === 'dia') {
+      p.set('data', dataSelecionada);
+    } else {
+      p.set('dataInicio', dataInicio);
+      p.set('dataFim', dataFim);
+    }
+    if (unidadeSolicitanteId && !restritoAUnidade) p.set('unidadeId', unidadeSolicitanteId);
+    if (unidadeExecutanteId) p.set('unidadeExecutanteId', unidadeExecutanteId);
+    if (profissionalFiltro === SEM_EXECUTANTE) p.set('semExecutante', 'true');
+    else if (profissionalFiltro) p.set('profissionalExecutanteId', profissionalFiltro);
+    return p.toString();
+  }
+
+  function dataBR(iso: string) {
+    return new Date(iso + 'T12:00:00').toLocaleDateString('pt-BR');
+  }
+
+  function descricaoDoPeriodo() {
+    return modoData === 'dia'
+      ? `na data ${dataBR(dataSelecionada)}`
+      : `no período de ${dataBR(dataInicio)} a ${dataBR(dataFim)}`;
+  }
+
+  function sufixoDoArquivo() {
+    return modoData === 'dia' ? dataSelecionada : `${dataInicio}_a_${dataFim}`;
+  }
+
   // ====== Exportações ======
   async function gerarPlanilha(card: RelatorioCard) {
-    if (!dataSelecionada) {
-      alert("Por favor, selecione uma data.");
+    const erro = erroDoFiltro();
+    if (erro) {
+      alert(erro);
       return;
     }
 
     loadingType = card.label;
 
     try {
-      const checkUrl =
-        `exportar/verificar-dados?grupo=${encodeURIComponent(card.grupo)}` +
-        `&data=${dataSelecionada}&label=${encodeURIComponent(card.label)}`;
+      const params = paramsDoFiltro(card);
+      const checkUrl = `exportar/verificar-dados?${params}`;
 
       const response = await getApi(checkUrl);
       if (!response.ok) {
@@ -152,19 +246,14 @@
 
       const result = await response.json();
       if (!result?.dadosDisponiveis) {
-        alert(
-          `Nenhum dado encontrado para o relatório de ${card.label} na data ` +
-            `${new Date(dataSelecionada + "T12:00:00").toLocaleDateString("pt-BR")}.`
-        );
+        alert(`Nenhum dado encontrado para o relatório de ${card.label} ${descricaoDoPeriodo()} com os filtros escolhidos.`);
         return;
       }
 
       const safe = sanitizeLabel(card.label);
-      const downloadUrl =
-        `exportar/planilha?grupo=${encodeURIComponent(card.grupo)}` +
-        `&data=${dataSelecionada}&label=${encodeURIComponent(card.label)}`;
+      const downloadUrl = `exportar/planilha?${params}`;
 
-      await downloadFile(downloadUrl, `planilha_${safe}_${dataSelecionada}.xlsx`);
+      await downloadFile(downloadUrl, `planilha_${safe}_${sufixoDoArquivo()}.xlsx`);
     } catch (error) {
       console.error(`Erro ao gerar planilha de ${card.label}:`, error);
       alert("Ocorreu um erro de comunicação com o servidor. Tente novamente.");
@@ -266,6 +355,7 @@
   onMount(() => {
     carregarSolicitacoes()
     carregarGrupoRelatorio()
+    carregarFiltros()
   });
   
   function gerarPDFGeral() {
@@ -337,16 +427,125 @@
         
         <section>
           <h2 class="text-xl font-bold text-gray-700 mb-3">Relatórios de Agendados</h2>
-          <div class="bg-white p-4 rounded-lg shadow-md mb-6">
-            <label for="data" class="block text-base font-semibold text-gray-800 mb-2">
-              🗓️ Selecione a data para os relatórios de agendados:
-            </label>
-            <input
-              type="date"
-              id="data"
-              bind:value={dataSelecionada}
-              class="w-full md:w-auto border border-gray-300 rounded-lg p-2 focus:ring-emerald-500 focus:border-emerald-500"
-            />
+          <div class="bg-white p-4 md:p-6 rounded-lg shadow mb-6 space-y-4">
+            <div class="border-b pb-2">
+              <h3 class="text-base font-semibold text-gray-800">Filtros da planilha</h3>
+              <p class="text-sm text-gray-500">Valem para todos os relatórios de agendados abaixo.</p>
+            </div>
+
+            <fieldset class="flex flex-col gap-4 lg:flex-row lg:items-end lg:gap-6">
+              <legend class="sr-only">Data agendada</legend>
+              <div class="flex flex-wrap gap-2">
+                <label
+                  class="inline-flex items-center gap-2 min-h-10 px-3 py-2 rounded-md border border-gray-300 text-sm text-gray-700 cursor-pointer hover:bg-gray-50 has-[:checked]:border-emerald-600 has-[:checked]:bg-emerald-50 has-[:checked]:text-emerald-800 has-[:checked]:font-medium"
+                >
+                  <input
+                    type="radio"
+                    name="modoData"
+                    value="dia"
+                    bind:group={modoData}
+                    class="text-emerald-600 focus:ring-emerald-500"
+                  />
+                  Um dia
+                </label>
+                <label
+                  class="inline-flex items-center gap-2 min-h-10 px-3 py-2 rounded-md border border-gray-300 text-sm text-gray-700 cursor-pointer hover:bg-gray-50 has-[:checked]:border-emerald-600 has-[:checked]:bg-emerald-50 has-[:checked]:text-emerald-800 has-[:checked]:font-medium"
+                >
+                  <input
+                    type="radio"
+                    name="modoData"
+                    value="periodo"
+                    bind:group={modoData}
+                    class="text-emerald-600 focus:ring-emerald-500"
+                  />
+                  Período (até {PERIODO_MAXIMO_DIAS} dias)
+                </label>
+              </div>
+
+              {#if modoData === 'dia'}
+                <div class="w-full sm:w-48">
+                  <label for="data" class="block text-sm font-medium text-gray-700 mb-1">Data agendada</label>
+                  <input
+                    type="date"
+                    id="data"
+                    bind:value={dataSelecionada}
+                    class="w-full border-gray-300 rounded-md shadow-sm focus:border-emerald-500 focus:ring-emerald-500"
+                  />
+                </div>
+              {:else}
+                <div class="grid grid-cols-1 min-[400px]:grid-cols-2 gap-4 sm:flex sm:items-end">
+                  <div class="sm:w-48">
+                    <label for="data-inicio" class="block text-sm font-medium text-gray-700 mb-1">De</label>
+                    <input
+                      type="date"
+                      id="data-inicio"
+                      bind:value={dataInicio}
+                      class="w-full border-gray-300 rounded-md shadow-sm focus:border-emerald-500 focus:ring-emerald-500"
+                    />
+                  </div>
+                  <div class="sm:w-48">
+                    <label for="data-fim" class="block text-sm font-medium text-gray-700 mb-1">Até</label>
+                    <input
+                      type="date"
+                      id="data-fim"
+                      bind:value={dataFim}
+                      class="w-full border-gray-300 rounded-md shadow-sm focus:border-emerald-500 focus:ring-emerald-500"
+                    />
+                  </div>
+                </div>
+              {/if}
+            </fieldset>
+
+            <div class="grid grid-cols-1 gap-4 {restritoAUnidade ? 'md:grid-cols-2' : 'md:grid-cols-3'}">
+              {#if !restritoAUnidade}
+                <div>
+                  <label for="filtro-unidade-solicitante" class="block text-sm font-medium text-gray-700 mb-1">
+                    Unidade solicitante
+                  </label>
+                  <select
+                    id="filtro-unidade-solicitante"
+                    bind:value={unidadeSolicitanteId}
+                    class="w-full border-gray-300 rounded-md shadow-sm focus:border-emerald-500 focus:ring-emerald-500"
+                  >
+                    <option value="">Todas</option>
+                    {#each unidades as u (u.id)}
+                      <option value={String(u.id)}>{u.nome}</option>
+                    {/each}
+                  </select>
+                </div>
+              {/if}
+              <div>
+                <label for="filtro-unidade-executante" class="block text-sm font-medium text-gray-700 mb-1">
+                  Unidade executante
+                </label>
+                <select
+                  id="filtro-unidade-executante"
+                  bind:value={unidadeExecutanteId}
+                  class="w-full border-gray-300 rounded-md shadow-sm focus:border-emerald-500 focus:ring-emerald-500"
+                >
+                  <option value="">Todas</option>
+                  {#each executantes as u (u.id)}
+                    <option value={String(u.id)}>{u.nome}</option>
+                  {/each}
+                </select>
+              </div>
+              <div>
+                <label for="filtro-profissional" class="block text-sm font-medium text-gray-700 mb-1">
+                  Profissional executante
+                </label>
+                <select
+                  id="filtro-profissional"
+                  bind:value={profissionalFiltro}
+                  class="w-full border-gray-300 rounded-md shadow-sm focus:border-emerald-500 focus:ring-emerald-500"
+                >
+                  <option value="">Todos</option>
+                  <option value={SEM_EXECUTANTE}>Sem executante</option>
+                  {#each profissionais as p (p.id)}
+                    <option value={String(p.id)}>{p.nome}</option>
+                  {/each}
+                </select>
+              </div>
+            </div>
           </div>
           <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-5">
             {#each cards as relatorio}
