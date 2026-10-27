@@ -2,12 +2,19 @@ package io.github.regulacao_marcarcao.regulacao_marcacao.service;
 
 import java.util.List;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 
+import io.github.regulacao_marcarcao.regulacao_marcacao.dto.PaginaDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.grupo_relatorio.GrupoRelatorioCreateDTO;
+import io.github.regulacao_marcarcao.regulacao_marcacao.dto.grupo_relatorio.GrupoRelatorioFiltroDTO;
+import io.github.regulacao_marcarcao.regulacao_marcacao.dto.grupo_relatorio.GrupoRelatorioListaDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.grupo_relatorio.GrupoRelatorioUpdateDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.grupo_relatorio.GrupoRelatorioViewDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.GrupoRelatorio;
+import io.github.regulacao_marcarcao.regulacao_marcacao.entity.GrupoRelatorioSpecification;
 import io.github.regulacao_marcarcao.regulacao_marcacao.mapper.GrupoRelatorioMapper;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.CotaUnidadeRepository;
 import io.github.regulacao_marcarcao.regulacao_marcacao.repository.GrupoRelatorioRepository;
@@ -47,6 +54,37 @@ public class GrupoRelatorioService {
         List<GrupoRelatorio> lista = grupoRelatorioRepository.findAll();
         return mapper.toViewDTOList(lista);
    }  
+
+   /** Listagem paginada de /cadastrar/grupo-relatorio: nome crescente, desempate por id. */
+   @Transactional
+   public PaginaDTO<GrupoRelatorioListaDTO> listarPagina(GrupoRelatorioFiltroDTO bruto, int page, int size){
+        PaginaDTO.validarPagina(page);
+        int tamanho = PaginaDTO.limitarTamanho(size);
+
+        String q = bruto == null || bruto.q() == null || bruto.q().isBlank() ? null : bruto.q().trim();
+        String status = valorDeLista(bruto == null ? null : bruto.status(), "status", "ativo", "inativo");
+        String hospital = valorDeLista(bruto == null ? null : bruto.direcionadoHospital(),
+                "direcionadoHospital", "sim", "nao");
+
+        Page<GrupoRelatorio> pagina = grupoRelatorioRepository.findAll(
+                GrupoRelatorioSpecification.comFiltros(new GrupoRelatorioFiltroDTO(q, status, hospital)),
+                PageRequest.of(page, tamanho, Sort.by("nome").ascending().and(Sort.by("id").ascending())));
+        return PaginaDTO.de(pagina.getContent().stream().map(GrupoRelatorioListaDTO::from).toList(), page, tamanho,
+                pagina.getTotalElements());
+   }
+
+   private static String valorDeLista(String valor, String campo, String... permitidos){
+        if (valor == null || valor.isBlank()) {
+            return null;
+        }
+        String v = valor.trim();
+        for (String p : permitidos) {
+            if (p.equals(v)) {
+                return v;
+            }
+        }
+        throw new IllegalArgumentException("Valor inválido para " + campo + ": " + v);
+   }
 
    @Transactional
    public GrupoRelatorioViewDTO atualizarGrupo(Long id, GrupoRelatorioUpdateDTO dto){

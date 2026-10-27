@@ -17,6 +17,7 @@ import io.github.regulacao_marcarcao.regulacao_marcacao.dto.profissional.Profiss
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.profissional.ProfissionalViewDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.Cbo;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.Profissional;
+import io.github.regulacao_marcarcao.regulacao_marcacao.entity.ProfissionalSpecification;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.ProfissionalVinculo;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.Unidade;
 import io.github.regulacao_marcarcao.regulacao_marcacao.entity.enums.OrigemVinculoEnum;
@@ -93,11 +94,21 @@ public class ProfissionalService {
 
     @Transactional(readOnly = true)
     public Page<ProfissionalViewDTO> buscar(int page, int size, String nome) {
-        Pageable pageable = PageRequest.of(page, size, Sort.by("nome").ascending());
-        if (nome == null || nome.isBlank()) {
-            return profissionalRepository.findAll(pageable).map(ProfissionalViewDTO::from);
-        }
-        return profissionalRepository.findByNomeContainingIgnoreCase(nome, pageable)
+        return buscar(page, size, nome, null, null, null);
+    }
+
+    /**
+     * Mesma busca de sempre ({@code nome}) com filtros opcionais de /admin/profissionais:
+     * {@code q} (nome, conselho, registro, especialidade), {@code ativo} e {@code unidadeId}.
+     * Sem os filtros novos o resultado é o de antes; o desempate por id mantém a ordem
+     * estável entre páginas.
+     */
+    @Transactional(readOnly = true)
+    public Page<ProfissionalViewDTO> buscar(int page, int size, String nome, String q, Boolean ativo,
+            Long unidadeId) {
+        Pageable pageable = PageRequest.of(page, size, Sort.by("nome").ascending().and(Sort.by("id").ascending()));
+        return profissionalRepository
+                .findAll(ProfissionalSpecification.comFiltros(nome, q, ativo, unidadeId), pageable)
                 .map(ProfissionalViewDTO::from);
     }
 

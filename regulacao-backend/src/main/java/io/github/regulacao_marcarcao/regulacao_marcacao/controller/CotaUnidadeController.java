@@ -17,13 +17,17 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import io.github.regulacao_marcarcao.regulacao_marcacao.dto.cota.CotaListaPaginaDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.cota.CotaMigracaoDataCreateDTO;
+import io.github.regulacao_marcarcao.regulacao_marcacao.dto.cota.CotaOpcoesFiltroDTO;
+import io.github.regulacao_marcarcao.regulacao_marcacao.dto.cota.CotaUnidadeFiltroDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.cota.CotaMigracaoDataPreviaDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.cota.CotaMigracaoDataViewDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.cota.CotaUnidadeCreateDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.cota.CotaUnidadeSaldoDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.cota.CotaUnidadeUpdateDTO;
 import io.github.regulacao_marcarcao.regulacao_marcacao.dto.cota.CotaUnidadeViewDTO;
+import io.github.regulacao_marcarcao.regulacao_marcacao.service.CotaListagemService;
 import io.github.regulacao_marcarcao.regulacao_marcacao.service.CotaMigracaoDataService;
 import io.github.regulacao_marcarcao.regulacao_marcacao.service.CotaUnidadeService;
 import io.github.regulacao_marcarcao.regulacao_marcacao.service.UnidadeAcessoService;
@@ -44,6 +48,7 @@ import lombok.RequiredArgsConstructor;
 public class CotaUnidadeController {
 
     private final CotaUnidadeService cotaService;
+    private final CotaListagemService listagemService;
     private final CotaMigracaoDataService migracaoService;
     private final UnidadeAcessoService unidadeAcessoService;
 
@@ -57,6 +62,26 @@ public class CotaUnidadeController {
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<List<CotaUnidadeViewDTO>> listarTodas() {
         return ResponseEntity.ok(cotaService.listarTodas());
+    }
+
+    /**
+     * Listagem paginada de /admin/cotas (itens = cota manual ou agenda como bloco).
+     * {@code GET /api/cotas} sem parâmetros continua devolvendo a lista completa.
+     */
+    @GetMapping("/pagina")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<CotaListaPaginaDTO> listarPagina(
+            CotaUnidadeFiltroDTO filtro,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size,
+            Authentication authentication) {
+        return ResponseEntity.ok(listagemService.listar(filtro, page, size, authentication.getName()));
+    }
+
+    @GetMapping("/opcoes-filtro")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<CotaOpcoesFiltroDTO> opcoesFiltro(Authentication authentication) {
+        return ResponseEntity.ok(listagemService.opcoesFiltro(authentication.getName()));
     }
 
     @GetMapping("/{id}")

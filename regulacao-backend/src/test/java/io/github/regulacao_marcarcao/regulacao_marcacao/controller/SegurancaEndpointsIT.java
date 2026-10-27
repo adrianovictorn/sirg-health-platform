@@ -826,4 +826,103 @@ class SegurancaEndpointsIT {
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.message").exists());
     }
+
+    // ------------------------------------------------------------------
+    // Listagem paginada de cotas: so ADMIN (igual ao GET /api/cotas)
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("Listagem paginada de cotas e opcoes de filtro: so ADMIN")
+    void listagemPaginadaDeCotasSoParaAdmin() throws Exception {
+        for (String url : List.of("/api/cotas/pagina", "/api/cotas/opcoes-filtro")) {
+            assertThat(statusDe(get(url))).as(url + " sem login").isIn(401, 403);
+            for (Roles role : List.of(Roles.GESTOR, Roles.ADMIN_UNIDADE, Roles.RECEPCAO, Roles.MEDICO,
+                    Roles.USER, Roles.PACIENTE, Roles.COORD_TRANSPORTE)) {
+                assertThat(statusDe(get(url).with(como(role)))).as(url + " " + role).isEqualTo(403);
+            }
+        }
+
+        mockMvc.perform(get("/api/cotas/pagina?page=0&size=5").with(como(Roles.ADMIN)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.pagina.tamanho").value(5))
+                .andExpect(jsonPath("$.totalCotasGeral").exists());
+        mockMvc.perform(get("/api/cotas/opcoes-filtro").with(como(Roles.ADMIN)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.especialidades").isArray());
+
+        // Parametro invalido vira 400 com `message`, nao 500.
+        mockMvc.perform(get("/api/cotas/pagina?status=talvez").with(como(Roles.ADMIN)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").exists());
+        mockMvc.perform(get("/api/cotas/pagina?page=-1").with(como(Roles.ADMIN)))
+                .andExpect(status().isBadRequest());
+    }
+
+    // ------------------------------------------------------------------
+    // Listagens paginadas de unidades e grupos; escrita de grupos so ADMIN
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("Listagem paginada de unidades e de grupos: so ADMIN; as listas completas seguem abertas")
+    void listagensPaginadasDeUnidadesEGruposSoParaAdmin() throws Exception {
+        List<Roles> naoAdmin = List.of(Roles.GESTOR, Roles.ADMIN_UNIDADE, Roles.RECEPCAO, Roles.MEDICO,
+                Roles.USER, Roles.PACIENTE, Roles.COORD_TRANSPORTE);
+        for (String url : List.of("/api/unidades/pagina", "/api/grupo-relatorio/pagina")) {
+            assertThat(statusDe(get(url))).as(url + " sem login").isIn(401, 403);
+            for (Roles role : naoAdmin) {
+                assertThat(statusDe(get(url).with(como(role)))).as(url + " " + role).isEqualTo(403);
+            }
+            mockMvc.perform(get(url + "?page=0&size=5").with(como(Roles.ADMIN)))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.tamanho").value(5))
+                    .andExpect(jsonPath("$.totalElementos").exists());
+            mockMvc.perform(get(url + "?status=talvez").with(como(Roles.ADMIN)))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.message").exists());
+        }
+
+        // Consumidores de outras telas: o formato de lista e o acesso nao mudam.
+        mockMvc.perform(get("/api/grupo-relatorio/listar").with(como(Roles.USER)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$").isArray());
+        mockMvc.perform(get("/api/unidades").with(como(Roles.USER)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$").isArray());
+    }
+
+    @Test
+    @DisplayName("Grupos de relatorio: cadastrar, atualizar, ativar/desativar e deletar so para ADMIN")
+    void escritaDeGruposSoParaAdmin() throws Exception {
+        String corpo = "{\"codigo\":\"X\",\"nome\":\"X\",\"direcionadoHospital\":false}";
+        for (Roles role : List.of(Roles.GESTOR, Roles.ADMIN_UNIDADE, Roles.RECEPCAO, Roles.USER)) {
+            assertThat(statusDe(post("/api/grupo-relatorio/cadastrar").with(como(role))
+                    .contentType(MediaType.APPLICATION_JSON).content(corpo))).as("cadastrar " + role).isEqualTo(403);
+            assertThat(statusDe(patch("/api/grupo-relatorio/atualizar/999999999").with(como(role))
+                    .contentType(MediaType.APPLICATION_JSON).content(corpo))).as("atualizar " + role).isEqualTo(403);
+            assertThat(statusDe(patch("/api/grupo-relatorio/ativarOrDesativar/999999999").with(como(role))))
+                    .as("ativar " + role).isEqualTo(403);
+            assertThat(statusDe(delete("/api/grupo-relatorio/deletar/999999999").with(como(role))))
+                    .as("deletar " + role).isEqualTo(403);
+        }
+        assertThat(statusDe(post("/api/grupo-relatorio/cadastrar").contentType(MediaType.APPLICATION_JSON)
+                .content(corpo))).as("cadastrar sem login").isIn(401, 403);
+    }
+
+    @Test
+    @DisplayName("Profissionais/buscar: sem parametros novos segue devolvendo Page; filtros novos funcionam")
+    void buscaDeProfissionaisContinuaPaginadaPeloSpring() throws Exception {
+        mockMvc.perform(get("/api/profissionais/buscar?page=0&size=5").with(como(Roles.USER)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content").isArray())
+                .andExpect(jsonPath("$.totalElements").exists());
+        mockMvc.perform(get("/api/profissionais/buscar?q=zz&ativo=true&unidadeId=999999999").with(como(Roles.USER)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(0));
+    }
+
+    @Test
+    @DisplayName("GET /api/cotas sem parametros continua devolvendo a lista completa")
+    void listaCompletaDeCotasContinuaComoLista() throws Exception {
+        mockMvc.perform(get("/api/cotas").with(como(Roles.ADMIN)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$").isArray());
+    }
 }

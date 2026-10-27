@@ -51,8 +51,11 @@ public class ProfissionalController {
     public ResponseEntity<Page<ProfissionalViewDTO>> buscar(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size,
-            @RequestParam(required = false) String nome) {
-        return ResponseEntity.ok(profissionalService.buscar(page, size, nome));
+            @RequestParam(required = false) String nome,
+            @RequestParam(required = false) String q,
+            @RequestParam(required = false) Boolean ativo,
+            @RequestParam(required = false) Long unidadeId) {
+        return ResponseEntity.ok(profissionalService.buscar(page, size, nome, q, ativo, unidadeId));
     }
 
     @GetMapping("/{id}")

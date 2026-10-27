@@ -78,13 +78,19 @@ class RelatorioEndpointsEscopoIT {
         return user(u.getCpf()).roles(role.name());
     }
 
-    /** As sete rotas, com um grupo que nao existe: o escopo e decidido antes de qualquer consulta. */
+    /** As rotas, com um grupo que nao existe: o escopo e decidido antes de qualquer consulta. */
     private List<MockHttpServletRequestBuilder> rotas() {
         String grupo = "GRUPO" + sufixo;
         String hoje = LocalDate.now().toString();
         return List.of(
                 get("/api/exportar/planilha").param("grupo", grupo).param("data", hoje),
                 get("/api/exportar/verificar-dados").param("grupo", grupo).param("data", hoje),
+                // Planilha de agendados com os filtros novos: o escopo continua decidido antes.
+                get("/api/exportar/planilha").param("grupo", grupo)
+                        .param("dataInicio", hoje).param("dataFim", hoje)
+                        .param("unidadeExecutanteId", "1").param("profissionalExecutanteId", "1"),
+                get("/api/exportar/verificar-dados").param("grupo", grupo)
+                        .param("dataInicio", hoje).param("dataFim", hoje).param("semExecutante", "true"),
                 get("/api/exportar/planilha-aguardando").param("grupo", grupo),
                 get("/api/exportar/verificar-dados-aguardando").param("grupo", grupo),
                 get("/api/exportar/planilha-gel"),
@@ -143,6 +149,28 @@ class RelatorioEndpointsEscopoIT {
             for (MockHttpServletRequestBuilder rota : rotasAtendidas()) {
                 mockMvc.perform(rota.with(usuario)).andExpect(status().isOk());
             }
+        }
+    }
+
+    @Test
+    @DisplayName("Planilha de agendados com periodo invalido responde 400 com mensagem, nunca 500")
+    void periodoInvalidoResponde400() throws Exception {
+        RequestPostProcessor admin = como(Roles.ADMIN, null);
+        LocalDate hoje = LocalDate.now();
+        String grupo = "GRUPO" + sufixo;
+        List<String[]> periodosInvalidos = List.<String[]>of(
+                new String[] {hoje.toString(), hoje.plusDays(31).toString()},
+                new String[] {hoje.toString(), hoje.minusDays(1).toString()});
+        for (String rota : List.of("/api/exportar/planilha", "/api/exportar/verificar-dados")) {
+            for (String[] periodo : periodosInvalidos) {
+                mockMvc.perform(get(rota).param("grupo", grupo)
+                                .param("dataInicio", periodo[0]).param("dataFim", periodo[1]).with(admin))
+                        .andExpect(status().isBadRequest())
+                        .andExpect(jsonPath("$.message").isNotEmpty());
+            }
+            mockMvc.perform(get(rota).param("grupo", grupo).with(admin))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.message").isNotEmpty());
         }
     }
 

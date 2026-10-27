@@ -5,43 +5,70 @@
   import { getApi } from '$lib/api.js';
   import Content from '$lib/Content.svelte';
   import { toast } from 'svelte-sonner';
-  import { formatarPeriodoCota, agruparCotasPorAgenda, periodoCobertoPorGrupo } from '$lib/cotas.js';
+  import { formatarPeriodoCota, periodoCobertoPorGrupo } from '$lib/cotas.js';
   import {
     FILTROS_VAZIOS,
-    filtrarCotas,
     lerFiltros,
     serializarFiltros,
     sanitizarFiltro,
     temParametrosDeFiltro,
     haFiltros as temFiltros,
     periodoInvalido,
-    opcoesDeFiltro,
     tagsAtivas
   } from '$lib/cotasFiltro.js';
+  import {
+    lerPaginacao,
+    montarQuery,
+    montarQueryDaApi,
+    temParametrosDePaginacao,
+    textoDoContador
+  } from '$lib/listaPaginada.js';
+  import Paginacao from '$lib/components/ListaPaginada/Paginacao.svelte';
   import GrupoToggleButton from '$lib/GrupoToggleButton.svelte';
   import GrupoEspecialidadesPainel from '$lib/GrupoEspecialidadesPainel.svelte';
 
   // Dados só de leitura, sempre trocados por inteiro: $state.raw evita o proxy
-  // profundo do Svelte sobre uma lista que pode ter milhares de cotas.
-  let cotas = $state.raw([]);
+  // profundo do Svelte.
+  let resposta = $state.raw(null);
   let unidades = $state.raw([]);
   let grupos = $state.raw([]);
   let agendasPorId = $state.raw({});
+  let opcoes = $state.raw({ especialidades: [], profissionais: [], executantes: [] });
   let loading = $state(true);
+  let erroAoCarregar = $state(false);
 
-  // Falha ao carregar um dado de apoio não esconde cota: o filtro correspondente
-  // deixa tudo visível e a tela avisa (ver `filtrarCotas`).
+  // Filtro, ordenação e página são decididos no servidor. Falha ao carregar um
+  // dado de apoio (unidades, grupos, agendas) só afeta nomes e opções da tela:
+  // nenhuma cota some por causa disso.
   let unidadesCarregadas = $state(true);
-  let gruposCarregados = $state(true);
   let agendasCarregadas = $state(true);
 
-  // Filtros espelhados na URL: dá para recarregar, voltar e compartilhar o link.
+  // Filtros e página espelhados na URL: dá para recarregar, voltar e compartilhar o link.
   let filtros = $state(lerFiltros(page.url.searchParams));
+  let paginacao = $state(lerPaginacao(page.url.searchParams));
+  // Query efetivamente enviada à API; o $effect abaixo recarrega quando ela muda.
+  // A busca textual só entra aqui depois do debounce (ver `definirBusca`).
+  let consulta = $state(consultaAtual());
 
   // Última query guardada na sessão do navegador, para o filtro sobreviver ao
   // voltar de "Nova cota"/"Editar" (essas telas voltam com goto('/admin/cotas')).
   const CHAVE_DA_SESSAO = 'admin-cotas:filtros';
   let temporizadorDaUrl = null;
+  let requisicaoAtual = 0;
+
+  function paramsDeFiltroParaApi() {
+    const params = serializarFiltros(filtros);
+    // Intervalo invertido é ignorado pela tela (o aviso já aparece); a API o recusaria.
+    if (periodoInvalido(filtros)) {
+      params.delete('dataDe');
+      params.delete('dataAte');
+    }
+    return params;
+  }
+
+  function consultaAtual() {
+    return montarQueryDaApi(paramsDeFiltroParaApi(), paginacao);
+  }
 
   function guardarNaSessao(texto) {
     try {
@@ -52,35 +79,50 @@
     }
   }
 
-  function escreverNaUrl() {
+  // Confirma filtros e página: guarda na sessão, escreve na URL e dispara a carga.
+  function aplicar() {
     clearTimeout(temporizadorDaUrl);
-    const naUrl = serializarFiltros(filtros).toString();
+    const naUrl = montarQuery(serializarFiltros(filtros), paginacao);
     guardarNaSessao(naUrl);
     goto(naUrl ? `?${naUrl}` : page.url.pathname, { replaceState: true, keepFocus: true, noScroll: true });
+    consulta = consultaAtual();
   }
 
+  // Mudar qualquer filtro volta para a primeira página.
   function definirFiltro(chave, valor) {
     filtros = { ...filtros, [chave]: sanitizarFiltro(chave, valor) };
-    escreverNaUrl();
+    paginacao = { ...paginacao, pagina: 0 };
+    aplicar();
   }
 
-  // A busca filtra a cada tecla; só a escrita na URL espera 300 ms (o Safari
-  // limita chamadas seguidas de replaceState).
+  // A busca espera 300 ms de pausa na digitação antes de consultar o servidor.
   function definirBusca(valor) {
     filtros = { ...filtros, q: valor };
+    paginacao = { ...paginacao, pagina: 0 };
     clearTimeout(temporizadorDaUrl);
-    temporizadorDaUrl = setTimeout(escreverNaUrl, 300);
+    temporizadorDaUrl = setTimeout(aplicar, 300);
   }
 
   function limparFiltros() {
     filtros = { ...FILTROS_VAZIOS };
-    escreverNaUrl();
+    paginacao = { ...paginacao, pagina: 0 };
+    aplicar();
+  }
+
+  function irParaPagina(pagina) {
+    paginacao = { ...paginacao, pagina };
+    aplicar();
+  }
+
+  function definirTamanho(tamanho) {
+    paginacao = { pagina: 0, tamanho };
+    aplicar();
   }
 
   afterNavigate((navegacao) => {
     const params = page.url.searchParams;
     const veioDeFormulario = navegacao.from?.url.pathname.startsWith('/admin/cotas/');
-    if (veioDeFormulario && !temParametrosDeFiltro(params)) {
+    if (veioDeFormulario && !temParametrosDeFiltro(params) && !temParametrosDePaginacao(params)) {
       let salvo = '';
       try {
         salvo = sessionStorage.getItem(CHAVE_DA_SESSAO) ?? '';
@@ -88,15 +130,19 @@
         /* sem sessionStorage: abre sem filtro */
       }
       if (salvo) {
-        filtros = lerFiltros(new URLSearchParams(salvo));
-        goto(`?${serializarFiltros(filtros).toString()}`, { replaceState: true, keepFocus: true, noScroll: true });
+        const guardado = new URLSearchParams(salvo);
+        filtros = lerFiltros(guardado);
+        paginacao = lerPaginacao(guardado);
+        aplicar();
         return;
       }
     }
-    // Clicar no item do menu para a mesma rota limpa os filtros, como em custos.
+    // Clicar no item do menu para a mesma rota limpa os filtros e a página, como em custos.
     if (navegacao.type === 'link') {
       filtros = lerFiltros(params);
-      guardarNaSessao(serializarFiltros(filtros).toString());
+      paginacao = lerPaginacao(params);
+      guardarNaSessao(montarQuery(serializarFiltros(filtros), paginacao));
+      consulta = consultaAtual();
     }
   });
 
@@ -110,24 +156,70 @@
 
   // Quais agendas estão com o grupo de cotas (ocorrência x unidade) expandido.
   let agendasAbertas = $state({});
-  function alternarAgenda(agendaId) {
-    agendasAbertas = { ...agendasAbertas, [agendaId]: !agendasAbertas[agendaId] };
+  function alternarAgenda(chave) {
+    agendasAbertas = { ...agendasAbertas, [chave]: !agendasAbertas[chave] };
   }
 
-  onMount(async () => {
-    await Promise.all([carregarUnidades(), carregarGrupos(), carregarAgendas()]);
-    await carregarCotas();
+  // Quais unidades (blocos) estão recolhidas. Só em memória: começa tudo aberto.
+  let blocosFechados = $state({});
+  function alternarBloco(chave) {
+    blocosFechados = { ...blocosFechados, [chave]: !blocosFechados[chave] };
+  }
+  function recolherTodas() {
+    blocosFechados = Object.fromEntries(blocos.map((b) => [b.chave, true]));
+  }
+  function expandirTodas() {
+    blocosFechados = {};
+  }
+
+  onMount(() => {
+    carregarUnidades();
+    carregarGrupos();
+    carregarAgendas();
+    carregarOpcoes();
   });
 
-  async function carregarCotas() {
+  // Recarrega a página sempre que a consulta muda. Uma resposta atrasada de uma
+  // consulta antiga é descartada (contador), senão sobrescreveria a atual.
+  $effect(() => {
+    carregarCotas(consulta);
+  });
+
+  async function carregarCotas(query) {
+    const minha = ++requisicaoAtual;
+    const obsoleta = () => minha !== requisicaoAtual;
     loading = true;
+    erroAoCarregar = false;
     try {
-      const res = await getApi('cotas');
-      cotas = await res.json();
-    } catch {
-      toast.error('Erro ao carregar cotas.');
+      const res = await getApi(`cotas/pagina?${query}`);
+      if (!res.ok) {
+        const corpo = await res.json().catch(() => ({}));
+        throw new Error(corpo.message ?? 'Erro ao carregar cotas.');
+      }
+      const dados = await res.json();
+      if (obsoleta()) return;
+      resposta = dados;
+      // Página que deixou de existir (ex.: cotas removidas): volta para a última.
+      const ultima = Math.max(dados.pagina.totalPaginas - 1, 0);
+      if (dados.pagina.conteudo.length === 0 && paginacao.pagina > ultima) {
+        paginacao = { ...paginacao, pagina: ultima };
+        aplicar();
+      }
+    } catch (e) {
+      if (obsoleta()) return;
+      erroAoCarregar = true;
+      toast.error(e.message || 'Erro ao carregar cotas.');
     } finally {
-      loading = false;
+      if (!obsoleta()) loading = false;
+    }
+  }
+
+  async function carregarOpcoes() {
+    try {
+      const res = await getApi('cotas/opcoes-filtro');
+      if (res.ok) opcoes = await res.json();
+    } catch {
+      /* selects ficam só com "Todos"; o filtro por texto continua funcionando */
     }
   }
 
@@ -149,10 +241,8 @@
       // aponta para o grupo via unidade.grupoRelatorioId).
       const res = await getApi('grupo-relatorio/listar');
       grupos = res.ok ? await res.json() : [];
-      gruposCarregados = res.ok;
     } catch {
-      /* ignora - combo fica vazio */
-      gruposCarregados = false;
+      /* ignora - o painel de especialidades do grupo fica sem a lista */
     }
   }
 
@@ -171,61 +261,54 @@
     }
   }
 
-  // Ao filtrar por unidade, mostra também as cotas do grupo a que ela pertence:
-  // elas limitam essa unidade tanto quanto as cotas próprias. A regra de cada
-  // filtro mora em `$lib/cotasFiltro.js` (testada em cotasFiltro.test.mjs).
-  const cotasFiltradas = $derived(
-    filtrarCotas(cotas, filtros, {
-      unidades,
-      grupos,
-      agendasPorId,
-      unidadesCarregadas,
-      gruposCarregados,
-      agendasCarregadas
-    })
-  );
-
-  const opcoes = $derived(opcoesDeFiltro(cotas, grupos, agendasPorId));
+  // A regra de cada filtro e a ordenação moram no servidor (CotaUnidadeSpecification
+  // e CotaListagemService); `$lib/cotasFiltro.js` cuida só da URL, das tags e da validação.
   const tags = $derived(tagsAtivas(filtros, { unidades, ...opcoes }));
   const filtrosAtivos = $derived(temFiltros(filtros));
   const intervaloInvalido = $derived(periodoInvalido(filtros));
 
-  // Total de cotas de cada agenda sem filtro, para a linha-resumo mostrar
-  // "X de Y cotas" quando há filtro e não parecer o saldo da agenda inteira.
-  const totalPorAgenda = $derived(
-    new Map([...agruparCotasPorAgenda(cotas).porAgenda].map(([id, lista]) => [id, lista.length]))
+  // O servidor entrega as cotas separadas por titular (unidade ou grupo de unidades) e pagina por
+  // titular, então cada bloco chega completo. Dentro do bloco, uma cota de agenda recorrente
+  // materializa uma linha por ocorrência — sem agrupar, uma agenda semanal de um mês vira
+  // dezenas de linhas soltas — e vira UMA linha-resumo que soma só as cotas desta unidade;
+  // cota manual é uma linha com uma única cota.
+  const blocos = $derived(
+    (resposta?.pagina.conteudo ?? []).map((bloco) => ({
+      ...bloco,
+      linhas: bloco.itens.map((item) =>
+        item.agendaId == null
+          ? { tipo: 'manual', cota: item.cotas[0] }
+          : {
+              tipo: 'agenda',
+              agendaId: item.agendaId,
+              ativo: item.ativo,
+              totalCotasDaAgenda: item.totalCotasDaAgenda,
+              cotas: item.cotas
+            }
+      )
+    }))
   );
 
-  // Uma cota de agenda recorrente materializa uma linha por ocorrência x
-  // unidade solicitante — sem agrupar, uma agenda semanal de um mês vira
-  // dezenas de linhas soltas na tabela. Aqui elas viram uma linha-resumo por
-  // agenda, na posição em que a primeira delas apareceria na lista original;
-  // cotas manuais continuam uma linha cada, sem nenhuma mudança de comportamento.
-  const linhasExibidas = $derived(construirLinhas(cotasFiltradas));
-
-  function construirLinhas(lista) {
-    const { porAgenda } = agruparCotasPorAgenda(lista);
-    const vistos = new Set();
-    const linhas = [];
-    for (const c of lista) {
-      if (c.origem === 'AGENDA' && c.agendaId != null) {
-        if (vistos.has(c.agendaId)) continue;
-        vistos.add(c.agendaId);
-        linhas.push({ tipo: 'agenda', agendaId: c.agendaId, cotas: porAgenda.get(c.agendaId) });
-      } else {
-        linhas.push({ tipo: 'manual', cota: c });
-      }
-    }
-    return linhas;
-  }
+  const totalUnidades = $derived(resposta?.pagina.totalElementos ?? 0);
+  const totalPaginas = $derived(resposta?.pagina.totalPaginas ?? 0);
+  const textoContador = $derived(
+    resposta
+      ? textoDoContador({
+          pagina: paginacao.pagina,
+          tamanho: paginacao.tamanho,
+          totalUnidades,
+          totalCotas: resposta.totalCotas,
+          totalUnidadesGeral: resposta.totalUnidadesGeral,
+          filtrado: filtrosAtivos
+        })
+      : ''
+  );
 
   function resumoGrupo(cotasDoGrupo) {
-    const unidadesDistintas = new Set(cotasDoGrupo.map((c) => c.unidadeId)).size;
     return {
       quantidadeTotal: cotasDoGrupo.reduce((soma, c) => soma + c.quantidadeTotal, 0),
       quantidadeUtilizada: cotasDoGrupo.reduce((soma, c) => soma + c.quantidadeUtilizada, 0),
       saldoDisponivel: cotasDoGrupo.reduce((soma, c) => soma + c.saldoDisponivel, 0),
-      unidadesDistintas,
       periodo: periodoCobertoPorGrupo(cotasDoGrupo)
     };
   }
@@ -233,14 +316,6 @@
 
 {#snippet linhaCota(c)}
   <tr>
-    <td class="ibm-titular">
-      {#if c.grupoUnidadesId}
-        <span class="ibm-badge ibm-badge--neutro">Grupo</span>
-        <span class="ml-2">{c.grupoUnidadesNome}</span>
-      {:else}
-        {c.unidadeNome}
-      {/if}
-    </td>
     <td>
       {#if c.grupoEspecialidadesId}
         <span class="ibm-badge ibm-badge--neutro">Grupo</span>
@@ -310,7 +385,7 @@
 
 <Content titleH1="Cotas por Unidade" page="/admin/cotas">
   <div class="cotas-ibm flex-1 min-w-0 p-4 md:p-6 space-y-6">
-    <div class="flex items-center justify-between gap-4">
+    <div class="flex flex-wrap items-center justify-between gap-4">
       <h2 class="ibm-titulo-secao">Filtros</h2>
       <button onclick={() => goto('/admin/cotas/nova')} class="ibm-btn ibm-btn--primario">+ Nova Cota</button>
     </div>
@@ -425,7 +500,7 @@
           filtros.executanteId,
           'executanteId',
           opcoes.executantes.map((e) => ({ valor: String(e.id), rotulo: e.nome })),
-          { todos: 'Todos os executantes', desabilitado: !agendasCarregadas }
+          { todos: 'Todos os executantes' }
         )}
         <div class="min-w-0">
           <label for="filtro-competencia" class="ibm-rotulo">Competência</label>
@@ -469,58 +544,75 @@
         </p>
       {/if}
 
-      {#if !unidadesCarregadas || !gruposCarregados || !agendasCarregadas}
+      {#if !unidadesCarregadas || !agendasCarregadas}
         <p class="ibm-aviso" role="status">
           {#if !unidadesCarregadas}
-            Não foi possível carregar as unidades: as cotas de grupo de unidades permanecem visíveis ao filtrar por unidade.
-          {/if}
-          {#if !gruposCarregados}
-            Não foi possível carregar os grupos: as cotas de grupo de especialidades permanecem visíveis ao filtrar por
-            especialidade.
+            Não foi possível carregar as unidades: o filtro de unidade fica sem opções, mas as cotas continuam listadas.
           {/if}
           {#if !agendasCarregadas}
-            Não foi possível carregar as agendas: as cotas de agenda permanecem visíveis ao filtrar por profissional, e o
-            filtro de executante fica indisponível.
+            Não foi possível carregar as agendas: as linhas de agenda aparecem como "Agenda #número".
           {/if}
         </p>
       {/if}
 
-      <div class="flex flex-wrap items-center gap-3 min-h-8">
+      <div class="ibm-resumo">
         <p class="ibm-contador" aria-live="polite">
-          {#if loading}
+          {#if loading && !resposta}
             Carregando…
           {:else}
-            <span class="font-semibold">{cotasFiltradas.length}</span> de {cotas.length} cota{cotas.length === 1
-              ? ''
-              : 's'}
+            {#each textoContador.split(' · ') as parte, i (i)}
+              {#if i === 0}
+                <strong class="ibm-contador-destaque">{parte}</strong>
+              {:else}
+                <span class="ibm-contador-suave">&nbsp;· {parte}</span>
+              {/if}
+            {/each}
           {/if}
         </p>
-        {#each tags as tag (tag.chave)}
-          <button
-            type="button"
-            onclick={() => definirFiltro(tag.chave, '')}
-            aria-label="Remover filtro: {tag.rotulo}"
-            class="ibm-tag"
-          >
-            <span>{tag.rotulo}</span>
-            <span aria-hidden="true">×</span>
-          </button>
-        {/each}
-        {#if filtrosAtivos}
-          <button type="button" onclick={limparFiltros} class="ibm-btn ibm-btn--fantasma">Limpar filtros</button>
+        {#if tags.length > 0 || filtrosAtivos}
+          <div class="ibm-filtros-ativos">
+            {#each tags as tag (tag.chave)}
+              <button
+                type="button"
+                onclick={() => definirFiltro(tag.chave, '')}
+                aria-label="Remover filtro: {tag.rotulo}"
+                class="ibm-tag"
+              >
+                <span>{tag.rotulo}</span>
+                <span aria-hidden="true">×</span>
+              </button>
+            {/each}
+            {#if filtrosAtivos}
+              <button type="button" onclick={limparFiltros} class="ibm-btn ibm-btn--fantasma">Limpar filtros</button>
+            {/if}
+          </div>
         {/if}
       </div>
     </section>
 
-    {#if loading}
-      <p class="ibm-suave-texto">Carregando...</p>
+    {#if !resposta}
+      <p class="ibm-suave-texto">{erroAoCarregar ? 'Não foi possível carregar as cotas.' : 'Carregando...'}</p>
     {:else}
+      <div>
+      {#if blocos.length > 0}
+        <div class="ibm-barra-blocos">
+          <button type="button" onclick={recolherTodas} class="ibm-btn ibm-btn--terciario">Recolher todas</button>
+          <button type="button" onclick={expandirTodas} class="ibm-btn ibm-btn--terciario">Expandir todas</button>
+        </div>
+      {/if}
+      <!-- A tabela anterior fica na tela (esmaecida) enquanto a nova página chega. -->
       <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-      <div class="ibm-tabela-contorno" role="region" aria-label="Lista de cotas, com rolagem horizontal" tabindex="0">
+      <div
+        class="ibm-tabela-contorno"
+        class:ibm-carregando={loading}
+        aria-busy={loading}
+        role="region"
+        aria-label="Lista de cotas, com rolagem horizontal"
+        tabindex="0"
+      >
         <table class="ibm-tabela w-full">
           <thead>
             <tr>
-              <th class="text-left">Titular</th>
               <th class="text-left">Especialidade</th>
               <th class="text-left">Tipo</th>
               <th class="text-left">Período / Data</th>
@@ -532,23 +624,20 @@
               <th class="text-left">Ações</th>
             </tr>
           </thead>
-          <tbody>
-            {#each linhasExibidas as linha (linha.tipo === 'agenda' ? `agenda-${linha.agendaId}` : `cota-${linha.cota.id}`)}
-              {#if linha.tipo === 'manual'}
-                {@render linhaCota(linha.cota)}
-              {:else}
-                {@const agendaInfo = agendasPorId[linha.agendaId]}
-                {@const resumo = resumoGrupo(linha.cotas)}
-                <tr class="ibm-linha-agenda">
-                  <td class="ibm-titular" colspan="2">
+          {#each blocos as bloco (bloco.chave)}
+            {@const fechado = !!blocosFechados[bloco.chave]}
+            <tbody class="ibm-bloco">
+              <tr class="ibm-linha-unidade">
+                <td colspan="9">
+                  <div class="ibm-unidade-cabecalho">
                     <button
                       type="button"
-                      onclick={() => alternarAgenda(linha.agendaId)}
+                      onclick={() => alternarBloco(bloco.chave)}
                       class="ibm-agenda-toggle"
-                      aria-expanded={!!agendasAbertas[linha.agendaId]}
+                      aria-expanded={!fechado}
                     >
                       <svg
-                        class="ibm-chevron {agendasAbertas[linha.agendaId] ? 'ibm-chevron--aberto' : ''}"
+                        class="ibm-chevron {fechado ? '' : 'ibm-chevron--aberto'}"
                         fill="none"
                         viewBox="0 0 24 24"
                         stroke="currentColor"
@@ -558,72 +647,150 @@
                         <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
                       </svg>
                       <span class="flex flex-col">
-                        {#if agendaInfo}
-                          <span>{agendaInfo.estabelecimentoExecutanteNome} — {agendaInfo.profissionalNome}</span>
-                        {:else}
-                          <span>Agenda #{linha.agendaId}</span>
-                        {/if}
+                        <span class="ibm-unidade-nome">
+                          {#if bloco.tipo === 'GRUPO'}<span class="ibm-badge ibm-badge--neutro">Grupo</span>{/if}
+                          {bloco.nome}
+                        </span>
                         <span class="ibm-detalhe">
                           {#if filtrosAtivos}
-                            {linha.cotas.length} de {totalPorAgenda.get(linha.agendaId) ?? linha.cotas.length} cotas
+                            {bloco.totalCotas} de {bloco.totalCotasSemFiltro} cotas
                           {:else}
-                            {linha.cotas.length} cota{linha.cotas.length === 1 ? '' : 's'}
+                            {bloco.totalCotas} cota{bloco.totalCotas === 1 ? '' : 's'}
                           {/if}
-                          · {resumo.unidadesDistintas} unidade{resumo.unidadesDistintas === 1 ? '' : 's'}
                         </span>
                       </span>
                     </button>
-                  </td>
-                  <td>
-                    <span class="ibm-badge ibm-badge--neutro">Por Data</span>
-                  </td>
-                  <td>{resumo.periodo}</td>
-                  <td class="text-right ibm-num">{resumo.quantidadeTotal}</td>
-                  <td class="text-right ibm-num">{resumo.quantidadeUtilizada}</td>
-                  <td
-                    class="text-right ibm-num ibm-saldo {resumo.saldoDisponivel <= 0
-                      ? 'ibm-saldo--zero'
-                      : 'ibm-saldo--ok'}"
-                  >
-                    {resumo.saldoDisponivel}
-                  </td>
-                  <td>
-                    <span class="ibm-badge {agendaInfo?.ativo ?? true ? 'ibm-badge--ok' : 'ibm-badge--erro'}">
-                      {agendaInfo?.ativo ?? true ? 'Ativa' : 'Inativa'}
-                    </span>
-                  </td>
-                  <td>
-                    <span class="ibm-badge ibm-badge--acento">Agenda</span>
-                  </td>
-                  <td>
-                    <button
-                      onclick={() => goto(`/liberacao-agenda/${linha.agendaId}`)}
-                      class="ibm-btn ibm-btn--terciario"
-                    >
-                      Ver agenda
-                    </button>
-                  </td>
-                </tr>
-                {#if agendasAbertas[linha.agendaId]}
-                  {#each linha.cotas as c (c.id)}
-                    {@render linhaCota(c)}
-                  {/each}
-                {/if}
+                    <dl class="ibm-unidade-totais">
+                      <div><dt>Total</dt><dd class="ibm-num">{bloco.quantidadeTotal}</dd></div>
+                      <div><dt>Utilizado</dt><dd class="ibm-num">{bloco.quantidadeUtilizada}</dd></div>
+                      <div>
+                        <dt>Saldo das cotas listadas</dt>
+                        <dd class="ibm-num ibm-saldo {bloco.saldo <= 0 ? 'ibm-saldo--zero' : 'ibm-saldo--ok'}">
+                          {bloco.saldo}
+                        </dd>
+                      </div>
+                    </dl>
+                    {#if bloco.tipo === 'UNIDADE'}
+                      {#if filtros.unidadeId === String(bloco.id)}
+                        <button
+                          type="button"
+                          onclick={() => definirFiltro('unidadeId', '')}
+                          class="ibm-btn ibm-btn--terciario"
+                        >
+                          Ver todas as unidades
+                        </button>
+                      {:else}
+                        <button
+                          type="button"
+                          onclick={() => definirFiltro('unidadeId', String(bloco.id))}
+                          aria-label="Ver só a unidade {bloco.nome}"
+                          class="ibm-btn ibm-btn--terciario"
+                        >
+                          Ver só esta unidade
+                        </button>
+                      {/if}
+                    {/if}
+                  </div>
+                </td>
+              </tr>
+              {#if !fechado}
+                {#each bloco.linhas as linha (linha.tipo === 'agenda' ? `agenda-${linha.agendaId}` : `cota-${linha.cota.id}`)}
+                  {#if linha.tipo === 'manual'}
+                    {@render linhaCota(linha.cota)}
+                  {:else}
+                    {@const chaveAgenda = `${bloco.chave}|${linha.agendaId}`}
+                    {@const agendaInfo = agendasPorId[linha.agendaId]}
+                    {@const resumo = resumoGrupo(linha.cotas)}
+                    <tr class="ibm-linha-agenda">
+                      <td class="ibm-titular">
+                        <button
+                          type="button"
+                          onclick={() => alternarAgenda(chaveAgenda)}
+                          class="ibm-agenda-toggle"
+                          aria-expanded={!!agendasAbertas[chaveAgenda]}
+                        >
+                          <svg
+                            class="ibm-chevron {agendasAbertas[chaveAgenda] ? 'ibm-chevron--aberto' : ''}"
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            stroke="currentColor"
+                            stroke-width="2.5"
+                            aria-hidden="true"
+                          >
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
+                          </svg>
+                          <span class="flex flex-col">
+                            {#if agendaInfo}
+                              <span>{agendaInfo.estabelecimentoExecutanteNome} — {agendaInfo.profissionalNome}</span>
+                            {:else}
+                              <span>Agenda #{linha.agendaId}</span>
+                            {/if}
+                            <span class="ibm-detalhe">
+                              {#if filtrosAtivos}
+                                {linha.cotas.length} de {linha.totalCotasDaAgenda} cotas
+                              {:else}
+                                {linha.cotas.length} cota{linha.cotas.length === 1 ? '' : 's'}
+                              {/if}
+                            </span>
+                          </span>
+                        </button>
+                      </td>
+                      <td>
+                        <span class="ibm-badge ibm-badge--neutro">Por Data</span>
+                      </td>
+                      <td>{resumo.periodo}</td>
+                      <td class="text-right ibm-num">{resumo.quantidadeTotal}</td>
+                      <td class="text-right ibm-num">{resumo.quantidadeUtilizada}</td>
+                      <td
+                        class="text-right ibm-num ibm-saldo {resumo.saldoDisponivel <= 0
+                          ? 'ibm-saldo--zero'
+                          : 'ibm-saldo--ok'}"
+                      >
+                        {resumo.saldoDisponivel}
+                      </td>
+                      <td>
+                        <span class="ibm-badge {linha.ativo ? 'ibm-badge--ok' : 'ibm-badge--erro'}">
+                          {linha.ativo ? 'Ativa' : 'Inativa'}
+                        </span>
+                      </td>
+                      <td>
+                        <span class="ibm-badge ibm-badge--acento">Agenda</span>
+                      </td>
+                      <td>
+                        <button
+                          onclick={() => goto(`/liberacao-agenda/${linha.agendaId}`)}
+                          class="ibm-btn ibm-btn--terciario"
+                        >
+                          Ver agenda
+                        </button>
+                      </td>
+                    </tr>
+                    {#if agendasAbertas[chaveAgenda]}
+                      {#each linha.cotas as c (c.id)}
+                        {@render linhaCota(c)}
+                      {/each}
+                    {/if}
+                  {/if}
+                  {#if linha.tipo === 'manual' && linha.cota.grupoEspecialidadesId && gruposAbertos[linha.cota.id]}
+                    <tr class="ibm-linha-painel">
+                      <td colspan="9" class="ibm-celula-painel">
+                        <GrupoEspecialidadesPainel
+                          variante="ibm"
+                          grupo={grupos.find((g) => g.id === linha.cota.grupoEspecialidadesId)}
+                        />
+                      </td>
+                    </tr>
+                  {/if}
+                {/each}
               {/if}
-              {#if linha.tipo === 'manual' && linha.cota.grupoEspecialidadesId && gruposAbertos[linha.cota.id]}
-                <tr class="ibm-linha-painel">
-                  <td colspan="10" class="ibm-celula-painel">
-                    <GrupoEspecialidadesPainel
-                      variante="ibm"
-                      grupo={grupos.find((g) => g.id === linha.cota.grupoEspecialidadesId)}
-                    />
-                  </td>
-                </tr>
-              {/if}
-            {:else}
+            </tbody>
+          {:else}
+            <tbody>
               <tr class="ibm-linha-vazia">
-                <td colspan="10" class="ibm-vazio">
-                  {#if cotas.length === 0}
+                <td colspan="9" class="ibm-vazio">
+                  {#if erroAoCarregar}
+                    Não foi possível carregar as cotas.
+                  {:else if (resposta?.totalCotasGeral ?? 0) === 0}
                     Nenhuma cota cadastrada.
                   {:else}
                     Nenhuma cota corresponde aos filtros.
@@ -633,9 +800,19 @@
                   {/if}
                 </td>
               </tr>
-            {/each}
-          </tbody>
+            </tbody>
+          {/each}
         </table>
+      </div>
+      <Paginacao
+        pagina={paginacao.pagina}
+        {totalPaginas}
+        tamanho={paginacao.tamanho}
+        rotulo="Unidades por página"
+        desabilitado={loading}
+        onPagina={irParaPagina}
+        onTamanho={definirTamanho}
+      />
       </div>
     {/if}
   </div>
@@ -806,9 +983,30 @@
   }
 
   /* Contador, tags de filtro e mensagens */
+  .ibm-resumo {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding-top: 12px;
+    border-top: 1px solid var(--ibm-linha);
+  }
   .ibm-contador {
+    min-height: 20px;
     font-size: 14px;
     color: var(--ibm-tinta);
+  }
+  .ibm-contador-destaque {
+    font-weight: 600;
+  }
+  .ibm-contador-suave {
+    margin-left: 0.25em;
+    color: var(--ibm-tinta-suave);
+  }
+  .ibm-filtros-ativos {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
   }
   .ibm-tag {
     display: inline-flex;
@@ -860,6 +1058,10 @@
     border: 1px solid var(--ibm-linha);
     border-radius: 0;
   }
+  .ibm-carregando {
+    opacity: 0.7;
+    transition: opacity 120ms;
+  }
   .ibm-tabela-contorno:focus-visible {
     outline: 2px solid var(--ibm-acento);
     outline-offset: -2px;
@@ -882,11 +1084,84 @@
     vertical-align: middle;
     color: var(--ibm-tinta);
   }
-  .ibm-tabela tbody tr:last-child td {
+  .ibm-tabela tbody tr:last-child:not(.ibm-linha-unidade) td {
     border-bottom: 0;
   }
   .ibm-tabela .ibm-linha-agenda > td {
     background: var(--ibm-fundo);
+  }
+  /* Cotas dentro do bloco ficam recuadas em relação ao cabeçalho da unidade. */
+  .ibm-tabela .ibm-bloco tr:not(.ibm-linha-unidade):not(.ibm-linha-painel) > td:first-child {
+    padding-left: 28px;
+  }
+  /* Cabeçalho de cada unidade (bloco): mais forte que a linha-resumo de agenda. */
+  .ibm-tabela tbody.ibm-bloco > .ibm-linha-unidade > td {
+    padding: 12px 16px;
+    background: var(--ibm-cabecalho);
+    border-bottom: 1px solid var(--ibm-borda-campo);
+    box-shadow: inset 6px 0 0 var(--ibm-acento);
+  }
+  .ibm-tabela .ibm-linha-unidade:hover > td {
+    background: var(--ibm-cabecalho);
+  }
+  /* Faixa de respiro entre blocos de unidades diferentes. */
+  .ibm-bloco + .ibm-bloco .ibm-linha-unidade > td {
+    border-top: 16px solid var(--ibm-fundo);
+  }
+  /*
+   * Com rolagem horizontal, o cabeçalho acompanha a borda visível da região
+   * (sticky + largura do contêiner), para o nome da unidade nunca sair da tela.
+   * O contraste do acento sobre o cinza do cabeçalho exige o tom mais escuro.
+   */
+  .ibm-tabela-contorno {
+    container-type: inline-size;
+  }
+  .ibm-unidade-cabecalho {
+    --ibm-acento: var(--ibm-acento-hover);
+    position: sticky;
+    left: 0;
+    width: calc(100cqw - 34px);
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px 24px;
+  }
+  .ibm-unidade-nome {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 8px;
+    overflow-wrap: anywhere;
+    font-size: 16px;
+    font-weight: 600;
+  }
+  .ibm-unidade-totais {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 24px;
+    margin: 0 0 0 auto;
+  }
+  .ibm-unidade-totais > div {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+  }
+  .ibm-unidade-totais dt {
+    font-size: 12px;
+    letter-spacing: 0.32px;
+    color: var(--ibm-tinta-suave);
+  }
+  .ibm-unidade-totais dd {
+    margin: 0;
+    font-weight: 600;
+  }
+  .ibm-barra-blocos {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-bottom: 8px;
   }
   .ibm-tabela .ibm-linha-agenda > td:first-child {
     box-shadow: inset 3px 0 0 var(--ibm-acento);
